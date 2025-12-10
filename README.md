@@ -76,16 +76,6 @@ Pool → Assigns Tasks → Miners Execute → Pool Consensus → Submit to Valid
 4. Rewards distributed based on reputation at epoch boundaries
 5. Pool submits best algorithms to validators on behalf of participants
 
-### Architecture Comparison
-
-| Aspect | Direct Mining | Pool Mining |
-|--------|---------------|-------------|
-| Compute | High (full evolution) | Low (distributed tasks) |
-| Setup | Subnet registration required | No registration needed |
-| Rewards | Large but infrequent | Small but consistent |
-| Task Types | Evolution only | Evolution + Evaluation |
-| Payout | Immediate via contract | Epoch-based (hourly) |
-
 **[→ Detailed Rewards Guide](docs/rewards.md)**
 
 ## Quick Start
@@ -95,21 +85,9 @@ Pool → Assigns Tasks → Miners Execute → Pool Consensus → Submit to Valid
 **Desktop GUI (Recommended):**
 1. Download from [bitsota.ai](https://bitsota.ai)
 2. Install for your platform
-3. Create or import Bittensor wallet
+3. Import your Bittensor hotkey
 4. Choose mining mode (Direct or Pool)
 5. Start mining
-
-**Command Line:**
-```bash
-git clone https://github.com/AlveusLabs/BitSota.git
-cd BitSota
-pip install -r requirements.txt
-
-cp miner_config.yaml.example miner_config.yaml
-# Edit miner_config.yaml with your settings
-
-python neurons/miner.py --config miner_config.yaml
-```
 
 See detailed setup guides:
 - [Direct Mining Setup](docs/mining.md#setup)
@@ -142,7 +120,6 @@ python neurons/validator_node.py
 **For Validation:**
 - 16GB RAM
 - 8+ CPU cores
-- ALPHA stake for subnet registration
 
 ## Documentation
 
@@ -150,14 +127,6 @@ python neurons/validator_node.py
 - **[Pool Mining Guide](docs/pool-mining.md)** - Collaborative mining details
 - **[Validation Guide](docs/validation.md)** - Running a validator node
 - **[Rewards Guide](docs/rewards.md)** - Understanding incentive mechanisms
-
-## Related Repositories
-
-**[Pool Service](https://github.com/AlveusLabs/Pool)**
-Backend service coordinating pool mining tasks, consensus, and reward distribution.
-
-**[L2Pool](https://github.com/AlveusLabs/l2pool)**
-Layer 2 scaling solution using Merkle trees for efficient reward distribution. Future integration planned.
 
 ## Links
 

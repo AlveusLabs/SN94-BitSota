@@ -9,7 +9,7 @@ logger = logging.getLogger(__name__)
 
 class RelayClient:
     """
-    Client for interacting with the AutoML-Infinite Relay Server.
+    Client for interacting with the BitSota Relay Server.
     """
 
     def __init__(self, relay_url: str, wallet: "bt.wallet"):

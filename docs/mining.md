@@ -28,17 +28,10 @@ Your Machine → Evolution Engine → Surpass Benchmark Bar → Submit to Relay 
 
 * 4+ CPU cores, 8 GB RAM, a few GB free disk, stable internet.
 
-**Software:**
-
-* Python 3.10+
-* Bittensor wallet (a little TAO for registration)
-* Git + standard build tools
-
 **Compute Expectations:**
 A single mining run can span tens to hundreds of generations; each generation evaluates multiple candidates. Wall-time varies by hardware and the active challenge’s evaluation cost.
 
 ## Setup
-
 
 **Desktop GUI:**
 
@@ -95,11 +88,10 @@ You earn ALPHA when:
 2. Validators independently reproduce within tolerance,
 3. The on-chain vote (e.g., 2-of-3 trustees or configured quorum) passes.
 
-Payouts are automatic to your coldkey once the vote finalizes.
+Payouts are automatic to a coldkey that you provide once the vote finalizes.
 
 ## Tips
 
-* **Parameter tuning:** Start with ~150 generations; shorten for faster iteration once your pipeline is stable.
 * **Repro discipline:** Pin seeds, envs, and versions; match the challenge’s sandbox spec.
 * **Throughput matters:** More candidate evals per minute → more hits. Optimize evaluation bottlenecks.
 * **Stay current:** Bars can move as stronger submissions land. Pull challenge metadata before long runs.
@@ -110,9 +102,6 @@ Payouts are automatic to your coldkey once the vote finalizes.
   Normal. Stochastic search. Try more generations, different seeds, or the archive engine.
 * **“Submission rejected”**
   Ensure you targeted the **current** bar and matched the exact evaluation protocol.
-* **“Validator mismatch/blacklist”**
-  Usually reproducibility issues (env drift, dataset/protocol mismatch, nondeterminism, or bugs). Sync your setup with the challenge spec and re-submit.
-
 ## Next Steps
 
 * Join Discord for support and challenge updates.

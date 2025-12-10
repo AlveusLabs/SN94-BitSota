@@ -1,6 +1,6 @@
 # Rewards and Incentive Mechanisms
 
-AutoMLInfinite uses multiple reward systems that work together. Understanding how they interact helps you maximize earnings and participate effectively.
+BitSota uses multiple reward systems that work together. Understanding how they interact helps you maximize earnings and participate effectively.
 
 ## Overview of Reward Systems
 
@@ -130,15 +130,6 @@ Your RAO = (50 / 5000) × 1,000,000,000 × 0.95
          = 0.01 × 1,000,000,000 × 0.95
          = 9,500,000 RAO
 ```
-
-### Withdrawal
-
-**Minimum:** 5,000,000 RAO
-
-**Process:** Submit withdrawal request through pool interface. Pool operator processes manually (usually within 24 hours).
-
-**Why manual?** Keeps gas costs low for small amounts. Automated on-chain claiming would cost more in fees than small withdrawals are worth.
-
 ### Per-Miner Cap
 
 Pools often cap individual rewards at 5% of epoch budget to ensure fair distribution. If your reputation would earn you more than 5%, excess is redistributed to other miners.

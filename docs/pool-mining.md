@@ -1,4 +1,4 @@
-# Pool Mining Guide
+# Pool Mining Guide (Work In Progress)
 
 Pool mining allows participants with limited compute resources to contribute to algorithm evolution and evaluation while sharing rewards. Instead of competing individually, pool miners work together.
 
@@ -55,66 +55,15 @@ Choose pool mining if you have:
 
 **Software:**
 - Python 3.10 or higher
-- Bittensor wallet (registration on subnet NOT required for pool mining)
+- Bittensor wallet
 
 ## Setup
-
-**1. Install Dependencies**
-```bash
-git clone https://github.com/AlveusLabs/BitSota.git
-cd BitSota
-pip install -r requirements.txt
-```
-
-**2. Create Bittensor Wallet**
-```bash
-btcli wallet new_coldkey --wallet.name pool_miner_wallet
-btcli wallet new_hotkey --wallet.name pool_miner_wallet --wallet.hotkey pool_hotkey
-```
-
-Note: You do NOT need to register on the subnet for pool mining. The pool operator handles registration.
-
-**3. Configure Pool Miner**
-Copy and edit the config:
-```bash
-cp miner_config.yaml.example miner_config.yaml
-```
-
-Edit `miner_config.yaml`:
-```yaml
-wallet:
-  wallet_name: "pool_miner_wallet"
-  hotkey_name: "pool_hotkey"
-  mock_wallet: false
-
-mining:
-  mode: "pool"
-  task_type: "cifar10_binary"
-  engine_type: "archive"
-  verbose: false
-
-pool:
-  url: "https://pool.bitsota.ai"
-  request_interval: 30
-
-evolution:
-  max_generations: 50  # Shorter than direct mining
-  verbose: false
-```
-
-## Running Pool Miner
-
-**Command Line:**
-```bash
-python neurons/miner.py --config miner_config.yaml
-```
 
 **Desktop GUI:**
 1. Download desktop app from [bitsota.ai](https://bitsota.ai)
 2. Install and launch
 3. Navigate to Pool Mining screen
 4. Select your wallet and hotkey
-5. Enter pool URL (default: https://pool.bitsota.ai)
 6. Click Start Mining
 
 ## Understanding Pool Tasks

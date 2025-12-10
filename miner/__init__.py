@@ -1,5 +1,4 @@
 """
-Miner package for AutoML Infinite subnet.
 Contains various mining modules
 """
 

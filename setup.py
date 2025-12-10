@@ -9,7 +9,7 @@ setuptools.setup(
     description="A distributed AutoML package",
     long_description=long_description,
     long_description_content_type="text/markdown",
-    url="https://github.com/Hivetensor/AutoMLInfinite",
+    url="https://github.com/AlveusLabs/SN94-BitSota/",
     packages=setuptools.find_packages(),
     classifiers=[
         "Programming Language :: Python :: 3",
