@@ -355,7 +355,7 @@ pip install -r requirements.txt --upgrade
 
 ## Next Steps
 
-- Join [Hivetensor Discord](https://discord.gg/hivetensor) for validator coordination
+- Join [BitSota Discord](https://discord.gg/6vCYV2WC) for validator coordination
 - Monitor your validator's performance and vote success rate
 - Consider funding the Capacitor contract when stake is low
 - Review the [Rewards Guide](rewards.md) to understand the full incentive mechanism
