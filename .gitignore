@@ -9,3 +9,4 @@ dist_new/
 *.Identifier
 venv/
 *.pyc
+.venv/
