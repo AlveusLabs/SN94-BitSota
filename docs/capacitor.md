@@ -15,7 +15,7 @@
 
 ```bash
 export RPC_URL="https://test.chain.opentensor.ai"
-export NETUID=402
+export NETUID=94
 export NEURON=0x0000000000000000000000000000000000000804
 export STAKING=0x0000000000000000000000000000000000000805
 export CONTRACT=0xYourContractAddress
@@ -148,7 +148,7 @@ Use Injected Provider (MetaMask) → Subtensor EVM (`https://test.chain.opentens
 ### 2) Register Hotkey
 
 * Function: `registerHotkey(uint16,bytes32)`
-* netuid = `402`
+* netuid = `94`
 * hotkey = `bytes32`
 * Value = `0 wei` (if funded)
 * Transact
@@ -166,7 +166,7 @@ Use Injected Provider (MetaMask) → Subtensor EVM (`https://test.chain.opentens
 ### 4) Add Stake
 
 ```bash
-btcli st add --subtensor.network test -n 402 -in <contract_hotkey_ss58> --amount 100000000 --tolerance 0.5 --allow-partial-stake
+btcli st add --subtensor.network test -n 94 -in <contract_hotkey_ss58> --amount 100000000 --tolerance 0.5 --allow-partial-stake
 ```
 
 ---

@@ -138,7 +138,7 @@ Bittensor recently launched Dynamic TAO which introduced subnet-specific ALPHA t
 
 **ALPHA:**
 - Subnet-specific token (each subnet has its own)
-- Subnet 402's ALPHA represents value created by this subnet
+- Subnet 94's ALPHA represents value created by this subnet
 - Used for staking within the subnet
 - Can be converted to/from TAO through liquidity pools
 
