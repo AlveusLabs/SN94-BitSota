@@ -1,0 +1,237 @@
+name: Build Multi-Platform
+
+on:
+  workflow_dispatch:
+    inputs:
+      build_macos_arm64:
+        description: 'Build macOS ARM64'
+        required: false
+        type: boolean
+        default: true
+      build_macos_intel:
+        description: 'Build macOS Intel'
+        required: false
+        type: boolean
+        default: true
+      build_windows:
+        description: 'Build Windows x64'
+        required: false
+        type: boolean
+        default: true
+      build_linux:
+        description: 'Build Linux x64'
+        required: false
+        type: boolean
+        default: true
+
+jobs:
+  build-macos-arm64:
+    if: ${{ github.event.inputs.build_macos_arm64 == 'true' || github.event.inputs.build_macos_arm64 == '' }}
+    runs-on: macos-14
+
+    steps:
+    - uses: actions/checkout@v3
+
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.11'
+
+    - name: Create macOS icon
+      run: |
+        if [ ! -f "app_icon.icns" ]; then
+          ./create_icon.sh
+        fi
+
+    - name: Install dependencies
+      run: |
+        pip install pyinstaller
+        pip install -r requirements.txt
+
+    - name: Build app
+      run: |
+        pyinstaller bitsota.spec
+      env:
+        MACOSX_DEPLOYMENT_TARGET: '11.0'
+
+    - name: Install create-dmg
+      run: |
+        brew install create-dmg
+
+    - name: Create DMG
+      run: |
+        create-dmg \
+          --volname "BitSota" \
+          --window-pos 200 120 \
+          --window-size 600 400 \
+          --icon-size 100 \
+          --icon "BitSota.app" 175 190 \
+          --hide-extension "BitSota.app" \
+          --app-drop-link 425 190 \
+          "dist/BitSota.dmg" \
+          "dist/BitSota.app"
+
+    - name: Configure AWS CLI for DigitalOcean Spaces
+      run: |
+        pip install awscli
+        aws configure set aws_access_key_id ${{ secrets.ACCESS_KEY_DIGITALOCEAN }}
+        aws configure set aws_secret_access_key ${{ secrets.SECRET_KEY_DIGITALOCEAN }}
+
+    - name: Upload to DigitalOcean Spaces
+      run: |
+        aws s3 cp dist/BitSota.dmg s3://${{ secrets.SPACES_BUCKET_DIGITALOCEAN }}/builds/macos-arm64/BitSota.dmg \
+          --endpoint-url ${{ secrets.SPACES_ENDPOINT_DIGITALOCEAN }} \
+          --acl public-read
+
+  build-macos-intel:
+    if: ${{ github.event.inputs.build_macos_intel == 'true' || github.event.inputs.build_macos_intel == '' }}
+    runs-on: macos-13
+
+    steps:
+    - uses: actions/checkout@v3
+
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.10'
+
+    - name: Create macOS icon
+      run: |
+        if [ ! -f "app_icon.icns" ]; then
+          ./create_icon.sh
+        fi
+
+    - name: Install dependencies
+      run: |
+        pip install pyinstaller
+        pip install -r requirements.txt
+
+    - name: Build app
+      run: |
+        pyinstaller bitsota.spec
+      env:
+        MACOSX_DEPLOYMENT_TARGET: '11.0'
+
+    - name: Install create-dmg
+      run: |
+        brew install create-dmg
+
+    - name: Create DMG
+      run: |
+        create-dmg \
+          --volname "BitSota" \
+          --window-pos 200 120 \
+          --window-size 600 400 \
+          --icon-size 100 \
+          --icon "BitSota.app" 175 190 \
+          --hide-extension "BitSota.app" \
+          --app-drop-link 425 190 \
+          "dist/BitSota.dmg" \
+          "dist/BitSota.app"
+
+    - name: Configure AWS CLI for DigitalOcean Spaces
+      run: |
+        pip install awscli
+        aws configure set aws_access_key_id ${{ secrets.ACCESS_KEY_DIGITALOCEAN }}
+        aws configure set aws_secret_access_key ${{ secrets.SECRET_KEY_DIGITALOCEAN }}
+
+    - name: Upload to DigitalOcean Spaces
+      run: |
+        aws s3 cp dist/BitSota.dmg s3://${{ secrets.SPACES_BUCKET_DIGITALOCEAN }}/builds/macos-intel/BitSota.dmg \
+          --endpoint-url ${{ secrets.SPACES_ENDPOINT_DIGITALOCEAN }} \
+          --acl public-read
+
+  build-windows-x64:
+    if: ${{ github.event.inputs.build_windows == 'true' || github.event.inputs.build_windows == '' }}
+    runs-on: windows-latest
+
+    steps:
+    - uses: actions/checkout@v3
+
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.10'
+
+    - name: Create Windows icon
+      run: |
+        choco install imagemagick -y
+        magick convert new_gui/images/main_icon.svg -define icon:auto-resize=256,128,64,48,32,16 app_icon.ico
+      shell: powershell
+
+    - name: Install OpenSSL via vcpkg
+      run: |
+        vcpkg install openssl:x64-windows-static-md
+        echo "VCPKG_ROOT=C:\vcpkg" >> $env:GITHUB_ENV
+        echo "OPENSSL_DIR=C:\vcpkg\installed\x64-windows-static-md" >> $env:GITHUB_ENV
+      shell: powershell
+
+    - name: Install dependencies
+      run: |
+        pip install --no-cache-dir pyinstaller
+        pip install --no-cache-dir torch torchvision --index-url https://download.pytorch.org/whl/cpu
+        pip install --no-cache-dir -r requirements.txt
+      env:
+        OPENSSL_DIR: C:\vcpkg\installed\x64-windows-static-md
+
+    - name: Build app
+      run: |
+        pyinstaller bitsota.spec
+
+    - name: Configure AWS CLI for DigitalOcean Spaces
+      run: |
+        pip install awscli
+        aws configure set aws_access_key_id ${{ secrets.ACCESS_KEY_DIGITALOCEAN }}
+        aws configure set aws_secret_access_key ${{ secrets.SECRET_KEY_DIGITALOCEAN }}
+
+    - name: Upload to DigitalOcean Spaces
+      run: |
+        aws s3 cp dist/BitSota.exe s3://${{ secrets.SPACES_BUCKET_DIGITALOCEAN }}/builds/windows-x64/BitSota.exe --endpoint-url ${{ secrets.SPACES_ENDPOINT_DIGITALOCEAN }} --acl public-read
+
+  build-linux-x64:
+    if: ${{ github.event.inputs.build_linux == 'true' || github.event.inputs.build_linux == '' }}
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v3
+
+    - name: Free up disk space
+      run: |
+        sudo rm -rf /usr/share/dotnet
+        sudo rm -rf /opt/ghc
+        sudo rm -rf /usr/local/share/boost
+        sudo rm -rf "$AGENT_TOOLSDIRECTORY"
+        df -h
+
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.10'
+
+    - name: Install dependencies
+      run: |
+        pip install --no-cache-dir pyinstaller
+        pip install --no-cache-dir torch torchvision --index-url https://download.pytorch.org/whl/cpu
+        pip install --no-cache-dir -r requirements.txt
+
+    - name: Build app
+      run: |
+        pyinstaller bitsota.spec
+
+    - name: Create tarball
+      run: |
+        cd dist
+        tar -czf BitSota-linux-x64.tar.gz BitSota/
+        cd ..
+
+    - name: Configure AWS CLI for DigitalOcean Spaces
+      run: |
+        pip install awscli
+        aws configure set aws_access_key_id ${{ secrets.ACCESS_KEY_DIGITALOCEAN }}
+        aws configure set aws_secret_access_key ${{ secrets.SECRET_KEY_DIGITALOCEAN }}
+
+    - name: Upload to DigitalOcean Spaces
+      run: |
+        aws s3 cp dist/BitSota-linux-x64.tar.gz s3://${{ secrets.SPACES_BUCKET_DIGITALOCEAN }}/builds/linux-x64/BitSota-linux-x64.tar.gz \
+          --endpoint-url ${{ secrets.SPACES_ENDPOINT_DIGITALOCEAN }} \
+          --acl public-read
