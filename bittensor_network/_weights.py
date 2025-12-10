@@ -1,7 +1,6 @@
 import logging
 import threading
 
-import bittensor as bt
 import torch
 
 from . import _state as S

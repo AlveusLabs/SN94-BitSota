@@ -1,5 +1,4 @@
 from pathlib import Path
-import bittensor as bt
 import yaml
 from collections import UserDict
 

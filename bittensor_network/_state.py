@@ -1,5 +1,4 @@
 import logging
-import bittensor as bt
 import torch
 
 
