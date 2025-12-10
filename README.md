@@ -99,9 +99,9 @@ See detailed setup guides:
 git clone https://github.com/AlveusLabs/BitSota.git
 cd BitSota
 pip install -r requirements.txt
+pip install -e .
 
-cp validator_config.yaml.example validator_config.yaml
-# Edit validator_config.yaml
+Edit validator_config.yaml
 
 python scripts/generate_evm.py --wallet-name your_wallet --hotkey your_hotkey # or use an existing EVM wallet
 python neurons/validator_node.py
