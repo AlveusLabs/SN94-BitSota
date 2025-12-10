@@ -4,7 +4,7 @@ with open("README.md", "r") as fh:
     long_description = fh.read()
 
 setuptools.setup(
-    name="distributed-automl",
+    name="bitsota",
     version="0.0.1",
     description="A distributed AutoML package",
     long_description=long_description,

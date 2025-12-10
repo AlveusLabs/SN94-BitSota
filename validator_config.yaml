@@ -1,0 +1,28 @@
+netuid: 402
+wallet_name: "val1"
+wallet_hotkey: "val1_hot"
+path: "~/.bittensor/wallets/"
+evm_key_path: "~/.bittensor/wallets/val1/h160/val1_hot"
+network: "test"
+epoch_length: 100
+subtensor_chain_endpoint: "wss://test.finney.opentensor.ai:443"
+
+contract:
+  rpc_url: "https://test.chain.opentensor.ai"
+  address: "0x2629eD4E44B74f2A0883Cc7bEDEA4C9b9a0BaFD9"
+  abi_file: "capacitor_abi.json"
+
+relay:
+  url: "https://relay.bitsota.com"
+  poll_interval_seconds: 60
+
+submission_schedule:
+  mode: "immediate"
+  interval_seconds: 0
+  utc_times: []
+
+submission_threshold:
+  mode: "sota_only"        # switch to "local_best" to keep voting above your best local score
+
+blacklist:
+  cutoff_percentage: 0.1

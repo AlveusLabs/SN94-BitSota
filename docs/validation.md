@@ -46,6 +46,7 @@ Validators must have sufficient ALPHA stake to be recognized by the Metagraph. C
 git clone https://github.com/AlveusLabs/BitSota.git
 cd BitSota
 pip install -r requirements.txt
+pip install -e .
 ```
 
 **2. Create Bittensor Wallet**
