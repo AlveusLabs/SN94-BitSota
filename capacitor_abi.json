@@ -1,0 +1,405 @@
+[
+  {
+    "inputs": [
+      {"internalType": "address", "name": "_trustee1", "type": "address"},
+      {"internalType": "address", "name": "_trustee2", "type": "address"},
+      {"internalType": "address", "name": "_trustee3", "type": "address"}
+    ],
+    "stateMutability": "payable",
+    "type": "constructor"
+  },
+  {
+    "anonymous": false,
+    "inputs": [
+      {"indexed": true, "internalType": "address", "name": "trustee", "type": "address"},
+      {"indexed": false, "internalType": "bytes32", "name": "recipientColdkey", "type": "bytes32"},
+      {"indexed": false, "internalType": "uint256", "name": "newScore", "type": "uint256"}
+    ],
+    "name": "VoteCast",
+    "type": "event"
+  },
+  {
+    "anonymous": false,
+    "inputs": [
+      {"indexed": false, "internalType": "bytes32", "name": "recipientColdkey", "type": "bytes32"},
+      {"indexed": false, "internalType": "uint256", "name": "stakeAmount", "type": "uint256"},
+      {"indexed": false, "internalType": "uint256", "name": "newScore", "type": "uint256"}
+    ],
+    "name": "AllRewardsDistributed",
+    "type": "event"
+  },
+  {
+    "anonymous": false,
+    "inputs": [],
+    "name": "VoteReset",
+    "type": "event"
+  },
+  {
+    "anonymous": false,
+    "inputs": [
+      {"indexed": false, "internalType": "bool", "name": "isPaused", "type": "bool"}
+    ],
+    "name": "ContractPaused",
+    "type": "event"
+  },
+  {
+    "anonymous": false,
+    "inputs": [],
+    "name": "ContractBurned",
+    "type": "event"
+  },
+  {
+    "anonymous": false,
+    "inputs": [
+      {"indexed": false, "internalType": "bytes32", "name": "hotkey", "type": "bytes32"},
+      {"indexed": false, "internalType": "uint16", "name": "netuid", "type": "uint16"}
+    ],
+    "name": "HotkeyRegistered",
+    "type": "event"
+  },
+  {
+    "anonymous": false,
+    "inputs": [
+      {"indexed": false, "internalType": "bytes32", "name": "coldkey", "type": "bytes32"}
+    ],
+    "name": "ContractColdkeySet",
+    "type": "event"
+  },
+  {
+    "anonymous": false,
+    "inputs": [
+      {"indexed": false, "internalType": "uint256", "name": "currentVotes", "type": "uint256"},
+      {"indexed": false, "internalType": "uint256", "name": "required", "type": "uint256"}
+    ],
+    "name": "DebugVoteProgress",
+    "type": "event"
+  },
+  {
+    "inputs": [
+      {"internalType": "uint16", "name": "netuid", "type": "uint16"},
+      {"internalType": "bytes32", "name": "hotkey", "type": "bytes32"}
+    ],
+    "name": "registerHotkey",
+    "outputs": [],
+    "stateMutability": "payable",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {"internalType": "bytes32", "name": "coldkey", "type": "bytes32"}
+    ],
+    "name": "setContractColdkey",
+    "outputs": [],
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {"internalType": "bytes32", "name": "recipientColdkey", "type": "bytes32"},
+      {"internalType": "uint256", "name": "newScore", "type": "uint256"}
+    ],
+    "name": "releaseReward",
+    "outputs": [],
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {"internalType": "bool", "name": "_paused", "type": "bool"}
+    ],
+    "name": "setPaused",
+    "outputs": [],
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "inputs": [],
+    "name": "burn",
+    "outputs": [],
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {"internalType": "address", "name": "addr", "type": "address"}
+    ],
+    "name": "isTrustee",
+    "outputs": [
+      {"internalType": "bool", "name": "", "type": "bool"}
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [],
+    "name": "getBalance",
+    "outputs": [
+      {"internalType": "uint256", "name": "", "type": "uint256"}
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [],
+    "name": "getOwnedStake",
+    "outputs": [
+      {"internalType": "uint256", "name": "", "type": "uint256"}
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [],
+    "name": "getTotalHotkeyStake",
+    "outputs": [
+      {"internalType": "uint256", "name": "", "type": "uint256"}
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [],
+    "name": "getVotingStatus",
+    "outputs": [
+      {"internalType": "bytes32", "name": "currentRecipient", "type": "bytes32"},
+      {"internalType": "uint256", "name": "currentScore", "type": "uint256"},
+      {"internalType": "uint256", "name": "currentVoteCount", "type": "uint256"},
+      {"internalType": "uint256", "name": "votesNeeded", "type": "uint256"}
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [],
+    "name": "getDebugBasic",
+    "outputs": [
+      {"internalType": "address", "name": "lastSender", "type": "address"},
+      {"internalType": "uint256", "name": "lastTime", "type": "uint256"},
+      {"internalType": "bytes32", "name": "lastRecipient", "type": "bytes32"},
+      {"internalType": "uint256", "name": "totalAttempts", "type": "uint256"}
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [],
+    "name": "getDebugVotes",
+    "outputs": [
+      {"internalType": "bool", "name": "trustee1Voted", "type": "bool"},
+      {"internalType": "bool", "name": "trustee2Voted", "type": "bool"},
+      {"internalType": "bool", "name": "trustee3Voted", "type": "bool"}
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [],
+    "name": "getDebugStakes",
+    "outputs": [
+      {"internalType": "uint256", "name": "ownedStake", "type": "uint256"},
+      {"internalType": "uint256", "name": "totalHotkeyStake_", "type": "uint256"}
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [],
+    "name": "getDebugIdentity",
+    "outputs": [
+      {"internalType": "bytes32", "name": "coldkey_", "type": "bytes32"},
+      {"internalType": "bytes32", "name": "hotkey_", "type": "bytes32"},
+      {"internalType": "uint16", "name": "netuid_", "type": "uint16"}
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {"internalType": "address", "name": "addr", "type": "address"}
+    ],
+    "name": "checkAddressStatus",
+    "outputs": [
+      {"internalType": "bool", "name": "isTrusteeAddress", "type": "bool"},
+      {"internalType": "bool", "name": "hasVotedInCurrentRound", "type": "bool"}
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [],
+    "name": "trustee1",
+    "outputs": [
+      {"internalType": "address", "name": "", "type": "address"}
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [],
+    "name": "trustee2",
+    "outputs": [
+      {"internalType": "address", "name": "", "type": "address"}
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [],
+    "name": "trustee3",
+    "outputs": [
+      {"internalType": "address", "name": "", "type": "address"}
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [],
+    "name": "REQUIRED_VOTES",
+    "outputs": [
+      {"internalType": "uint256", "name": "", "type": "uint256"}
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [],
+    "name": "deployer",
+    "outputs": [
+      {"internalType": "address", "name": "", "type": "address"}
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [],
+    "name": "paused",
+    "outputs": [
+      {"internalType": "bool", "name": "", "type": "bool"}
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [],
+    "name": "burned",
+    "outputs": [
+      {"internalType": "bool", "name": "", "type": "bool"}
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [],
+    "name": "subnet",
+    "outputs": [
+      {"internalType": "uint16", "name": "", "type": "uint16"}
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [],
+    "name": "contractHotkey",
+    "outputs": [
+      {"internalType": "bytes32", "name": "", "type": "bytes32"}
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [],
+    "name": "contractColdkey",
+    "outputs": [
+      {"internalType": "bytes32", "name": "", "type": "bytes32"}
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [],
+    "name": "latestScore",
+    "outputs": [
+      {"internalType": "uint256", "name": "", "type": "uint256"}
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [],
+    "name": "pendingRecipient",
+    "outputs": [
+      {"internalType": "bytes32", "name": "", "type": "bytes32"}
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [],
+    "name": "pendingScore",
+    "outputs": [
+      {"internalType": "uint256", "name": "", "type": "uint256"}
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [],
+    "name": "voteCount",
+    "outputs": [
+      {"internalType": "uint256", "name": "", "type": "uint256"}
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {"internalType": "address", "name": "", "type": "address"}
+    ],
+    "name": "hasVoted",
+    "outputs": [
+      {"internalType": "bool", "name": "", "type": "bool"}
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [],
+    "name": "lastAttemptedBy",
+    "outputs": [
+      {"internalType": "address", "name": "", "type": "address"}
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [],
+    "name": "lastAttemptTime",
+    "outputs": [
+      {"internalType": "uint256", "name": "", "type": "uint256"}
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [],
+    "name": "lastAttemptedRecipient",
+    "outputs": [
+      {"internalType": "bytes32", "name": "", "type": "bytes32"}
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [],
+    "name": "totalVoteAttempts",
+    "outputs": [
+      {"internalType": "uint256", "name": "", "type": "uint256"}
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "stateMutability": "payable",
+    "type": "receive"
+  }
+]
