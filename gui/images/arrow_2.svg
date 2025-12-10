@@ -1,0 +1,23 @@
+<svg width="12" height="16" viewBox="0 0 12 16" fill="none" xmlns="http://www.w3.org/2000/svg">
+<mask id="mask0_510_1396" style="mask-type:alpha" maskUnits="userSpaceOnUse" x="0" y="0" width="12" height="16">
+<circle cx="1.26316" cy="1.26334" r="1.26316" fill="#02324F"/>
+<circle cx="1.26316" cy="1.26316" r="1.26316" transform="matrix(-1 0 0 1 8.84277 9.47363)" fill="#02324F"/>
+<circle cx="4.42038" cy="4.42136" r="1.26316" fill="#02324F"/>
+<circle cx="1.26316" cy="1.26316" r="1.26316" transform="matrix(-1 0 0 1 5.68457 12.6318)" fill="#02324F"/>
+<circle cx="7.57859" cy="7.57859" r="1.26316" fill="#02324F"/>
+<circle cx="4.42038" cy="1.26316" r="1.26316" fill="#02324F"/>
+<circle cx="1.26316" cy="1.26316" r="1.26316" transform="matrix(-1 0 0 1 5.68457 9.47357)" fill="#02324F"/>
+<circle cx="7.57859" cy="4.42136" r="1.26316" fill="#02324F"/>
+<circle cx="1.26316" cy="1.26316" r="1.26316" transform="matrix(-1 0 0 1 2.52734 12.6318)" fill="#02324F"/>
+<circle cx="10.7368" cy="7.57859" r="1.26316" fill="#02324F"/>
+</mask>
+<g mask="url(#mask0_510_1396)">
+<rect x="-4.4209" y="-2.52631" width="19.5789" height="20.2105" fill="url(#paint0_linear_510_1396)"/>
+</g>
+<defs>
+<linearGradient id="paint0_linear_510_1396" x1="-4.4209" y1="7.57896" x2="15.158" y2="7.57896" gradientUnits="userSpaceOnUse">
+<stop stop-color="#150049"/>
+<stop offset="1" stop-color="#150049" stop-opacity="0.3"/>
+</linearGradient>
+</defs>
+</svg>
