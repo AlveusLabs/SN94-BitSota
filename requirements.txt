@@ -1,0 +1,14 @@
+bittensor
+numpy
+pandas
+pydantic
+PyNaCl
+PySide6
+PyYAML
+Requests
+scikit-learn
+setuptools
+SQLAlchemy
+substrate_interface
+torch
+web3
