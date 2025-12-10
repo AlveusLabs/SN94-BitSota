@@ -8,7 +8,6 @@ torch_data = collect_data_files('torch')
 torch_binaries = collect_dynamic_libs('torch')
 numpy_data = collect_data_files('numpy')
 
-# Build datas list conditionally
 datas = [
     ('gui/images', 'gui/images'),
 ]
