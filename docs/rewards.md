@@ -8,7 +8,7 @@ BitSota uses multiple reward systems that work together. Understanding how they 
 Standard TAO/ALPHA emissions distributed by the Bittensor protocol based on validator weights.
 
 **2. Capacitor Smart Contract**
-Bonus rewards for exceptional algorithm discoveries, funded by validators burning their stake.
+Bonus rewards for exceptional algorithm discoveries.
 
 **3. Pool Reputation System**
 For pool miners, reputation converts to RAO rewards at epoch boundaries.
@@ -41,15 +41,8 @@ Validators run WeightManager which evaluates miners and sets on-chain weights ev
 The Capacitor contract provides immediate bonuses for discovering breakthrough algorithms.
 
 ### How It Works
-
 **Funding:**
-The contract is funded  by running burn_script.py which:
-1. Takes ALPHA stake
-2. Burns 2/3 (permanently destroyed)
-3. Unstakes 1/3
-4. Transfers that 1/3 to Capacitor contract
-
-The burn cost ensures validators only fund when subnet produces value.
+The contract is funded through emissions meant for miner rewards. These are sent to the capacitor contract. 
 
 **Voting:**
 When a miner submits an algorithm that beats SOTA:
@@ -86,7 +79,6 @@ If your claimed score differs from validator's score by more than 10%, validator
 Discovering SOTA-breaking algorithms can yield large instant rewards (entire contract balance). But this is competitive - only the best submission wins.
 
 **For Validators:**
-Funding the contract costs stake (2/3 burned + 1/3 transferred). Validators only do this when they believe:
 - Subnet is producing valuable algorithms
 - Higher subnet reputation attracts more participants
 - Long-term emissions outweigh short-term costs
@@ -207,15 +199,6 @@ RAO = (21 / 5000) × 1,000,000,000 × 0.95
 ```
 Your share = (1000 / 10000) × 1000 = 100 ALPHA/day
 ```
-
-**Funding Capacitor:**
-If you fund contract with 300 ALPHA:
-- Burned: 200 ALPHA (cost)
-- Transferred to contract: 100 ALPHA (will be distributed to miners)
-- Net cost: 200 ALPHA
-
-You'd need 2 days of earnings to break even on funding.
-
 ## Maximizing Rewards
 
 ### For Direct Miners
@@ -252,17 +235,6 @@ Monitor pool population. Overpopulated pools mean smaller shares. Consider switc
 **Set Accurate Weights:**
 WeightManager does this automatically, but monitoring miner quality helps subnet reputation which increases your emissions.
 
-**Strategic Contract Funding:**
-Only fund Capacitor when:
-- Miners are producing high-quality results
-- Subnet morale needs boosting
-- You want to encourage more mining participation
-
-**Stake Management:**
-Higher stake = higher emissions. Balance between:
-- Staking for emissions
-- Holding liquid for flexibility
-- Diversifying across subnets
 
 ## Understanding Reward Timing
 
@@ -282,11 +254,8 @@ Note: Not financial advice. Consult a tax professional.
 
 **Staking Rewards:** Tax treatment varies by jurisdiction
 
-**Burning Stake:** May be deductible as business expense
-
 **Track:**
 - All incoming rewards (date, amount, source)
-- All burns and contract funding
 - Wallet addresses and transaction hashes
 
 Many jurisdictions require reporting crypto income even if not converted to fiat.
@@ -314,12 +283,6 @@ This will enable:
 Monitor Discord for L2Pool launch announcements.
 
 ## Common Questions
-
-[//]: # ()
-[//]: # (**Q: Why do validators burn stake to fund rewards?**)
-
-[//]: # (A: Creates skin in the game. Validators only fund when subnet produces value, aligning incentives.)
-
 **Q: Can I earn from both direct mining and pool mining?**
 A: Yes, run separate miners with different wallets. Don't use same wallet for both or pool may reject you.
 

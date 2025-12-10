@@ -195,34 +195,6 @@ Shows:
 - Which trustees have voted
 - Contract's available stake balance
 
-[//]: # (## Funding the Contract)
-
-[//]: # ()
-[//]: # ([//]: # &#40;The Capacitor contract needs ALPHA stake to distribute rewards. Validators fund it by running the burn script:&#41;)
-[//]: # ()
-[//]: # (```bash)
-
-[//]: # (python scripts/burn_script.py --wallet validator_wallet --amount 100000)
-
-[//]: # (```)
-
-[//]: # ()
-[//]: # (This script:)
-
-[//]: # (1. Takes specified amount of your ALPHA stake)
-
-[//]: # (2. Burns 2/3 &#40;destroyed forever as a cost&#41;)
-
-[//]: # (3. Unstakes 1/3)
-
-[//]: # (4. Transfers that 1/3 to the Capacitor contract)
-
-[//]: # ()
-[//]: # (The burn mechanism ensures validators only fund the contract when they believe the subnet produces valuable results.)
-
-[//]: # ()
-[//]: # (**Warning:** Only run this script when you intend to fund rewards. The burned stake is permanently destroyed.)
-
 ## Weight Management
 
 Validators set on-chain weights to indicate miner performance. This affects future network emissions.

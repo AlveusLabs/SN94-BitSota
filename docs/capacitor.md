@@ -5,7 +5,6 @@
 
 * RPC access: `https://test.chain.opentensor.ai`
 * Foundry (`cast`) and `btcli` installed
-* Three trustees funded
 * Deployer funded and contract deployed
 * Contract’s hotkey, coldkey, and recipient coldkey in bytes32
 * Optionally: ss58 versions for `btcli`
