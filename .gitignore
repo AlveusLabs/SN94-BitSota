@@ -1,0 +1,11 @@
+.idea/
+*__pycache*
+build/
+dist/
+dist_new/
+.DS_Store
+*.dmg
+*.egg-info/
+*.Identifier
+venv/
+*.pyc
