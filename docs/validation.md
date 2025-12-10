@@ -1,6 +1,6 @@
 # Validator Guide
 
-Validators in AutoMLInfinite evaluate miner submissions, verify algorithm quality, and vote on rewards through a smart contract voting system.
+Validators in BitSota evaluate miner submissions, verify algorithm quality, and vote on rewards through a smart contract voting system.
 
 ## What is a Validator?
 
