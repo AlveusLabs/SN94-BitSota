@@ -9,7 +9,7 @@ torch_binaries = collect_dynamic_libs('torch')
 numpy_data = collect_data_files('numpy')
 
 datas = [
-    ('gui/images', 'gui/images'),
+    ('gui/images'),
 ]
 
 datas.extend(torch_data)
