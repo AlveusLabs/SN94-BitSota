@@ -1,6 +1,6 @@
 # Direct Mining Guide (Task-Agnostic)
 
-Direct mining in AutoMLInfinite means you evolve candidate learning systems locally and submit promising results to validators via the relay. We’re challenge-driven and **the very first challenge on this subnet is an AutoML-Zero replication** (baseline reproduction + incremental improvements).
+Direct mining in BitSota means you evolve candidate learning systems locally and submit promising results to validators via the relay. We’re challenge-driven and **the very first challenge on this subnet is an AutoML-Zero replication** (baseline reproduction + incremental improvements).
 
 ## What is Direct Mining?
 
@@ -39,68 +39,11 @@ A single mining run can span tens to hundreds of generations; each generation ev
 
 ## Setup
 
-**1) Install**
 
-```bash
-git clone https://github.com/AlveusLabs/AutoMLInfinite.git
-cd AutoMLInfinite
-pip install -r requirements.txt
-```
+**Desktop GUI:**
 
-**2) Wallet**
-
-```bash
-btcli wallet new_coldkey --wallet.name your_wallet
-btcli wallet new_hotkey  --wallet.name your_wallet --wallet.hotkey your_hotkey
-```
-
-**3) Register on Subnet**
-
-```bash
-btcli subnet register --netuid 402 --wallet.name your_wallet --wallet.hotkey your_hotkey
-```
-
-**4) Configure Miner**
-
-```bash
-cp miner_config.yaml.example miner_config.yaml
-```
-
-Edit `miner_config.yaml` (example, keep it generic):
-
-```yaml
-wallet:
-  wallet_name: "your_wallet"
-  hotkey_name: "your_hotkey"
-  mock_wallet: false
-
-mining:
-  mode: "direct"
-  # challenge is selected at runtime from the relay/validators; leave task unset or "auto"
-  task_type: "auto"
-  engine_type: "archive"
-  verbose: false
-
-evolution:
-  max_generations: 150
-  verbose: false
-
-validators:
-  - "https://relay.bitsota.ai"
-```
-
-## Running
-
-**CLI:**
-
-```bash
-python neurons/miner.py --config miner_config.yaml
-```
-
-**Desktop GUI (optional):**
-
-* Install the app, open “Direct Mining”
-* Select wallet/hotkey
+* Install the app
+* Load a hotkey from your machine or import one
 * Pick **current challenge** (default = latest active)
 * Start mining
 
