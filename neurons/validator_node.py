@@ -8,7 +8,7 @@ from pathlib import Path
 import traceback
 from bittensor_network import BittensorNetwork
 from bittensor_network.bittensor_config import BittensorConfig
-from contract_manager import ContractManager
+from validator.contract_manager import ContractManager
 from validator.weight_manager import WeightManager
 from validator.relay_client import RelayClient
 from validator.relay_poller import RelayPoller
