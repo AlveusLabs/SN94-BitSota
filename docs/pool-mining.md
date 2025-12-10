@@ -180,7 +180,7 @@ Accumulate at least 5,000,000 RAO before withdrawing.
 
 ## Pool Service Architecture
 
-The pool mining system runs independently at https://pool.bitsota.ai. For technical details and source code, see:
+The pool mining system runs independently at https://pool.bitsota.com. For technical details and source code, see:
 
 The pool service handles:
 - Miner registration and authentication

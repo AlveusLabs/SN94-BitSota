@@ -56,7 +56,7 @@ btcli wallet new_hotkey --wallet.name validator_wallet --wallet.hotkey validator
 
 **3. Register as Validator**
 ```bash
-btcli subnet register --netuid 402 --wallet.name validator_wallet --wallet.hotkey validator_hotkey
+btcli subnet register --netuid 94 --wallet.name validator_wallet --wallet.hotkey validator_hotkey
 ```
 
 **4. Setup EVM Key**
@@ -77,7 +77,7 @@ cp validator_config.yaml.example validator_config.yaml
 
 Edit `validator_config.yaml`:
 ```yaml
-netuid: 402
+netuid: 94
 wallet_name: "validator_wallet"
 wallet_hotkey: "validator_hotkey"
 evm_key_path: "~/.bittensor/evm_keys/validator.json"
@@ -88,7 +88,7 @@ contract:
   address: "0xYourCapacitorContractAddress"
 
 relay:
-  url: "https://relay.hivetensor.com"
+  url: "https://relay.bitsota.com"
   poll_interval_seconds: 60
 
 # Optional contract submission schedule

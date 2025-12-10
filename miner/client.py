@@ -553,7 +553,7 @@ class PoolClient:
     def __init__(
         self,
         public_address: str,
-        base_url: str = "https://pool.hivetensor.com/",
+        base_url: str = "https://pool.bitsota.com/",
     ):
         self.public_address = public_address
         self.base_url = base_url.rstrip("/")
@@ -618,7 +618,7 @@ class PoolClient:
 
         raise RuntimeError("Unexpected end of retry loop")
 
-    def submit_evolution(  # TODO: how come not used? if not needed we can delete to reduce confusion
+    def submit_evolution(
         self,
         batch_id: str,
         evolved_function: str,

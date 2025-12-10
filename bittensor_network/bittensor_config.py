@@ -60,7 +60,7 @@ class BittensorConfig:
         if endpoint:
             setattr(bt_config.subtensor, "chain_endpoint", endpoint)
         if not hasattr(bt_config, "netuid") or bt_config.netuid is None:
-            bt_config.netuid = y.get("netuid", 49)
+            bt_config.netuid = y.get("netuid", 94)
 
         if not hasattr(bt_config, "epoch_length") or bt_config.epoch_length is None:
             bt_config.epoch_length = y.get("epoch_length", 100)
