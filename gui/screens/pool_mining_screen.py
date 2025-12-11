@@ -521,7 +521,7 @@ class PoolMiningScreen(QWidget):
             self.thread_pool.start(self.mining_task)
 
             self.is_mining = True
-            self.join_pool_btn.update_icon("gui/images/stop.svg")
+            self.join_pool_btn.update_icon(resource_path("gui/images/stop.svg"))
             self.join_pool_btn.update_text("Leave Pool")
             self.join_pool_btn.setObjectName("stop_mining_button")
             self.join_pool_btn.setStyleSheet("")

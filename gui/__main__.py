@@ -1,3 +1,4 @@
+import os
 import sys
 import multiprocessing
 from pathlib import Path
@@ -10,21 +11,33 @@ def setup_logging():
     log_file = log_dir / f"debug_{datetime.now().strftime('%Y%m%d_%H%M%S')}.log"
 
     class Tee:
-        def __init__(self, file):
+        def __init__(self, file, terminal):
             self.file = file
-            self.terminal = sys.stdout
+            # In a windowed app sys.stdout can be None; fall back to a devnull handle
+            self.terminal = terminal
 
         def write(self, message):
-            self.terminal.write(message)
+            if self.terminal:
+                try:
+                    self.terminal.write(message)
+                    self.terminal.flush()
+                except Exception:
+                    # If the terminal stream is not writable, ignore and keep logging to file
+                    pass
             self.file.write(message)
             self.file.flush()
 
         def flush(self):
-            self.terminal.flush()
+            if self.terminal:
+                try:
+                    self.terminal.flush()
+                except Exception:
+                    pass
             self.file.flush()
 
     log_handle = open(log_file, 'w', buffering=1)
-    sys.stdout = Tee(log_handle)
+    terminal = sys.stdout if sys.stdout is not None else open(os.devnull, 'w')
+    sys.stdout = Tee(log_handle, terminal)
     sys.stderr = sys.stdout
 
     return log_file, log_handle

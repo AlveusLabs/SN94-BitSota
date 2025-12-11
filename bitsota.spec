@@ -2,23 +2,31 @@
 import os
 import sys
 import platform
-from PyInstaller.utils.hooks import collect_data_files, collect_dynamic_libs
+from PyInstaller.utils.hooks import (
+    collect_all,
+    collect_data_files,
+    collect_dynamic_libs,
+)
 
 torch_data = collect_data_files('torch')
 torch_binaries = collect_dynamic_libs('torch')
 numpy_data = collect_data_files('numpy')
+# Pull in all PySide6 plugins (styles, icon engines, etc.) and any bundled resources
+pyside_datas, pyside_binaries, pyside_hidden = collect_all('PySide6')
 
 datas = [
-    ('gui/images'),
+    # Bundle GUI assets into the dist folder (source, target_dir)
+    ('gui/images', 'gui/images'),
 ]
 
 datas.extend(torch_data)
 datas.extend(numpy_data)
+datas.extend(pyside_datas)
 
 a = Analysis(
     ['gui/__main__.py'],
     pathex=[],
-    binaries=torch_binaries,
+    binaries=torch_binaries + pyside_binaries,
     datas=datas,
     hiddenimports=[
         'PIL',
@@ -75,7 +83,7 @@ a = Analysis(
         'multiprocessing.util',
         'multiprocessing.pool',
         'multiprocessing.queues'
-    ],
+    ] + pyside_hidden,
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],

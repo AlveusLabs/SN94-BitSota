@@ -275,7 +275,7 @@ class MiningScreen(QWidget):
             return
 
         self.is_mining = True
-        self.start_mining_btn.update_icon("gui/images/stop.svg")
+        self.start_mining_btn.update_icon(resource_path("gui/images/stop.svg"))
         self.start_mining_btn.update_text("Stop Mining")
         self.start_mining_btn.setObjectName("stop_mining_button")
         self.start_mining_btn.setStyleSheet("")
