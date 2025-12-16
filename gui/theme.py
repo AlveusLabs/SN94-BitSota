@@ -311,9 +311,20 @@ class BitSOTATheme:
             background-color: rgba(21, 0, 73, 0.8);
         }}
 
+        QPushButton#primary_button QWidget#icon_container {{
+            background-color: transparent;
+            border: none;
+        }}
+
+        QPushButton#primary_button QLabel#button_text_label {{
+            background: transparent;
+            border: none;
+            color: #8EFBFF;
+        }}
+
         QPushButton#stop_mining_button {{
             background-color: {BitSOTATheme.COLOR1};
-            color: #FF0000;
+            color: {BitSOTATheme.COLOR2};
             border: none;
             border-radius: 4px;
             padding: 12px 32px;
@@ -331,6 +342,17 @@ class BitSOTATheme:
 
         QPushButton#stop_mining_button:pressed {{
             background-color: rgba(21, 0, 73, 0.8);
+        }}
+
+        QPushButton#stop_mining_button QWidget#icon_container {{
+            background-color: transparent;
+            border: none;
+        }}
+
+        QPushButton#stop_mining_button QLabel#button_text_label {{
+            background: transparent;
+            border: none;
+            color: #FF6B6B;
         }}
 
         QPushButton#secondary_button {{

@@ -275,7 +275,7 @@ class MiningScreen(QWidget):
             return
 
         self.is_mining = True
-        self.start_mining_btn.update_icon("gui/images/stop.svg")
+        self.start_mining_btn.update_icon(resource_path("gui/images/stop_mining.svg"))
         self.start_mining_btn.update_text("Stop Mining")
         self.start_mining_btn.setObjectName("stop_mining_button")
         self.start_mining_btn.setStyleSheet("")
@@ -612,7 +612,7 @@ class MiningScreen(QWidget):
         if connected:
             self.connection_status_label.setStyleSheet("color: #51cf66;")
         else:
-            self.connection_status_label.setStyleSheet("color: #74c0fc;")
+            self.connection_status_label.setStyleSheet("color: #E5484D;")
 
     def update_global_sota(self):
         if not self.main_window:

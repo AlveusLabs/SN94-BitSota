@@ -1,4 +1,4 @@
-from PySide6.QtWidgets import QPushButton, QHBoxLayout, QLabel
+from PySide6.QtWidgets import QPushButton, QHBoxLayout, QLabel, QWidget
 from PySide6.QtCore import QSize, Qt
 from PySide6.QtSvgWidgets import QSvgWidget
 
@@ -11,6 +11,7 @@ class PrimaryButton(QPushButton):
         self.setCursor(Qt.CursorShape.PointingHandCursor)
         self.icon_path = icon_path
         self.icon_widget = None
+        self.icon_container = None
         self.text_label_widget = None
 
         if icon_path:
@@ -19,12 +20,20 @@ class PrimaryButton(QPushButton):
             layout.setSpacing(8)
             layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
 
+            self.icon_container = QWidget()
+            self.icon_container.setObjectName("icon_container")
+            icon_container_layout = QHBoxLayout(self.icon_container)
+            icon_container_layout.setContentsMargins(0, 0, 0, 0)
+            icon_container_layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
+
             self.icon_widget = QSvgWidget(icon_path)
-            self.icon_widget.setFixedSize(16, 16)
-            layout.addWidget(self.icon_widget)
+            self.icon_widget.setFixedSize(20, 20)
+            icon_container_layout.addWidget(self.icon_widget)
+
+            layout.addWidget(self.icon_container)
 
             self.text_label_widget = QLabel(text)
-            self.text_label_widget.setStyleSheet("background: transparent; border: none; color: #8EFBFF;")
+            self.text_label_widget.setObjectName("button_text_label")
             layout.addWidget(self.text_label_widget)
         else:
             self.setText(text)
