@@ -53,6 +53,7 @@ jobs:
         pyinstaller bitsota.spec
       env:
         MACOSX_DEPLOYMENT_TARGET: '11.0'
+        BUILD_ARCH: 'arm64'
 
     - name: Install create-dmg
       run: |
@@ -85,7 +86,7 @@ jobs:
 
   build-macos-intel:
     if: ${{ (github.event.inputs.build_macos_intel == 'true' || github.event.inputs.build_macos_intel == '') && github.actor == 'karamazov19' }}
-    runs-on: macos-13
+    runs-on: macos-14
 
     steps:
     - uses: actions/checkout@v3
@@ -93,7 +94,7 @@ jobs:
     - name: Set up Python
       uses: actions/setup-python@v4
       with:
-        python-version: '3.10'
+        python-version: '3.11'
 
     - name: Create macOS icon
       run: |
@@ -111,6 +112,7 @@ jobs:
         pyinstaller bitsota.spec
       env:
         MACOSX_DEPLOYMENT_TARGET: '11.0'
+        BUILD_ARCH: 'x86_64'
 
     - name: Install create-dmg
       run: |
@@ -151,7 +153,7 @@ jobs:
     - name: Set up Python
       uses: actions/setup-python@v4
       with:
-        python-version: '3.10'
+        python-version: '3.11'
 
     - name: Create Windows icon
       run: |
@@ -206,7 +208,7 @@ jobs:
     - name: Set up Python
       uses: actions/setup-python@v4
       with:
-        python-version: '3.10'
+        python-version: '3.11'
 
     - name: Install dependencies
       run: |
