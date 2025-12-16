@@ -9,7 +9,7 @@ torch_binaries = collect_dynamic_libs('torch')
 numpy_data = collect_data_files('numpy')
 
 datas = [
-    ('gui/images'),
+    ('gui/images', 'gui/images')
 ]
 
 datas.extend(torch_data)
@@ -88,11 +88,15 @@ pyz = PYZ(a.pure)
 
 target_arch = None
 if sys.platform == 'darwin':
-    machine = platform.machine()
-    if machine == 'arm64':
-        target_arch = 'arm64'
+    build_arch = os.environ.get('BUILD_ARCH')
+    if build_arch:
+        target_arch = build_arch
     else:
-        target_arch = 'x86_64'
+        machine = platform.machine()
+        if machine == 'arm64':
+            target_arch = 'arm64'
+        else:
+            target_arch = 'x86_64'
 
 icon_file = None
 if sys.platform == 'darwin':
