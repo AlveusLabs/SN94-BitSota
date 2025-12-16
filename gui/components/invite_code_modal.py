@@ -195,6 +195,7 @@ class InviteCodeModal(QDialog):
             input_field.setEnabled(False)
 
     def _setup_error_state(self, error_message: str):
+        code_value = self._get_code_value()
         self._clear_content()
 
         icon_widget = QSvgWidget(resource_path("gui/images/invite_code_modal.svg"))
@@ -211,9 +212,11 @@ class InviteCodeModal(QDialog):
         """)
         self.content_layout.addWidget(message_label)
 
-        subtitle_label = QLabel("You're early. Unlock mining access with an invite code dropped during our Twitter events and giveaways")
+        subtitle_label = QLabel("You're early. Unlock mining access with an invite code dropped during our <a href='https://twitter.com' style='color: #4A9EFF; text-decoration: none;'>Twitter</a> events and giveaways")
         subtitle_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         subtitle_label.setWordWrap(True)
+        subtitle_label.setTextFormat(Qt.TextFormat.RichText)
+        subtitle_label.setOpenExternalLinks(True)
         subtitle_label.setStyleSheet("""
             color: rgba(21, 0, 73, 0.60);
             font-family: "Geist", -apple-system, BlinkMacSystemFont, sans-serif;
@@ -224,36 +227,50 @@ class InviteCodeModal(QDialog):
         self.content_layout.addWidget(subtitle_label)
 
         code_input_layout = QHBoxLayout()
-        code_input_layout.setSpacing(8)
+        code_input_layout.setSpacing(12)
 
-        code_value = self._get_code_value()
         for i, char in enumerate(code_value):
-            code_display = QLabel(char)
-            code_display.setAlignment(Qt.AlignmentFlag.AlignCenter)
-            code_display.setFixedSize(40, 48)
-            code_display.setStyleSheet("""
-                background-color: #FFFFFF;
-                color: #150049;
-                border: 1px solid rgba(21, 0, 73, 0.12);
-                border-radius: 4px;
-                font-family: "JetBrains Mono", monospace;
-                font-size: 18px;
-                font-weight: 500;
+            code_input = QLineEdit(char)
+            code_input.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            code_input.setFixedSize(40, 48)
+            code_input.setReadOnly(True)
+            code_input.setStyleSheet("""
+                QLineEdit {
+                    background-color: #FFFFFF;
+                    color: #150049;
+                    border: 2px solid #E5484D;
+                    border-radius: 4px;
+                    font-family: "JetBrains Mono", monospace;
+                    font-size: 18px;
+                    font-weight: 500;
+                    padding: 0;
+                }
             """)
-            code_input_layout.addWidget(code_display)
+            code_input_layout.addWidget(code_input)
 
         self.content_layout.addLayout(code_input_layout)
 
-        error_label = QLabel(f"⚠ {error_message}")
-        error_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        error_label.setWordWrap(True)
+        error_container = QHBoxLayout()
+        error_container.setSpacing(6)
+        error_container.setAlignment(Qt.AlignmentFlag.AlignCenter)
+
+        error_icon = QSvgWidget(resource_path("gui/images/inv_code_x.svg"))
+        error_icon.setFixedSize(14, 14)
+        error_container.addWidget(error_icon)
+
+        error_label = QLabel(error_message)
+        error_label.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
         error_label.setStyleSheet("""
-            color: #FF0000;
+            color: #E5484D;
             font-family: "Geist", -apple-system, BlinkMacSystemFont, sans-serif;
             font-size: 12px;
             font-weight: 400;
         """)
-        self.content_layout.addWidget(error_label)
+        error_container.addWidget(error_label)
+
+        error_widget = QWidget()
+        error_widget.setLayout(error_container)
+        self.content_layout.addWidget(error_widget)
 
         retry_btn = QPushButton("Try Again")
         retry_btn.setObjectName("primary_button")
@@ -303,6 +320,17 @@ class InviteCodeModal(QDialog):
             item = self.content_layout.takeAt(0)
             if item.widget():
                 item.widget().deleteLater()
+            elif item.layout():
+                self._clear_layout(item.layout())
+        self.code_inputs = []
+
+    def _clear_layout(self, layout):
+        while layout.count():
+            item = layout.takeAt(0)
+            if item.widget():
+                item.widget().deleteLater()
+            elif item.layout():
+                self._clear_layout(item.layout())
 
     def _on_code_input_changed(self, text: str, index: int):
         if text and index < 7:
