@@ -9,6 +9,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from core.dsl_parser import DSLParser
 from core.tasks.cifar10 import CIFAR10BinaryTask
+from core.evaluations import score_algorithm_on_eval_suite
 from miner.engines.archive_engine import ArchiveAwareBaselineEvolution
 
 logger = logging.getLogger(__name__)
@@ -156,17 +157,12 @@ class PoolClient:
                 logger.error(f"Unknown task type: {task_type}")
                 return None
 
-            task = task_class()
-            if hasattr(task, "sample_miner_task_spec"):
-                spec = task.sample_miner_task_spec(input_dim)
-                task.load_data(task_spec=spec)
-            else:
-                task.load_data()
+            if task_type != DEFAULT_TASK_TYPE:
+                logger.error(f"Unsupported eval task type: {task_type}")
+                return None
 
-            algorithm = DSLParser.from_dsl(algorithm_dsl, input_dim)
-            score = task.evaluate_algorithm(algorithm, epochs=1)
-            #TODO: Clarify with Ali on evaluation metrics
-            logger.info(f"Evaluation complete. Score: {score}")
+            score = score_algorithm_on_eval_suite(algorithm_dsl, input_dim=input_dim)
+            logger.info(f"Evaluation complete (deterministic eval suite). Score: {score}")
             return float(score)
 
         except Exception as e:

@@ -12,9 +12,12 @@ from PySide6.QtWidgets import (
 from PySide6.QtSvgWidgets import QSvgWidget
 from typing import Optional
 import logging
+import re
 
 from gui.components import PrimaryButton, SecondaryButton
+from gui.components.modal import ConfirmationModal
 from gui.components.invite_code_modal import InviteCodeModal
+from gui.app_config import get_app_config
 from gui.components.coming_soon_modal import ComingSoonModal
 from gui.screens.pool_mining_screen import PoolMiningScreen
 from gui.resource_path import resource_path
@@ -28,37 +31,66 @@ class GUILogHandler(logging.Handler):
         self.log_signal = log_signal
         self.stats_signal = stats_signal
         self.task = task
+        number = r"([-+]?(?:\d+\.?\d*|\d*\.?\d+)(?:[eE][-+]?\d+)?)"
+        self._re_score_verified = re.compile(rf"\bScore:\s*{number}\s*\(verified\)", re.IGNORECASE)
+        self._re_verified_score = re.compile(rf"\bverified_score\b[^0-9\-\+]*{number}", re.IGNORECASE)
+
+    def _maybe_update_best_verified(self, verified_score: float):
+        try:
+            verified_score = float(verified_score)
+        except Exception:
+            return
+        if self.task.best_score is None or verified_score > self.task.best_score:
+            self.task.best_score = verified_score
+            self.stats_signal.emit(
+                {
+                    "tasks_completed": self.task.tasks_completed,
+                    "successful_submissions": self.task.successful_submissions,
+                    "best_score": self.task.best_score,
+                }
+            )
 
     def emit(self, record):
         msg = self.format(record)
         self.log_signal.emit(msg)
 
-        if "Solution submitted to relay" in msg or "SOTA broken" in msg or ("submission" in msg.lower() and "successful" in msg.lower()):
+        if (
+            "Solution submitted to relay" in msg
+            or ("SOTA submission #" in msg and "successful" in msg.lower())
+            or ("submission" in msg.lower() and "successful" in msg.lower())
+        ):
             self.task.successful_submissions += 1
-            self.stats_signal.emit({
-                "tasks_completed": self.task.tasks_completed,
-                "successful_submissions": self.task.successful_submissions,
-                "best_score": self.task.best_score
-            })
+            best_verified = None
+            try:
+                if hasattr(self.task.client, "get_local_best_verified_score"):
+                    best_verified = self.task.client.get_local_best_verified_score(self.task.task_type)
+                elif hasattr(self.task.client, "_local_best_verified_score"):
+                    best_verified = self.task.client._local_best_verified_score.get(self.task.task_type)  # type: ignore[attr-defined]
+            except Exception:
+                best_verified = None
+            if best_verified is not None:
+                self._maybe_update_best_verified(best_verified)
+            else:
+                self.stats_signal.emit(
+                    {
+                        "tasks_completed": self.task.tasks_completed,
+                        "successful_submissions": self.task.successful_submissions,
+                        "best_score": self.task.best_score,
+                    }
+                )
 
-        if "Gen:" in msg or ("generation" in msg.lower() and "Gen" not in msg):
+        if msg.startswith("[regularized-evo]") or msg.startswith("Gen ") or "generation" in msg.lower():
             self.task.tasks_completed += 1
 
-        if "score:" in msg.lower() or "Score:" in msg:
-            try:
-                parts = msg.lower().split("score:")
-                if len(parts) > 1:
-                    score_str = parts[1].split()[0].strip(',')
-                    score = float(score_str)
-                    if self.task.best_score is None or score > self.task.best_score:
-                        self.task.best_score = score
-                        self.stats_signal.emit({
-                            "tasks_completed": self.task.tasks_completed,
-                            "successful_submissions": self.task.successful_submissions,
-                            "best_score": self.task.best_score
-                        })
-            except:
-                pass
+        m = self._re_score_verified.search(msg)
+        if m:
+            self._maybe_update_best_verified(m.group(1))
+            return
+
+        m = self._re_verified_score.search(msg)
+        if m:
+            self._maybe_update_best_verified(m.group(1))
+            return
 
 
 class DirectMiningTask(QRunnable):
@@ -88,11 +120,17 @@ class DirectMiningTask(QRunnable):
 
     @Slot()
     def run(self):
-        logger = logging.getLogger("miner.client")
+        tracked_loggers = [
+            logging.getLogger("miner"),
+            logging.getLogger("core"),
+        ]
+        previous_levels = {tracked: tracked.level for tracked in tracked_loggers}
         handler = GUILogHandler(self.signals.log, self.signals.stats_updated, self)
         handler.setFormatter(logging.Formatter('%(message)s'))
-        logger.addHandler(handler)
-        logger.setLevel(logging.INFO)
+        handler.setLevel(logging.INFO)
+        for tracked in tracked_loggers:
+            tracked.addHandler(handler)
+            tracked.setLevel(logging.INFO)
 
         try:
             self.signals.log.emit(f"Starting {self.task_type} mining with baseline engine")
@@ -117,7 +155,12 @@ class DirectMiningTask(QRunnable):
             self.signals.error.emit(f"Mining error: {e}")
             self.signals.log.emit(f"ERROR: Mining failed: {e}")
         finally:
-            logger.removeHandler(handler)
+            for tracked in tracked_loggers:
+                tracked.removeHandler(handler)
+                try:
+                    tracked.setLevel(previous_levels[tracked])
+                except Exception:
+                    pass
             self.signals.finished.emit()
 
 
@@ -266,6 +309,12 @@ class MiningScreen(QWidget):
             self.main_window._prompt_for_coldkey_address()
             return
 
+        try:
+            relay_url = self.main_window._get_relay_endpoint_from_config()
+            self._append_log(f"Relay endpoint: {relay_url}")
+        except Exception:
+            pass
+
         if not self._check_invite_code():
             self._show_invite_code_modal()
             return
@@ -275,7 +324,7 @@ class MiningScreen(QWidget):
             return
 
         self.is_mining = True
-        self.start_mining_btn.update_icon(resource_path("gui/images/stop_mining.svg"))
+        self.start_mining_btn.update_icon("gui/images/stop.svg")
         self.start_mining_btn.update_text("Stop Mining")
         self.start_mining_btn.setObjectName("stop_mining_button")
         self.start_mining_btn.setStyleSheet("")
@@ -323,6 +372,9 @@ class MiningScreen(QWidget):
             self._append_log("Stopping mining...")
 
     def _check_invite_code(self) -> bool:
+        if get_app_config().test_mode:
+            self._append_log("Test mode enabled: skipping invite code requirement.")
+            return True
         try:
             relay_url = self.main_window._get_relay_endpoint_from_config()
             msg = f"auth:{int(time.time())}"
@@ -370,6 +422,14 @@ class MiningScreen(QWidget):
             else:
                 self._append_log(f"Failed to send coldkey address: {result}")
                 return False
+        except requests.exceptions.HTTPError as e:
+            detail = ""
+            try:
+                detail = f" Response: {e.response.text}"
+            except Exception:
+                pass
+            self._append_log(f"Error sending coldkey address: {e}{detail}")
+            return False
         except Exception as e:
             self._append_log(f"Error sending coldkey address: {e}")
             return False
@@ -612,7 +672,7 @@ class MiningScreen(QWidget):
         if connected:
             self.connection_status_label.setStyleSheet("color: #51cf66;")
         else:
-            self.connection_status_label.setStyleSheet("color: #E5484D;")
+            self.connection_status_label.setStyleSheet("color: #74c0fc;")
 
     def update_global_sota(self):
         if not self.main_window:

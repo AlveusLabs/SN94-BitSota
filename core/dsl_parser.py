@@ -12,6 +12,8 @@ from .algorithm_array import (
 class DSLParser:
     """Parse DSL strings directly into AlgorithmArray format"""
 
+    _NUMBER_RE = r"[-+]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][-+]?\d+)?"
+
     @staticmethod
     def parse_address(addr: str) -> int:
         """Convert address string to integer index"""
@@ -46,6 +48,22 @@ class DSLParser:
         """Parse DSL string into AlgorithmArray"""
         lines = [l.strip() for l in dsl_str.strip().split("\n") if l.strip()]
 
+        meta = {}
+        for line in lines:
+            if not line.lower().startswith("# meta:"):
+                continue
+            payload = line.split(":", 1)[1].strip() if ":" in line else ""
+            # Accept "k=v" tokens separated by whitespace or commas.
+            for token in re.split(r"[\s,]+", payload):
+                if not token or "=" not in token:
+                    continue
+                key, value = token.split("=", 1)
+                key = key.strip().lower()
+                value = value.strip()
+                if not key or not value:
+                    continue
+                meta[key] = value
+
         # Count total instructions
         total_ops = sum(1 for line in lines if not line.startswith("#"))
 
@@ -57,7 +75,24 @@ class DSLParser:
             "learn": max(total_ops // 3, 10),
         }
 
-        array_algo = AlgorithmArray.create_empty(input_dim, phases, max_sizes)
+        def _meta_int(name: str):
+            raw = meta.get(name)
+            if raw is None:
+                return None
+            try:
+                return int(raw)
+            except Exception:
+                return None
+
+        array_algo = AlgorithmArray.create_empty(
+            input_dim,
+            phases,
+            max_sizes,
+            scalar_count=_meta_int("scalar_count"),
+            vector_count=_meta_int("vector_count"),
+            matrix_count=_meta_int("matrix_count"),
+            vector_dim=_meta_int("vector_dim"),
+        )
 
         current_phase = "predict"
 
@@ -110,15 +145,23 @@ class DSLParser:
                     return
 
         # const scalar: s0 = 0.5
-        if re.match(r"[svm]\d+\s*=\s*[\d.-]+$", line):
-            match = re.match(r"([svm]\d+)\s*=\s*([\d.-]+)", line)
+        if re.match(rf"[svm]\d+\s*=\s*{cls._NUMBER_RE}$", line, flags=re.IGNORECASE):
+            match = re.match(
+                rf"([svm]\d+)\s*=\s*({cls._NUMBER_RE})$",
+                line,
+                flags=re.IGNORECASE,
+            )
             dest = cls.parse_address(match.group(1))
             val = float(match.group(2))
             array_algo.add_instruction(phase, "CONST", -1, -1, dest, val, 0.0)
 
         # const vec: v0[3] = 1.2
-        elif re.match(r"[vV]\d+\[\d+\]\s*=\s*[\d.-]+$", line):
-            match = re.match(r"([vV]\d+)\[(\d+)\]\s*=\s*([\d.-]+)", line)
+        elif re.match(rf"[vV]\d+\[\d+\]\s*=\s*{cls._NUMBER_RE}$", line, flags=re.IGNORECASE):
+            match = re.match(
+                rf"([vV]\d+)\[(\d+)\]\s*=\s*({cls._NUMBER_RE})$",
+                line,
+                flags=re.IGNORECASE,
+            )
             dest = cls.parse_address(match.group(1))
             idx = float(match.group(2))
             val = float(match.group(3))
@@ -166,7 +209,15 @@ class DSLParser:
     @classmethod
     def to_dsl(cls, array_algo: AlgorithmArray) -> str:
         """Convert AlgorithmArray back to DSL string"""
-        lines = []
+        lines = [
+            (
+                "# meta:"
+                f" scalar_count={int(array_algo.scalar_count)}"
+                f" vector_count={int(array_algo.vector_count)}"
+                f" matrix_count={int(array_algo.matrix_count)}"
+                f" vector_dim={int(array_algo.vector_dim)}"
+            )
+        ]
 
         # Helper to format instruction
         def format_instruction(

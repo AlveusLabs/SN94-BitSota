@@ -17,6 +17,7 @@ from gui.screens import StartScreen, WalletScreen, MiningScreen, ProfileScreen
 from gui.components import Sidebar, UserGuideModal, InviteCodeModal, ColdkeyAddressModal, ComingSoonModal, UpdateAvailableModal
 from gui.resource_path import resource_path
 from gui.update_checker import UpdateChecker
+from gui.app_config import get_app_config
 
 
 class MiningWindow(QMainWindow):
@@ -180,11 +181,13 @@ class MiningWindow(QMainWindow):
 
         try:
             relay_endpoint = self._get_relay_endpoint_from_config()
+            cfg = get_app_config()
             self.client = BittensorDirectClient(
                 wallet=self.wallet,
                 relay_endpoint=relay_endpoint,
                 verbose=True,
-                contract_manager=self.contract_manager
+                contract_manager=self.contract_manager,
+                miner_task_count=cfg.miner_task_count,
             )
             print(f"Direct client created successfully with relay: {relay_endpoint}")
         except Exception as e:
@@ -193,7 +196,7 @@ class MiningWindow(QMainWindow):
 
     @staticmethod
     def _get_relay_endpoint_from_config() -> str:
-        return "https://relay.bitsota.com"
+        return get_app_config().relay_endpoint
 
     def _update_mining_screen_status(self):
         if self.wallet and hasattr(self.mining_screen, 'update_wallet_status'):

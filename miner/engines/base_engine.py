@@ -10,6 +10,7 @@ from core.tasks.cifar10 import CIFAR10BinaryTask
 
 
 DEFAULT_MINER_TASK_COUNT = int(os.getenv("MINER_TASK_COUNT", "32"))
+DEFAULT_MINER_TASK_SEED = int(os.getenv("MINER_TASK_SEED", "0"))
 
 
 class BaseEvolutionEngine:
@@ -48,9 +49,8 @@ class BaseEvolutionEngine:
         self._vector_dim = vector_dim
         self._fec_cache_size = max(0, int(fec_cache_size))
         self._fec_cache: OrderedDict = OrderedDict()
-        self._cifar_seed = cifar_seed
-        self._fixed_task_specs = None
-        self._task_spec_idx = 0
+        self._cifar_seed = DEFAULT_MINER_TASK_SEED if cifar_seed is None else int(cifar_seed)
+        self._fixed_task_specs_by_dim: Dict[int, List[object]] = {}
 
     def initialize_population(self) -> List[AlgorithmArray]:
         """Initialize the population - to be overridden by subclasses"""
@@ -98,21 +98,28 @@ class BaseEvolutionEngine:
             vector_dim=self._vector_dim,
         )
 
-    def _prepare_task_for_algorithm(self, algo: AlgorithmArray) -> None:
-        """Resample the backing task before evaluating an algorithm."""
+    def _get_fixed_miner_task_specs(self, input_dim: int):
+        """Return the fixed miner task suite for a given input dimension."""
 
-        if isinstance(self.task, CIFAR10BinaryTask):
-            if self._fixed_task_specs is None:
-                rng = np.random.default_rng(self._cifar_seed)
-                self._fixed_task_specs = []
-                for _ in range(self.miner_task_count):
-                    seed = int(rng.integers(0, 2**31 - 1))
-                    spec = self.task.sample_miner_task_spec(algo.input_dim, seed=seed)
-                    self._fixed_task_specs.append(spec)
-            spec = self._fixed_task_specs[self._task_spec_idx % len(self._fixed_task_specs)]
-            self._task_spec_idx += 1
-            self.task.load_data(task_spec=spec)
-            return
+        input_dim = int(input_dim)
+        specs = self._fixed_task_specs_by_dim.get(input_dim)
+        if specs is not None:
+            return specs
+
+        if not isinstance(self.task, CIFAR10BinaryTask):
+            self._fixed_task_specs_by_dim[input_dim] = []
+            return self._fixed_task_specs_by_dim[input_dim]
+
+        # Deterministic per (seed, input_dim) so every genome is scored on the same task suite.
+        seed = int(self._cifar_seed) + 7919 * max(1, input_dim)
+        rng = np.random.default_rng(seed)
+        specs = []
+        for _ in range(self.miner_task_count):
+            task_seed = int(rng.integers(0, 2**31 - 1))
+            specs.append(self.task.sample_miner_task_spec(input_dim, seed=task_seed))
+
+        self._fixed_task_specs_by_dim[input_dim] = specs
+        return specs
 
     def _evaluate_on_miner_tasks(self, algo: AlgorithmArray) -> float:
         """Evaluate an algorithm across multiple sampled tasks and return median fitness."""
@@ -126,10 +133,14 @@ class BaseEvolutionEngine:
                 return cached
 
         scores = []
-        for _ in range(self.miner_task_count):
-            self._prepare_task_for_algorithm(algo)
-            score = self.task.evaluate_algorithm(algo)
-            scores.append(score)
+        if isinstance(self.task, CIFAR10BinaryTask):
+            task_specs = self._get_fixed_miner_task_specs(algo.input_dim)
+            for spec in task_specs:
+                self.task.load_data(task_spec=spec)
+                scores.append(self.task.evaluate_algorithm(algo))
+        else:
+            for _ in range(self.miner_task_count):
+                scores.append(self.task.evaluate_algorithm(algo))
 
         if not scores:
             return -np.inf

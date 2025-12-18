@@ -166,7 +166,8 @@ class PoolMiningScreen(QWidget):
     def __init__(self, main_window=None, parent=None):
         super().__init__(parent)
         self.main_window = main_window
-        self.pool_endpoint = "https://api.bitsota.com"
+        from gui.app_config import get_app_config
+        self.pool_endpoint = get_app_config().pool_endpoint
         self.is_mining = False
         self.mining_task: Optional[PoolMiningTask] = None
         self.thread_pool = QThreadPool()

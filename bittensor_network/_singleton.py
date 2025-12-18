@@ -45,6 +45,7 @@ class BittensorNetwork(metaclass=_SingletonMeta):
     uid = property(lambda _: _state.WalletHolder.uid)
     device = property(lambda _: _state.WalletHolder.device)
     base_scores = property(lambda _: _state.WalletHolder.base_scores)
+    subtensor_lock = property(lambda _: _state.WalletHolder.subtensor_lock)
 
     @staticmethod
     def should_set_weights() -> bool:
@@ -58,7 +59,12 @@ class BittensorNetwork(metaclass=_SingletonMeta):
         Args:
             scores: A dictionary mapping hotkey addresses to scores
         """
-        _weights.set_weights(scores)
+        return _weights.set_weights(scores)
+
+    @staticmethod
+    def maybe_reveal_pending_weights() -> bool:  # pragma: no cover
+        """Deprecated: commit-reveal logic removed; kept for compatibility."""
+        return False
 
     def discover_contract_bots(self):
         """Discover contract bots from settings.
@@ -70,3 +76,11 @@ class BittensorNetwork(metaclass=_SingletonMeta):
 
         # Return a dictionary mapping each contract bot's ss58 address to a weight of 1.0
         return {bot_address: 1.0 for bot_address in contract_bots}
+
+    def resync_metagraph(self, lite: bool = True):
+        """Refresh metagraph from chain (recommended periodically)."""
+        with _state.WalletHolder.subtensor_lock:
+            _state.WalletHolder.metagraph = _state.WalletHolder.subtensor.metagraph(
+                _state.WalletHolder.config.netuid, lite=lite
+            )
+        return _state.WalletHolder.metagraph

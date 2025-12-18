@@ -6,13 +6,14 @@ from typing import Optional, Dict, Any
 from datetime import datetime, timedelta
 
 from gui.version import VERSION, VERSION_CODE
+from gui.app_config import get_app_config
 
 
 class UpdateChecker:
-    UPDATE_MANIFEST_URL = "https://relay.bitsota.com/version.json"
     CHECK_INTERVAL_HOURS = 24
 
     def __init__(self, settings_dir: Optional[Path] = None):
+        self.update_manifest_url = get_app_config().update_manifest_url
         if settings_dir is None:
             settings_dir = Path.home() / ".bitsota"
         self.settings_dir = settings_dir
@@ -51,13 +52,13 @@ class UpdateChecker:
         return hours_since_last_check >= self.CHECK_INTERVAL_HOURS
 
     def check_for_updates(self, force: bool = False) -> Optional[Dict[str, Any]]:
-        print(f"[UpdateChecker] Checking for updates from {self.UPDATE_MANIFEST_URL}")
+        print(f"[UpdateChecker] Checking for updates from {self.update_manifest_url}")
         print(f"[UpdateChecker] Current version: {VERSION} (code: {VERSION_CODE})")
 
         settings = self._load_update_settings()
 
         try:
-            response = requests.get(self.UPDATE_MANIFEST_URL, timeout=10)
+            response = requests.get(self.update_manifest_url, timeout=10)
             response.raise_for_status()
             manifest = response.json()
             print(f"[UpdateChecker] Server response: {manifest}")
