@@ -2,10 +2,13 @@ from collections import deque
 from copy import deepcopy
 from typing import Deque, Dict, List, Tuple, Optional
 
+import logging
 import numpy as np
 
 from core.algorithm_array import AlgorithmArray
 from .base_engine import BaseEvolutionEngine
+
+logger = logging.getLogger(__name__)
 
 
 class BaselineEvolutionEngine(BaseEvolutionEngine):
@@ -93,12 +96,28 @@ class BaselineEvolutionEngine(BaseEvolutionEngine):
         failure_count = len(scores) - success_count
 
         if self.verbose:
-            queue_best = np.max(scores) if scores else -np.inf
-            queue_mean = float(np.mean(scores)) if scores else -np.inf
-            print(
-                f"[regularized-evo] pop={len(self.population)} best={self.best_fitness:.4f} "
-                f"queue_best={queue_best:.4f} queue_mean={queue_mean:.4f} "
-                f"stagnation={self._stagnation} success={success_count} failed={failure_count}"
+            finite_scores = [float(s) for s in scores if np.isfinite(s)]
+            if finite_scores:
+                queue_best = float(np.max(finite_scores))
+                queue_median = float(np.median(finite_scores))
+                queue_q1 = float(np.percentile(finite_scores, 25))
+                queue_q3 = float(np.percentile(finite_scores, 75))
+            else:
+                queue_best = -np.inf
+                queue_median = -np.inf
+                queue_q1 = -np.inf
+                queue_q3 = -np.inf
+            logger.info(
+                "[regularized-evo] pop=%d best=%.4f queue_best=%.4f queue_q1=%.4f queue_med=%.4f queue_q3=%.4f stagnation=%d success=%d failed=%d",
+                len(self.population),
+                float(self.best_fitness),
+                float(queue_best),
+                float(queue_q1),
+                float(queue_median),
+                float(queue_q3),
+                int(self._stagnation),
+                int(success_count),
+                int(failure_count),
             )
 
         self.generation += 1

@@ -17,6 +17,7 @@ from gui.screens import StartScreen, WalletScreen, MiningScreen, ProfileScreen
 from gui.components import Sidebar, UserGuideModal, InviteCodeModal, ColdkeyAddressModal, ComingSoonModal, UpdateAvailableModal
 from gui.resource_path import resource_path
 from gui.update_checker import UpdateChecker
+from gui.app_config import get_app_config
 
 
 class MiningWindow(QMainWindow):
@@ -65,9 +66,9 @@ class MiningWindow(QMainWindow):
         app_layout.setSpacing(0)
 
         self.sidebar = Sidebar()
-        self.sidebar.add_tab("setup_wallet", "Setup Wallet", resource_path("gui/images/Wallet.svg"))
-        self.sidebar.add_tab("mining", "Mining", resource_path("gui/images/Mining.svg"))
-        self.sidebar.add_tab("profile", "Profile", resource_path("gui/images/user.svg"))
+        self.sidebar.add_tab("setup_wallet", "Setup Wallet", resource_path("new_gui/images/Wallet.svg"))
+        self.sidebar.add_tab("mining", "Mining", resource_path("new_gui/images/Mining.svg"))
+        self.sidebar.add_tab("profile", "Profile", resource_path("new_gui/images/user.svg"))
         self.sidebar.tab_changed.connect(self._on_tab_changed)
         self.sidebar.connect_wallet_clicked.connect(self._on_connect_wallet)
         self.sidebar.user_guide_clicked.connect(self._show_user_guide)
@@ -180,11 +181,13 @@ class MiningWindow(QMainWindow):
 
         try:
             relay_endpoint = self._get_relay_endpoint_from_config()
+            cfg = get_app_config()
             self.client = BittensorDirectClient(
                 wallet=self.wallet,
                 relay_endpoint=relay_endpoint,
                 verbose=True,
-                contract_manager=self.contract_manager
+                contract_manager=self.contract_manager,
+                miner_task_count=cfg.miner_task_count,
             )
             print(f"Direct client created successfully with relay: {relay_endpoint}")
         except Exception as e:
@@ -193,7 +196,7 @@ class MiningWindow(QMainWindow):
 
     @staticmethod
     def _get_relay_endpoint_from_config() -> str:
-        return "https://relay.bitsota.com"
+        return get_app_config().relay_endpoint
 
     def _update_mining_screen_status(self):
         if self.wallet and hasattr(self.mining_screen, 'update_wallet_status'):

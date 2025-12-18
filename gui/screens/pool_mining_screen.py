@@ -166,7 +166,8 @@ class PoolMiningScreen(QWidget):
     def __init__(self, main_window=None, parent=None):
         super().__init__(parent)
         self.main_window = main_window
-        self.pool_endpoint = "https://api.bitsota.com"
+        from gui.app_config import get_app_config
+        self.pool_endpoint = get_app_config().pool_endpoint
         self.is_mining = False
         self.mining_task: Optional[PoolMiningTask] = None
         self.thread_pool = QThreadPool()
@@ -248,7 +249,7 @@ class PoolMiningScreen(QWidget):
         button_row = QHBoxLayout()
         button_row.addStretch()
 
-        self.join_pool_btn = PrimaryButton("Join Pool", width=200, height=48, icon_path=resource_path("gui/images/play.svg"))
+        self.join_pool_btn = PrimaryButton("Join Pool", width=200, height=48, icon_path=resource_path("new_gui/images/play.svg"))
         self.join_pool_btn.clicked.connect(self._toggle_mining)
         button_row.addWidget(self.join_pool_btn)
 
@@ -269,7 +270,7 @@ class PoolMiningScreen(QWidget):
         title.setObjectName("metric_label")
         header.addWidget(title)
 
-        info_icon = QSvgWidget(resource_path("gui/images/info-circle.svg"))
+        info_icon = QSvgWidget(resource_path("new_gui/images/info-circle.svg"))
         info_icon.setFixedSize(16, 16)
         header.addWidget(info_icon)
         header.addStretch()
@@ -521,7 +522,7 @@ class PoolMiningScreen(QWidget):
             self.thread_pool.start(self.mining_task)
 
             self.is_mining = True
-            self.join_pool_btn.update_icon("gui/images/stop.svg")
+            self.join_pool_btn.update_icon("new_gui/images/stop.svg")
             self.join_pool_btn.update_text("Leave Pool")
             self.join_pool_btn.setObjectName("stop_mining_button")
             self.join_pool_btn.setStyleSheet("")
@@ -542,7 +543,7 @@ class PoolMiningScreen(QWidget):
 
     def _stop_mining(self):
         self.is_mining = False
-        self.join_pool_btn.update_icon(resource_path("gui/images/play.svg"))
+        self.join_pool_btn.update_icon(resource_path("new_gui/images/play.svg"))
         self.join_pool_btn.update_text("Join Pool")
         self.join_pool_btn.setObjectName("primary_button")
         self.join_pool_btn.setStyleSheet("")
@@ -558,7 +559,7 @@ class PoolMiningScreen(QWidget):
 
     def _on_mining_finished(self):
         self.is_mining = False
-        self.join_pool_btn.update_icon(resource_path("gui/images/play.svg"))
+        self.join_pool_btn.update_icon(resource_path("new_gui/images/play.svg"))
         self.join_pool_btn.update_text("Join Pool")
         self.join_pool_btn.setObjectName("primary_button")
         self.join_pool_btn.setStyleSheet("")
