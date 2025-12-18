@@ -66,9 +66,9 @@ class MiningWindow(QMainWindow):
         app_layout.setSpacing(0)
 
         self.sidebar = Sidebar()
-        self.sidebar.add_tab("setup_wallet", "Setup Wallet", resource_path("new_gui/images/Wallet.svg"))
-        self.sidebar.add_tab("mining", "Mining", resource_path("new_gui/images/Mining.svg"))
-        self.sidebar.add_tab("profile", "Profile", resource_path("new_gui/images/user.svg"))
+        self.sidebar.add_tab("setup_wallet", "Setup Wallet", resource_path("gui/images/Wallet.svg"))
+        self.sidebar.add_tab("mining", "Mining", resource_path("gui/images/Mining.svg"))
+        self.sidebar.add_tab("profile", "Profile", resource_path("gui/images/user.svg"))
         self.sidebar.tab_changed.connect(self._on_tab_changed)
         self.sidebar.connect_wallet_clicked.connect(self._on_connect_wallet)
         self.sidebar.user_guide_clicked.connect(self._show_user_guide)

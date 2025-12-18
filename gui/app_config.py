@@ -37,7 +37,7 @@ def _find_dev_config_path() -> Optional[Path]:
 
     candidates = [
         Path.cwd() / "bitsota_gui_config.json",
-        Path.cwd() / "new_gui_config.json",
+        Path.cwd() / "gui_config.json",
         Path.home() / ".bitsota" / "gui_config.json",
     ]
     for c in candidates:

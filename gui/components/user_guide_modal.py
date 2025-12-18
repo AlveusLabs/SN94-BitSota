@@ -332,6 +332,63 @@ class UserGuideModal(QDialog):
         separator4.setStyleSheet("background-color: rgba(21, 0, 73, 0.12);")
         wallet_layout.addWidget(separator4)
 
+        registration_content = QWidget()
+        registration_content.setStyleSheet("QWidget { background-color: transparent; }")
+        registration_layout = QVBoxLayout(registration_content)
+        registration_layout.setContentsMargins(16, 16, 16, 16)
+        registration_layout.setSpacing(12)
+
+        info_label = QLabel("Before you can start direct mining, you must register your wallet on the subnet using btcli:")
+        info_label.setWordWrap(True)
+        info_label.setStyleSheet("""
+            background-color: transparent;
+            color: #150049;
+            font-family: "Geist", -apple-system, BlinkMacSystemFont, sans-serif;
+            font-size: 14px;
+            font-weight: 400;
+            line-height: 150%;
+        """)
+        registration_layout.addWidget(info_label)
+
+        command_label = QLabel("btcli subnet register --netuid 402 --wallet.name your_wallet --wallet.hotkey your_hotkey")
+        command_label.setWordWrap(True)
+        command_label.setStyleSheet("""
+            background-color: rgba(21, 0, 73, 0.08);
+            color: #150049;
+            font-family: "SF Mono", "Monaco", "Consolas", "Courier New", monospace;
+            font-size: 13px;
+            font-weight: 500;
+            padding: 12px;
+            border-radius: 6px;
+            border: 1px solid rgba(21, 0, 73, 0.12);
+        """)
+        registration_layout.addWidget(command_label)
+
+        note_label = QLabel("Note: Pool mining does not require subnet registration")
+        note_label.setWordWrap(True)
+        note_label.setStyleSheet("""
+            background-color: transparent;
+            color: rgba(21, 0, 73, 0.60);
+            font-family: "Geist", -apple-system, BlinkMacSystemFont, sans-serif;
+            font-size: 13px;
+            font-weight: 400;
+            font-style: italic;
+            line-height: 150%;
+        """)
+        registration_layout.addWidget(note_label)
+
+        registration_item = AccordionItem(
+            "Wallet Registration for Direct Mining",
+            []
+        )
+        registration_item.content_widget.layout().addWidget(registration_content)
+        wallet_layout.addWidget(registration_item)
+
+        separator5 = QWidget()
+        separator5.setFixedHeight(1)
+        separator5.setStyleSheet("background-color: rgba(21, 0, 73, 0.12);")
+        wallet_layout.addWidget(separator5)
+
         coldkey_address_item = AccordionItem(
             "Providing coldkey address",
             ["We need you to provide a coldkey address where we pay out to you your earnings/rewards as paying cannot be done to hotkeys"]

@@ -273,7 +273,7 @@ class MiningScreen(QWidget):
         self.save_config_btn = SecondaryButton("Save Configuration", width=200, height=48)
         config_row.addWidget(self.save_config_btn)
 
-        self.start_mining_btn = PrimaryButton("Start Mining", width=200, height=48, icon_path=resource_path("new_gui/images/play.svg"))
+        self.start_mining_btn = PrimaryButton("Start Mining", width=200, height=48, icon_path=resource_path("gui/images/play.svg"))
         self.start_mining_btn.clicked.connect(self._toggle_mining)
         config_row.addWidget(self.start_mining_btn)
 
@@ -324,7 +324,7 @@ class MiningScreen(QWidget):
             return
 
         self.is_mining = True
-        self.start_mining_btn.update_icon("new_gui/images/stop.svg")
+        self.start_mining_btn.update_icon("gui/images/stop.svg")
         self.start_mining_btn.update_text("Stop Mining")
         self.start_mining_btn.setObjectName("stop_mining_button")
         self.start_mining_btn.setStyleSheet("")
@@ -360,7 +360,7 @@ class MiningScreen(QWidget):
     def _stop_mining(self):
         self.is_mining = False
         self.sota_timer.stop()
-        self.start_mining_btn.update_icon(resource_path("new_gui/images/play.svg"))
+        self.start_mining_btn.update_icon(resource_path("gui/images/play.svg"))
         self.start_mining_btn.update_text("Start Mining")
         self.start_mining_btn.setObjectName("primary_button")
         self.start_mining_btn.setStyleSheet("")
@@ -504,7 +504,7 @@ class MiningScreen(QWidget):
 
         self.is_mining = False
         self.sota_timer.stop()
-        self.start_mining_btn.update_icon(resource_path("new_gui/images/play.svg"))
+        self.start_mining_btn.update_icon(resource_path("gui/images/play.svg"))
         self.start_mining_btn.update_text("Start Mining")
         self.start_mining_btn.setObjectName("primary_button")
         self.start_mining_btn.setStyleSheet("")
