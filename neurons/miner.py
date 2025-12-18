@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-CLI Miner for AutoML Infinite
+CLI Miner for Bitsota
 A command-line miner that supports both direct validator and pool modes
 """
 
@@ -126,7 +126,7 @@ def run_miner(config):
 
 def main():
     """Main entry point"""
-    parser = argparse.ArgumentParser(description="AutoML Infinite CLI Miner")
+    parser = argparse.ArgumentParser(description="BitSota CLI Miner")
     parser.add_argument(
         "--config",
         default="miner_config.yaml",
