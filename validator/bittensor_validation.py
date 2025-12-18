@@ -26,6 +26,7 @@ class BittensorNetwork:
         self.uid = self.metagraph.hotkeys.index(self.wallet.hotkey.ss58_address)
         self.last_sync_time = 0
 
+
     def sync_if_needed(self, sync_interval=600):
         if time.time() - self.last_sync_time > sync_interval:
             self.metagraph = self.subtensor.metagraph(self.config.netuid)
@@ -105,7 +106,7 @@ class BittensorNetwork:
         except Exception as e:
             logging.error(f"Error setting weights: {e}")
 
-    def set_weights_for_contract_bots(cls):
+    def set_weights_for_contract_bots(self, cls):
         """
         Convenience method to set weights for predefined contract bot addresses
         """

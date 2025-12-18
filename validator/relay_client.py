@@ -9,7 +9,7 @@ logger = logging.getLogger(__name__)
 
 class RelayClient:
     """
-    Client for interacting with the BitSota Relay Server.
+    Client for interacting with the AutoML-Infinite Relay Server.
     """
 
     def __init__(self, relay_url: str, wallet: "bt.wallet"):
@@ -34,7 +34,7 @@ class RelayClient:
             return {}
 
     def get_all_results(
-        self, limit: int = 100, task_id: Optional[str] = None
+        self, limit: int = 256, task_id: Optional[str] = None
     ) -> Optional[List[Dict]]:
         """
         Fetches all recent results from the relay server.
@@ -114,4 +114,63 @@ class RelayClient:
             return data.get("sota_threshold")
         except requests.exceptions.RequestException as e:
             logger.warning(f"Failed to get SOTA from relay: {e}")
+            return None
+
+    def submit_sota_vote(
+        self,
+        miner_hotkey: str,
+        score: float,
+        *,
+        seen_block: int,
+        result_id: Optional[str] = None,
+    ) -> Optional[Dict[str, Any]]:
+        """
+        Submit a validator vote to accept a new SOTA (capacitorless mode).
+        Returns the relay JSON response on success, else None.
+        """
+        try:
+            endpoint = f"{self.relay_url}/sota/vote"
+            headers = self._get_auth_headers()
+            if not headers:
+                return None
+            payload: Dict[str, Any] = {
+                "miner_hotkey": miner_hotkey,
+                "score": float(score),
+                "seen_block": int(seen_block),
+            }
+            if result_id is not None:
+                payload["result_id"] = result_id
+
+            response = requests.post(
+                endpoint, headers=headers, json=payload, timeout=15
+            )
+            response.raise_for_status()
+            return response.json()
+        except requests.exceptions.HTTPError as e:
+            detail = ""
+            try:
+                detail = f" response={e.response.text}"
+            except Exception:
+                pass
+            logger.error(f"Failed to submit SOTA vote: {e}{detail}")
+            return None
+        except requests.exceptions.RequestException as e:
+            logger.error(f"Failed to submit SOTA vote: {e}")
+            return None
+
+    def get_sota_events(self, limit: int = 20) -> Optional[List[Dict[str, Any]]]:
+        """Fetch recent SOTA acceptance events for weight scheduling."""
+        try:
+            endpoint = f"{self.relay_url}/sota/events"
+            headers = self._get_auth_headers()
+            if not headers:
+                return None
+            response = requests.get(
+                endpoint, headers=headers, params={"limit": int(limit)}, timeout=15
+            )
+            response.raise_for_status()
+            data = response.json()
+            return data if isinstance(data, list) else None
+        except requests.exceptions.RequestException as e:
+            logger.error(f"Failed to get SOTA events from relay: {e}")
             return None
