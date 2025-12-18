@@ -1,5 +1,7 @@
 import logging
+import os
 from dataclasses import dataclass
+from functools import lru_cache
 from typing import Any, Dict, List, Optional, Tuple
 
 import numpy as np
@@ -25,6 +27,50 @@ PROJECTION_SEED_OFFSET = 17345
 SPLIT_SEED_OFFSET = 97531
 
 _CIFAR_CACHE: Dict[int, Tuple[np.ndarray, np.ndarray]] = {}
+try:
+    _CIFAR_TASK_CACHE_MAXSIZE = max(0, int(os.getenv("CIFAR_TASK_CACHE_MAXSIZE", "512")))
+except Exception:
+    _CIFAR_TASK_CACHE_MAXSIZE = 512
+
+
+@lru_cache(maxsize=_CIFAR_TASK_CACHE_MAXSIZE)
+def _cached_task_arrays(task_spec: "CIFAR10TaskSpec") -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+    """Cache fully prepared train/val splits for deterministic task specs."""
+
+    class_a, class_b = task_spec.class_pair
+    X, y = _fetch_cifar_subset(task_spec.n_samples)
+    mask = (y == class_a) | (y == class_b)
+    X_pair = X[mask]
+    y_pair = y[mask]
+    if len(X_pair) == 0:
+        raise RuntimeError(
+            f"No samples found for class pair {class_a}-{class_b} with n_samples={task_spec.n_samples}"
+        )
+
+    y_binary = (y_pair == class_b).astype(np.float32)
+    proj_matrix = _build_projection(
+        task_spec.projection_seed, X_pair.shape[1], task_spec.n_components
+    )
+    X_proj = _standardize_features(X_pair @ proj_matrix)
+
+    split_rng = np.random.default_rng(task_spec.split_seed)
+    indices = split_rng.permutation(len(X_proj))
+    n_train = max(1, int(task_spec.train_split * len(X_proj)))
+    n_train = min(n_train, len(X_proj) - 1) if len(X_proj) > 1 else 1
+    train_idx, val_idx = indices[:n_train], indices[n_train:]
+
+    X_train = X_proj[train_idx]
+    y_train = y_binary[train_idx]
+    X_val = X_proj[val_idx]
+    y_val = y_binary[val_idx]
+
+    for arr in (X_train, y_train, X_val, y_val):
+        try:
+            arr.setflags(write=False)
+        except Exception:
+            pass
+
+    return X_train, y_train, X_val, y_val
 
 
 @dataclass(frozen=True)
@@ -223,43 +269,9 @@ class CIFAR10BinaryTask(Task):
         self._n_samples = n_samples
         self._train_split = train_split
 
-        class_a, class_b = task_spec.class_pair
-        X, y = _fetch_cifar_subset(n_samples)
-        mask = (y == class_a) | (y == class_b)
-        X_pair = X[mask]
-        y_pair = y[mask]
-        if len(X_pair) == 0:
-            raise RuntimeError(
-                f"No samples found for class pair {class_a}-{class_b} with n_samples={n_samples}"
-            )
-
-        y_binary = (y_pair == class_b).astype(np.float32)
-        proj_matrix = _build_projection(task_spec.projection_seed, X_pair.shape[1], n_components)
-        X_proj = _standardize_features(X_pair @ proj_matrix)
-
-        split_rng = np.random.default_rng(task_spec.split_seed)
-        indices = split_rng.permutation(len(X_proj))
-        n_train = max(1, int(train_split * len(X_proj)))
-        n_train = min(n_train, len(X_proj) - 1) if len(X_proj) > 1 else 1
-        train_idx, val_idx = indices[:n_train], indices[n_train:]
-
-        self.X_train = X_proj[train_idx]
-        self.y_train = y_binary[train_idx]
-        self.X_val = X_proj[val_idx]
-        self.y_val = y_binary[val_idx]
+        self.X_train, self.y_train, self.X_val, self.y_val = _cached_task_arrays(task_spec)
         self.input_dim = n_components
-
-        logger.debug(
-            "CIFAR10 task %s: %s -> %s",
-            task_spec.describe(),
-            X_pair.shape,
-            X_proj.shape,
-        )
-        logger.debug(
-            "   class balance %.2f (train_split=%.2f)",
-            y_binary.mean(),
-            train_split,
-        )
+        logger.debug("CIFAR10 task %s loaded (train_split=%.2f)", task_spec.describe(), train_split)
 
     def evaluate(self, predictions: np.ndarray, labels: np.ndarray) -> floating[Any]:
         pred_classes = (predictions > 0.5).astype(int)

@@ -1,5 +1,6 @@
 """Evaluation utilities shared between miners and validators."""
 
+import json
 import logging
 import os
 from typing import Dict, Any, Optional, Tuple
@@ -82,7 +83,7 @@ def verify_solution_quality(
     try:
         algorithm_dsl = solution_data.get("algorithm_dsl")
         if not algorithm_dsl:
-            print("Missing required fields in solution data")
+            logger.warning("Missing required field `algorithm_dsl` in solution data")
             return False, -np.inf
 
         requested_dim = solution_data.get("input_dim")
@@ -95,7 +96,7 @@ def verify_solution_quality(
         try:
             algorithm = DSLParser.from_dsl(algorithm_dsl, input_dim)
         except Exception as e:
-            print(f"Failed to parse algorithm DSL: {e}")
+            logger.warning("Failed to parse algorithm DSL: %s", e)
             return False, -np.inf
 
         task_specs = _get_validator_task_specs(input_dim)
@@ -103,11 +104,43 @@ def verify_solution_quality(
             raise RuntimeError("Validator task list is empty")
 
         scores = []
+        task_results = []
         for spec in task_specs:
             task.load_data(task_spec=spec)
-            scores.append(float(task.evaluate_algorithm(algorithm, epochs=1)))
+            task_score = float(task.evaluate_algorithm(algorithm, epochs=1))
+            scores.append(task_score)
+            task_results.append(
+                {
+                    "task_id": int(getattr(spec, "task_id", -1)),
+                    "class_pair": list(getattr(spec, "class_pair", ())),
+                    "projection_seed": int(getattr(spec, "projection_seed", 0) or 0),
+                    "split_seed": int(getattr(spec, "split_seed", 0) or 0),
+                    "score": float(task_score),
+                }
+            )
 
         score = float(np.median(scores)) if scores else task.get_baseline_fitness()
+        # Never allow untrusted submissions to trigger verbose per-task logging.
+        # Enable explicitly via environment variable + DEBUG log level.
+        log_all_task_scores = (
+            str(os.getenv("LOG_VALIDATOR_TASK_SCORES", "0")).strip().lower()
+            in {"1", "true", "yes", "on"}
+        )
+        if log_all_task_scores and logger.isEnabledFor(logging.DEBUG):
+            try:
+                logger.debug(
+                    "Validator suite scores (n=%d median=%.6f): %s",
+                    int(len(task_results)),
+                    float(score),
+                    json.dumps(task_results, separators=(",", ":"), sort_keys=False),
+                )
+            except Exception:
+                logger.debug(
+                    "Validator suite scores (n=%d median=%.6f): %s",
+                    int(len(scores)),
+                    float(score),
+                    str(scores),
+                )
 
         if sota_threshold is None:
             sota_threshold = 0.0
@@ -115,9 +148,37 @@ def verify_solution_quality(
         return score >= sota_threshold, score
 
     except Exception as e:
-        print(f"Error in verify_solution_quality: {e}")
+        logger.exception("Error in verify_solution_quality: %s", e)
         fallback = task.get_baseline_fitness() if task else -np.inf
         return False, fallback
+
+
+def score_algorithm_on_eval_suite(algorithm_dsl: str, input_dim: int = None) -> float:
+    """
+    Deterministically score an algorithm on the validator-style eval suite (median over tasks).
+    This is the scoring policy intended for "evaluate" tasks.
+    """
+
+    if not algorithm_dsl:
+        return -np.inf
+
+    dim = int(input_dim) if input_dim else DEFAULT_CIFAR_INPUT_DIM
+    task = _load_cifar_task(dim, preload=False)
+    try:
+        algorithm = DSLParser.from_dsl(algorithm_dsl, dim)
+    except Exception as e:
+        logger.warning("Failed to parse algorithm DSL: %s", e)
+        return -np.inf
+
+    task_specs = _get_validator_task_specs(dim)
+    if not task_specs:
+        return -np.inf
+
+    scores = []
+    for spec in task_specs:
+        task.load_data(task_spec=spec)
+        scores.append(float(task.evaluate_algorithm(algorithm, epochs=1)))
+    return float(np.median(scores)) if scores else -np.inf
 
 
 def get_task_benchmark(task_type: str) -> float:
