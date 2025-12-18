@@ -37,7 +37,7 @@ capacitorless:
   # Minimum improvement required to replace the current local winner.
   min_winner_improvement: 0.0
   # If false, do not submit SOTA votes to the relay at all (local-only capacitorless mode).
-  submit_sota_votes: false
+  submit_sota_votes: true
   # When winner_source == "local", apply weights immediately after evaluation instead of waiting
   # for the weight background loop.
   apply_weights_inline: true
