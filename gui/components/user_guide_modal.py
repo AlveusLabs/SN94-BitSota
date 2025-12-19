@@ -350,7 +350,7 @@ class UserGuideModal(QDialog):
         """)
         registration_layout.addWidget(info_label)
 
-        command_label = QLabel("btcli subnet register --netuid 402 --wallet.name your_wallet --wallet.hotkey your_hotkey")
+        command_label = QLabel("btcli subnet register --netuid 94 --wallet.name your_wallet --wallet.hotkey your_hotkey")
         command_label.setWordWrap(True)
         command_label.setStyleSheet("""
             background-color: rgba(21, 0, 73, 0.08);

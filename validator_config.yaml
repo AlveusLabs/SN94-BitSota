@@ -8,14 +8,14 @@
 reward_mode: "capacitorless"
 
 # Bittensor Network Configuration
-netuid: 402
+netuid: 94
 wallet_name: "automl_launch_test"
 wallet_hotkey: "automl_launch_test_hot"
 path: "~/.bittensor/wallets/"
 #evm_key_path: "~/.bittensor/wallets/val1/h160/val1_hot"
-network: "test"  # Use "test" for testnet, "finney" for mainnet
+network: "finney"  # Use "test" for testnet, "finney" for mainnet
 epoch_length: 100
-subtensor_chain_endpoint: "wss://test.finney.opentensor.ai:443"
+subtensor_chain_endpoint: "wss://entrypoint-finney.opentensor.ai:443"
 
 
 # Smart Contract Configuration
