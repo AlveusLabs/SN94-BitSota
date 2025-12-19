@@ -42,7 +42,7 @@ capacitorless:
   # for the weight background loop.
   apply_weights_inline: true
   # Hotkey that receives emissions when "burning" (must be registered on the subnet)
-  burn_hotkey: "5GQwFPBicWVUEKDZtwwGgtX5zXABuq1ddi37jY4eozPi7eXK"
+  burn_hotkey: "5Ef5EsPQoMVmJ8rYectQ26BEvscvATEGm365bcQjo1Y6bxGr"
   # Used when mode == "sticky_burnsplit"
   burn_share: 0.9
   # winner_share: 0.1  # optional; defaults to 1 - burn_share
@@ -74,9 +74,9 @@ weights:
 
 # Rate Limiting Configuration
 rate_limiting:
-  ip_requests_per_hour: 50
-  address_requests_per_hour: 10
-  blacklist_duration_hours: 24
+  ip_requests_per_hour: 240
+  address_requests_per_hour: 240
+  blacklist_duration_hours: 1
 
 # SOTA Threshold Configuration
 sota:
@@ -86,7 +86,7 @@ sota:
 # Relay Configuration #""
 relay:
   url: "https://relay.bitsota.com"
-  poll_interval_seconds: 60
+  poll_interval_seconds: 600
 
 # Optional submission schedule to throttle contract votes
 submission_schedule:
