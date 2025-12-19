@@ -48,6 +48,13 @@ def set_weights(
                     wait_for_finalization = False
 
             base_scores = S.WalletHolder.base_scores
+            metagraph_size = len(S.WalletHolder.metagraph.hotkeys)
+
+            if base_scores is None or len(base_scores) != metagraph_size:
+                logging.info(f"Resizing base_scores from {len(base_scores) if base_scores is not None else 0} to {metagraph_size}")
+                base_scores = torch.zeros(metagraph_size, dtype=torch.float32, device=S.WalletHolder.device)
+                S.WalletHolder.base_scores = base_scores
+
             uids = []
             for uid, hk in enumerate(S.WalletHolder.metagraph.hotkeys):
                 base_scores[uid] = scores.get(hk, 0.0)
