@@ -2,7 +2,7 @@
 
 set -e
 
-SVG_FILE="new_gui/images/main_icon.svg"
+SVG_FILE="gui/images/main_icon.svg"
 ICONSET_DIR="icon.iconset"
 ICNS_FILE="app_icon.icns"
 
