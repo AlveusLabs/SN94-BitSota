@@ -9,8 +9,8 @@ reward_mode: "capacitorless"
 
 # Bittensor Network Configuration
 netuid: 94
-wallet_name: "automl_launch_test"
-wallet_hotkey: "automl_launch_test_hot"
+wallet_name: "wallet_name"
+wallet_hotkey: "wallet_hotkey"
 path: "~/.bittensor/wallets/"
 #evm_key_path: "~/.bittensor/wallets/val1/h160/val1_hot"
 network: "finney"  # Use "test" for testnet, "finney" for mainnet
@@ -85,7 +85,7 @@ sota:
 
 # Relay Configuration #""
 relay:
-  url: "http://127.0.0.1:8002"
+  url: "https://relay.bitsota.com"
   poll_interval_seconds: 60
 
 # Optional submission schedule to throttle contract votes
