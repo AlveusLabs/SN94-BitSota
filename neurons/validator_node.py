@@ -624,6 +624,16 @@ def main(argv=None):
                 logging.warning(f"Skipping invalid relay result (missing fields): {result}")
                 continue
 
+            if miner_hotkey not in net.metagraph.hotkeys:
+                logging.warning(
+                    f"❌ Miner {miner_hotkey[:8]} not registered on netuid {config.netuid}"
+                )
+                if metrics_logger:
+                    metrics_logger.log_miner_result(
+                        miner_hotkey, miner_score, 0, sota_score, "not_registered"
+                    )
+                continue
+
             if not ValidatorAuth.verify_miner_signature(
                 miner_hotkey, timestamp_message, signature
             ):
