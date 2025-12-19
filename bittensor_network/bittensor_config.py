@@ -23,7 +23,7 @@ class ConfigWrapper:
 
 
 _DEFAULT_YAML = """
-netuid: 49
+netuid: 94
 wallet_name: "your_wallet"
 wallet_hotkey: "your_hotkey"
 path: "~/.bittensor/wallets/"
@@ -77,7 +77,7 @@ class BittensorConfig:
         if endpoint:
             setattr(bt_config.subtensor, "chain_endpoint", endpoint)
         if not hasattr(bt_config, "netuid") or bt_config.netuid is None:
-            bt_config.netuid = y.get("netuid", 49)
+            bt_config.netuid = y.get("netuid", 94)
 
         if not hasattr(bt_config, "epoch_length") or bt_config.epoch_length is None:
             bt_config.epoch_length = y.get("epoch_length", 100)
