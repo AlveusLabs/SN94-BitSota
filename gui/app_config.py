@@ -13,6 +13,7 @@ class AppConfig:
     relay_endpoint: str = "https://relay.bitsota.com"
     update_manifest_url: str = "https://relay.bitsota.com/version.json"
     pool_endpoint: str = "https://api.bitsota.com"
+    cifar10_dataset_url: str = "https://cifar10.fra1.digitaloceanspaces.com/CIFAR_10_small.arff.gz"
     test_mode: bool = False
     test_invite_code: str = "TESTTEST1"
     miner_task_count: Optional[int] = None
@@ -47,7 +48,7 @@ def _find_dev_config_path() -> Optional[Path]:
 
 
 def _apply_overrides(defaults: AppConfig, overrides: Dict[str, Any]) -> AppConfig:
-    allowed_strings = {"relay_endpoint", "update_manifest_url", "pool_endpoint", "test_invite_code"}
+    allowed_strings = {"relay_endpoint", "update_manifest_url", "pool_endpoint", "cifar10_dataset_url", "test_invite_code"}
     cleaned: Dict[str, Any] = {
         k: v for k, v in overrides.items() if k in allowed_strings and isinstance(v, str) and v
     }

@@ -1,5 +1,8 @@
+import hashlib
 import logging
 import os
+import pickle
+import ssl
 from dataclasses import dataclass
 from functools import lru_cache
 from typing import Any, Dict, List, Optional, Tuple
@@ -7,11 +10,14 @@ from typing import Any, Dict, List, Optional, Tuple
 import numpy as np
 from numpy import floating
 from sklearn.datasets import fetch_openml
+import urllib.request
 
 from .base import Task
 
 
 logger = logging.getLogger(__name__)
+
+CIFAR10_EXPECTED_HASH = "8bc18551ba7a01c82b49249d78537c0f08d25136988375435dc5e01397852a90"
 
 
 CLASS_LABELS: Tuple[int, ...] = tuple(range(10))
@@ -93,6 +99,60 @@ class CIFAR10TaskSpec:
         )
 
 
+def _get_sklearn_data_home() -> str:
+    """Get the sklearn data directory."""
+    from pathlib import Path
+    data_home = os.environ.get('SCIKIT_LEARN_DATA')
+    if data_home:
+        return data_home
+    return str(Path.home() / 'scikit_learn_data')
+
+def _ensure_cifar_cached() -> None:
+    """Ensure CIFAR-10 ARFF file is cached locally, downloading from custom URL if needed."""
+    custom_url = os.getenv("CIFAR10_DATASET_URL")
+
+    if not custom_url:
+        try:
+            from gui.app_config import get_app_config
+            config = get_app_config()
+            custom_url = config.cifar10_dataset_url
+        except Exception:
+            pass
+
+    if not custom_url:
+        return
+
+    from pathlib import Path
+    data_home = Path(_get_sklearn_data_home())
+    cache_dir = data_home / "openml" / "openml.org" / "data" / "v1" / "download" / "16797612"
+    cache_file = cache_dir / "CIFAR_10_small.arff.gz"
+
+    if cache_file.exists():
+        logger.debug("CIFAR-10 already cached locally")
+        return
+
+    try:
+        logger.info(f"Downloading CIFAR-10 from {custom_url}")
+        cache_dir.mkdir(parents=True, exist_ok=True)
+
+        context = ssl._create_unverified_context()
+        with urllib.request.urlopen(custom_url, context=context, timeout=120) as response:
+            data = response.read()
+
+        file_hash = hashlib.sha256(data).hexdigest()
+        if file_hash != CIFAR10_EXPECTED_HASH:
+            logger.error(f"CIFAR-10 hash mismatch! Expected {CIFAR10_EXPECTED_HASH}, got {file_hash}")
+            raise ValueError("CIFAR-10 dataset hash verification failed - file may be corrupted or tampered")
+
+        with open(cache_file, 'wb') as f:
+            f.write(data)
+
+        logger.info(f"CIFAR-10 cached successfully at {cache_file} (hash verified)")
+    except Exception as e:
+        logger.warning(f"Failed to download CIFAR-10 from custom URL: {e}")
+        if cache_file.exists():
+            cache_file.unlink()
+
 def _fetch_cifar_subset(n_samples: int) -> Tuple[np.ndarray, np.ndarray]:
     """Fetch (and cache) a subset of CIFAR-10."""
 
@@ -100,10 +160,20 @@ def _fetch_cifar_subset(n_samples: int) -> Tuple[np.ndarray, np.ndarray]:
     if cache is not None:
         return cache
 
-    cifar = fetch_openml("CIFAR_10_small", version=1, as_frame=False, parser="auto")
+    _ensure_cifar_cached()
+
+    logger.info("Loading CIFAR-10 dataset...")
+    original_context = ssl._create_default_https_context
+    try:
+        ssl._create_default_https_context = ssl._create_unverified_context
+        cifar = fetch_openml("CIFAR_10_small", version=1, as_frame=False, parser="auto")
+    finally:
+        ssl._create_default_https_context = original_context
+
     X = cifar.data[:n_samples].astype(np.float32) / 255.0
     y = cifar.target[:n_samples].astype(np.int32)
     _CIFAR_CACHE[n_samples] = (X, y)
+    logger.info("CIFAR-10 loaded successfully")
     return X, y
 
 
