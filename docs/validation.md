@@ -60,78 +60,10 @@ btcli wallet new_hotkey --wallet.name validator_wallet --wallet.hotkey validator
 btcli subnet register --netuid 94 --wallet.name validator_wallet --wallet.hotkey validator_hotkey
 ```
 
-**4. Configure Validator**
-Edit `validator_config.yaml`:
-
-**Relay Consensus Mode (recommended for coordination):**
-```yaml
-netuid: 94
-wallet_name: "validator_wallet"
-wallet_hotkey: "validator_hotkey"
-network: "test"
-
-reward_mode: "capacitorless_sticky"
-
-relay:
-  url: "https://relay.bitsota.com"
-  poll_interval_seconds: 60
-
-capacitorless:
-  burn_hotkey: "5GrwvaEF5zXb26Fz9rcQpDWS57CtERHpNehXCPcNoHGKutQY"
-  burn_share: 0.9
-  winner_source: "relay"  # wait for relay to finalize SOTA events
-  events_limit: 50
-  event_refresh_interval_s: 60
-
-submission_schedule:
-  mode: "immediate"
-
-submission_threshold:
-  mode: "sota_only"
-
-blacklist:
-  cutoff_percentage: 0.1
-```
-
-**Local Mode (faster but less coordinated):**
-```yaml
-netuid: 94
-wallet_name: "validator_wallet"
-wallet_hotkey: "validator_hotkey"
-network: "test"
-
-reward_mode: "capacitorless_sticky"
-
-relay:
-  url: "https://relay.bitsota.com"
-  poll_interval_seconds: 60
-
-capacitorless:
-  burn_hotkey: "5GrwvaEF5zXb26Fz9rcQpDWS57CtERHpNehXCPcNoHGKutQY"
-  burn_share: 0.9
-  winner_source: "local"  # use validator's own best evaluation
-  min_winner_improvement: 0.0  # require score improvement to update winner
-  apply_weights_inline: true  # set weights immediately after evaluation
-  submit_sota_votes: true  # still vote on relay for coordination
-
-submission_schedule:
-  mode: "immediate"
-
-submission_threshold:
-  mode: "sota_only"
-
-blacklist:
-  cutoff_percentage: 0.1
-```
-
-When `submission_schedule.mode` is set to `interval` or `utc_times`, the validator caches the best validated result if the schedule blocks an immediate vote. The cached entry is retried automatically as soon as the next window opens, and any newer submission with a higher validator score replaces the pending one.
-
-Set `submission_threshold.mode` to `local_best` if you want the validator to require every vote to beat both the current on-chain/relay SOTA and the best score it has validated locally during the current session. This prevents regressing to weaker submissions even when the global SOTA temporarily drops.
-
 ## Running the Validator
 
 ```bash
-python neurons/validator_node.py
+python neurons/validator_node.py --config validator_config.local.yaml
 ```
 
 The validator starts two background services:
