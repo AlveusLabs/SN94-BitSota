@@ -1,18 +1,18 @@
 # Validator Guide
 
-Validators in BitSota evaluate miner submissions, verify algorithm quality, and vote on rewards through a smart contract voting system.
+Validators in BitSota evaluate miner submissions, verify algorithm quality, and distribute rewards through on-chain weight setting using Yuma consensus.
 
 ## What is a Validator?
 
-Validators receive algorithm submissions from miners through the relay server, independently re-evaluate each submission on standardized datasets, and vote through the Capacitor smart contract to distribute rewards to miners who discover algorithms that beat the current performance threshold.
+Validators receive algorithm submissions from miners through the relay server, independently re-evaluate each submission on standardized datasets, and set on-chain weights to direct network emissions to miners who discover algorithms that beat the current performance threshold.
 
 ## How It Works
 
 ```
-Relay Server → Validator Polls → Re-evaluates Submission → Verifies Score → Votes via Contract → Miner Gets Reward
+Relay Server → Validator Polls → Re-evaluates Submission → Verifies Score → Sets Weights → Miner Gets Emissions
 ```
 
-Validators currently fix all evaluations to the CIFAR-10 binary (airplane vs automobile) dataset. Every relay submission is re-run on that benchmark regardless of the task type claimed by a miner, so miners should target this dataset when evolving algorithms.
+Validators fix all evaluations to the CIFAR-10 binary (airplane vs automobile) dataset. Every relay submission is re-run on that benchmark regardless of the task type claimed by a miner.
 
 1. RelayPoller background thread fetches new submissions every 60 seconds
 2. Validator verifies miner's cryptographic signature to prevent forgery
@@ -20,8 +20,9 @@ Validators currently fix all evaluations to the CIFAR-10 binary (airplane vs aut
 4. Validator compares their score against the miner's claimed score
 5. If score delta exceeds 10%, validator votes to blacklist the miner
 6. If validation passes, validator selects the best submission from the batch
-7. Validator calls Capacitor contract's releaseReward function with miner's coldkey and score
-8. When 2 out of 3 validator trustees vote for the same submission, contract transfers ALPHA stake
+7. Validator votes on relay server to accept new SOTA candidate
+8. When enough validators vote for same candidate, relay finalizes SOTA event
+9. Weight manager sets on-chain weights directing emissions to winning miner and burn address
 
 ## Requirements
 
@@ -34,10 +35,9 @@ Validators currently fix all evaluations to the CIFAR-10 binary (airplane vs aut
 **Software:**
 - Python 3.10 or higher
 - Bittensor wallet registered as validator on subnet
-- EVM wallet for smart contract interactions
 
 **Stake Requirements:**
-Validators must have sufficient ALPHA stake to be recognized by the Metagraph. Check current requirements with the subnet owner.
+Validators must have sufficient ALPHA stake to be recognized by the metagraph and set weights. Check current requirements with the subnet owner.
 
 ## Setup
 
@@ -60,52 +60,68 @@ btcli wallet new_hotkey --wallet.name validator_wallet --wallet.hotkey validator
 btcli subnet register --netuid 94 --wallet.name validator_wallet --wallet.hotkey validator_hotkey
 ```
 
-**4. Setup EVM Key**
-Validators need an Ethereum-compatible key to interact with the Capacitor smart contract.
-
-Option A: Generate new key
-```bash
-python scripts/generate_evm_key.py --output ~/.bittensor/evm_keys/validator.json
-```
-
-Option B: Use existing key by setting path in config
-
-**5. Configure Validator**
-Copy and edit the config:
-```bash
-cp validator_config.yaml.example validator_config.yaml
-```
-
+**4. Configure Validator**
 Edit `validator_config.yaml`:
+
+**Relay Consensus Mode (recommended for coordination):**
 ```yaml
 netuid: 94
 wallet_name: "validator_wallet"
 wallet_hotkey: "validator_hotkey"
-evm_key_path: "~/.bittensor/evm_keys/validator.json"
 network: "test"
 
-contract:
-  rpc_url: "https://test.chain.opentensor.ai"
-  address: "0xYourCapacitorContractAddress"
+reward_mode: "capacitorless_sticky"
 
 relay:
   url: "https://relay.bitsota.com"
   poll_interval_seconds: 60
 
-# Optional contract submission schedule
+capacitorless:
+  burn_hotkey: "5GrwvaEF5zXb26Fz9rcQpDWS57CtERHpNehXCPcNoHGKutQY"
+  burn_share: 0.9
+  winner_source: "relay"  # wait for relay to finalize SOTA events
+  events_limit: 50
+  event_refresh_interval_s: 60
+
 submission_schedule:
-  mode: "immediate"        # "immediate", "interval", or "utc_times"
-  interval_seconds: 0      # used when mode == "interval"
-  utc_times: []            # used when mode == "utc_times"
+  mode: "immediate"
 
 submission_threshold:
-  mode: "sota_only"        # "local_best" keeps local SOTA as an additional floor
+  mode: "sota_only"
 
 blacklist:
   cutoff_percentage: 0.1
+```
 
-weights:
-  check_interval: 300
+**Local Mode (faster but less coordinated):**
+```yaml
+netuid: 94
+wallet_name: "validator_wallet"
+wallet_hotkey: "validator_hotkey"
+network: "test"
+
+reward_mode: "capacitorless_sticky"
+
+relay:
+  url: "https://relay.bitsota.com"
+  poll_interval_seconds: 60
+
+capacitorless:
+  burn_hotkey: "5GrwvaEF5zXb26Fz9rcQpDWS57CtERHpNehXCPcNoHGKutQY"
+  burn_share: 0.9
+  winner_source: "local"  # use validator's own best evaluation
+  min_winner_improvement: 0.0  # require score improvement to update winner
+  apply_weights_inline: true  # set weights immediately after evaluation
+  submit_sota_votes: true  # still vote on relay for coordination
+
+submission_schedule:
+  mode: "immediate"
+
+submission_threshold:
+  mode: "sota_only"
+
+blacklist:
+  cutoff_percentage: 0.1
 ```
 
 When `submission_schedule.mode` is set to `interval` or `utc_times`, the validator caches the best validated result if the schedule blocks an immediate vote. The cached entry is retried automatically as soon as the next window opens, and any newer submission with a higher validator score replaces the pending one.
@@ -118,27 +134,48 @@ Set `submission_threshold.mode` to `local_best` if you want the validator to req
 python neurons/validator_node.py
 ```
 
-The validator will start three background services:
+The validator starts two background services:
 1. RelayPoller: Fetches miner submissions every 60 seconds
-2. WeightManager: Updates on-chain weights every 5 minutes
-3. ContractManager: Handles smart contract interactions
+2. WeightManager: Updates on-chain weights when SOTA events are finalized
 
 ## Understanding Validator Output
 
+**Relay Consensus Mode:**
 ```
-Processing 5 results from relay...
+Received 5 results from relay
 Miner abc12345: Miner Score = 0.9300, Validator Score = 0.9250, SOTA = 0.9200
 Miner def67890: Miner Score = 0.9400, Validator Score = 0.8100, SOTA = 0.9200
-Blacklisting miner def67890 for score delta. Validator score: 0.8100, Miner score: 0.9400
-Best result is from abc12345 with validated score 0.9250
-Submitted relay solution from abc12345 with validated score 0.9250... tx: 0xabcdef123...
+Blacklisting miner def67890 - score delta too large
+Best submission: Miner abc12345 with score 0.9250
+Submitting SOTA vote to relay for miner abc12345 with score 0.9250 at block 12345
+Relay vote status: accepted (2/3) in 0.45s
+Finalized event: start=12340 end=12700
+Set weights → burn 0.900 / winner 0.100 (abc12345)
 ```
 
 **What this means:**
 - First miner's submission is legitimate (0.93 claimed, 0.925 validated, within 10% tolerance)
-- Second miner attempted to cheat (0.94 claimed, 0.81 actual, 14% difference)
-- Validator votes to blacklist the cheater
-- Validator submits vote for legitimate miner through smart contract
+- Second miner attempted to cheat (0.94 claimed, 0.81 actual, exceeds 10% cutoff)
+- Validator votes to blacklist the cheater on relay
+- Validator votes on relay to accept abc12345 as new SOTA
+- Relay reaches consensus (2/3 votes) and finalizes SOTA event
+- Validator sets weights: 90% to burn, 10% to winner
+
+**Local Mode:**
+```
+Received 5 results from relay
+Miner abc12345: Miner Score = 0.9300, Validator Score = 0.9250, SOTA = 0.9200
+Best submission: Miner abc12345 with score 0.9250
+Updated local winner candidate → abc12345 (score=0.9250)
+Set weights → burn 0.900 / winner 0.100 (abc12345)
+Submitting SOTA vote to relay for miner abc12345 with score 0.9250 at block 12345
+```
+
+**What this means:**
+- Validator evaluates submission and finds it beats current SOTA
+- Validator immediately updates local winner to abc12345
+- Validator sets weights right away without waiting for relay consensus
+- Validator still submits vote to relay for coordination with other validators
 
 ## Validation Process
 
@@ -168,44 +205,80 @@ if abs(validator_score - miner_score) > 0.1:  # 10% tolerance
 ```
 Large discrepancies indicate dishonesty or bugs.
 
-**Step 5: Contract Voting**
+**Step 5: Relay SOTA Voting**
 ```python
-contract_manager.submit_contract_entry(recipient_ss58_address=miner_hotkey, new_score=validator_score)
+relay_client.submit_sota_vote(miner_hotkey, validator_score, seen_block=current_block)
 ```
-Validator submits vote to Capacitor contract using the validator's own evaluated score, not the miner's claim.
+Validator submits vote to relay server using the validator's own evaluated score, not the miner's claim.
 
-## Smart Contract Voting
+## SOTA Consensus and Weight Setting
 
-The Capacitor contract uses a multi-trustee voting system:
+Validators can use two approaches for weight setting:
 
-- 3 validators are designated as trustees
-- 2 votes required to trigger reward distribution
-- Votes must agree on both recipient and score
-- If votes mismatch, voting resets and starts over
-- When consensus reached, contract transfers ALL its ALPHA stake to the winning miner
+### Relay Consensus Mode (winner_source: "relay")
 
-**Checking Contract Status:**
+The relay server aggregates validator votes to finalize SOTA events:
+
+- Multiple validators independently evaluate submissions
+- Each validator votes on relay for candidates that beat current SOTA
+- When enough validators agree, relay finalizes SOTA event
+- Finalized event includes: miner_hotkey, score, start_block, end_block
+- Validators fetch finalized events and update on-chain weights
+
+This mode ensures all validators converge on the same winner through relay consensus before setting weights.
+
+### Local Mode (winner_source: "local")
+
+Validators set weights based on their own evaluation without waiting for relay consensus:
+
+- Validator evaluates submissions independently
+- When finding candidate above SOTA, validator sets weights immediately
+- No waiting for relay finalization
+- Faster weight updates but validators may diverge on winner choice
+- Still submits votes to relay (unless `submit_sota_votes: false`)
+
+Local mode is faster but less coordinated. Relay mode is slower but ensures validator alignment.
+
+**Weight Distribution (Both Modes):**
+- 90% weight to burn address (removes tokens from circulation)
+- 10% weight to current winner (relay-finalized or local best)
+- Weights change when new winner is identified (relay event or local evaluation)
+- Network emissions follow these weights via Yuma consensus
+
+**Checking SOTA Status:**
 ```bash
-python scripts/check_contract_status.py --config validator_config.yaml
+curl https://relay.bitsota.com/sota/events?limit=10
 ```
 
-Shows:
-- Current pending vote (if any)
-- Vote count
-- Which trustees have voted
-- Contract's available stake balance
+Shows recent finalized SOTA events and current threshold.
 
 ## Weight Management
 
-Validators set on-chain weights to indicate miner performance. This affects future network emissions.
+Validators set on-chain weights to direct network emissions to SOTA winners and burn address.
 
-The WeightManager runs automatically in the background and:
-- Checks every 5 minutes if weights need updating
-- Discovers active bots on the subnet
-- Sets weights based on recent miner performance
-- Uses exponential backoff on failures
+The CapacitorlessStickyBurnSplitWeightManager runs automatically in the background:
 
-Weights are separate from the immediate Capacitor rewards. Weights affect long-term emissions, while Capacitor provides instant bonuses for exceptional submissions.
+**Relay Consensus Mode (winner_source: "relay"):**
+- Polls relay for finalized SOTA events every 60 seconds
+- Tracks the most recent SOTA winner from relay events
+- Sets weights when new SOTA event is finalized
+- All validators converge on same winner
+- Distributes weight: 90% burn, 10% relay winner
+
+**Local Mode (winner_source: "local"):**
+- Tracks best score validated by this validator
+- Updates local winner when better candidate found
+- Sets weights immediately after evaluation (if `apply_weights_inline: true`)
+- Each validator may choose different winner temporarily
+- Distributes weight: 90% burn, 10% local winner
+- Optionally requires minimum improvement (`min_winner_improvement`)
+
+**Both Modes:**
+- Use Bittensor weight rate limits to avoid spam
+- Respect chain epoch boundaries for weight updates
+- Fall back to burn-only if winner not registered in metagraph
+
+Weights determine how network emissions are distributed via Yuma consensus. The burn address receives 90% to reduce circulating supply, while the current SOTA winner receives 10% as reward.
 
 ## Blacklisting
 
@@ -244,8 +317,11 @@ tail -f validator_metrics.log
 # Check if validator is running
 ps aux | grep validator_node
 
-# Monitor contract votes
-python scripts/monitor_contract.py --config validator_config.yaml
+# Check SOTA events
+curl https://relay.bitsota.com/sota/events?limit=10
+
+# Check current SOTA threshold
+curl https://relay.bitsota.com/sota_threshold
 ```
 
 ## Troubleshooting
@@ -256,12 +332,19 @@ python scripts/monitor_contract.py --config validator_config.yaml
 - Relay server might be down (check Discord)
 
 **"Could not get SOTA score, cannot process results":**
-- Contract RPC endpoint is unreachable
-- Check `contract.rpc_url` in config
-- Try alternative RPC endpoint
+- Relay server is unreachable
+- Check `relay.url` in config
+- Verify relay is responding: `curl https://relay.bitsota.com/sota_threshold`
 
-**"Already voted for miner with this score":**
-Normal behavior. Validator tracks recent votes to avoid duplicate contract transactions.
+**"Burn hotkey not found in metagraph":**
+- Burn hotkey address in config is incorrect
+- Metagraph sync failed
+- Check `capacitorless.burn_hotkey` matches official burn address
+
+**"Set weights failed":**
+- Bittensor weight rate limit not satisfied (must wait between weight updates)
+- Insufficient validator stake
+- Metagraph out of sync
 
 **"No results passed validation and SOTA checks":**
 All submissions in this batch either:
@@ -270,8 +353,8 @@ All submissions in this batch either:
 - Had score deltas indicating cheating
 This is normal if miner quality is low.
 
-**EVM key issues:**
-Make sure your EVM key file exists at the path specified in `evm_key_path`. The key must have a small amount of ETH for gas fees on Bittensor EVM.
+**"Winner hotkey not in metagraph yet":**
+Validator falls back to burn-only weights when winner hasn't registered. Weights will update once winner registers on subnet.
 
 ## Advanced Configuration
 
@@ -291,28 +374,49 @@ Lower values = stricter validation but might blacklist honest miners with slight
 
 **Change weight update frequency:**
 ```yaml
-weights:
-  check_interval: 600  # Check every 10 minutes instead of 5
+capacitorless:
+  event_refresh_interval_s: 120  # Check for new SOTA events every 2 minutes
+  poll_interval_s: 10.0  # Weight manager tick interval
 ```
+
+**Use local winner source:**
+```yaml
+capacitorless:
+  winner_source: "local"  # Set weights immediately after validation
+  min_winner_improvement: 0.01  # Require 1% improvement to update local winner
+  apply_weights_inline: true  # Apply weights right after evaluation
+  submit_sota_votes: true  # Still vote on relay for coordination (set false for pure local mode)
+```
+
+**Choosing Between Modes:**
+
+Relay mode:
+- All validators agree on same winner
+- Slower weight updates (wait for consensus)
+- More coordinated subnet behavior
+- Recommended for production
+
+Local mode:
+- Faster weight updates
+- Validators may choose different winners temporarily
+- Lower latency response to SOTA breakthroughs
+- Useful for testing or independent operation
 
 ## Economics
 
-Validators earn TAO/ALPHA emissions through the standard Bittensor mechanism based on:
+Validators earn ALPHA emissions through the standard Bittensor mechanism based on:
 - Validator stake amount
 - Subnet performance
 - Network-wide emission schedule
 
-The Capacitor contract voting is additional work that helps the subnet function but doesn't directly earn validators more. Validators participate because:
-1. Healthy subnet = higher subnet emissions = more validator earnings
-2. Validator operators may also run miners
-3. Subnet success attracts more stake and participants
+Validators distribute emissions to miners by setting on-chain weights. In capacitorless_sticky mode, 90% of emissions go to burn (reducing supply) and 10% to the current SOTA winner. This creates a deflationary mechanism while rewarding innovation.
 
 ## Security Best Practices
 
 **Protect your keys:**
 - Never share wallet seeds or private keys
 - Use separate wallets for different functions (cold storage for main funds)
-- Encrypt EVM key files
+- Keep hotkey secured on validator server
 
 **Monitor for attacks:**
 - Watch for unusual submission patterns
@@ -328,8 +432,8 @@ pip install -r requirements.txt --upgrade
 ## Next Steps
 
 - Join [BitSota Discord](https://discord.gg/6vCYV2WC) for validator coordination
-- Monitor your validator's performance and vote success rate
-- Consider funding the Capacitor contract when stake is low
+- Monitor your validator's performance and weight setting success
 - Review the [Rewards Guide](rewards.md) to understand the full incentive mechanism
+- Check [Reward Modes Guide](reward-modes.md) for alternative weight distribution strategies
 
 For understanding the reward distribution system, see [Rewards Guide](rewards.md).

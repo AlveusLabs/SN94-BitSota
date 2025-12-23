@@ -13,7 +13,7 @@ Bitsota is a platform that allows for decentralized open research problems to co
 
 **Miners:** Evolve ML algorithms using genetic programming and self-improving methods on our fixed CIFAR-10 binary evaluation pipeline, research benchmarks or hidden evaluation criteria. Can operate in direct or pool mining modes.
 
-**Validators:** Evaluate miner submissions independently, verify algorithm performance, and vote on rewards through smart contracts.
+**Validators:** Evaluate miner submissions independently, verify algorithm performance, and distribute rewards by setting on-chain weights via Yuma consensus.
 
 ## Inspiration
 
@@ -55,14 +55,17 @@ Validators evaluate algorithm submissions, verify performance claims, and vote o
 ### Direct Mining Flow
 
 ```
-Miner → Evolve Locally → Beat SOTA → Submit to Relay → Validators Verify → Contract Votes → Rewards
+Miner → Evolve Locally → Beat SOTA → Submit to Relay → Validators Verify → Relay Consensus → Weight Update → Emissions
 ```
 
 1. Miner runs genetic programming engine for up to 150 generations
 2. When algorithm beats State-of-the-Art threshold, submits to relay
 3. Validators download submission and independently re-evaluate
-4. Validators vote through Capacitor smart contract
-5. When 2/3 trustees agree, contract transfers ALPHA stake to miner
+4. Validators choose weight setting mode:
+   - Relay mode: Vote on relay, wait for consensus, then set weights
+   - Local mode: Set weights immediately based on own evaluation
+5. Validators set on-chain weights: 90% burn, 10% winner
+6. Network emissions flow to winner via Yuma consensus
 
 ### Pool Mining Flow
 
@@ -101,9 +104,9 @@ cd BitSota
 pip install -r requirements.txt
 pip install -e .
 
-Edit validator_config.yaml
+cp validator_config.yaml.example validator_config.yaml
+# Edit validator_config.yaml with your wallet and burn_hotkey
 
-python scripts/generate_evm.py --wallet-name your_wallet --hotkey your_hotkey # or use an existing EVM wallet
 python neurons/validator_node.py
 ```
 
@@ -138,8 +141,8 @@ python neurons/validator_node.py
 **Key Management:**
 - Never share private keys or seed phrases
 - Keep coldkeys offline
-- Backup both Bittensor and EVM keys securely
-- Use environment variables for private keys in production
+- Backup Bittensor wallet securely
+- Protect validator hotkeys on server
 
 ## Contributing
 

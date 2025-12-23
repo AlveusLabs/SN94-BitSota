@@ -5,10 +5,10 @@ BitSota uses multiple reward systems that work together. Understanding how they 
 ## Overview of Reward Systems
 
 **1. Bittensor Network Emissions**
-Standard TAO/ALPHA emissions distributed by the Bittensor protocol based on validator weights.
+ALPHA emissions distributed by the Bittensor protocol based on validator-set weights.
 
-**2. Capacitor Smart Contract**
-Bonus rewards for exceptional algorithm discoveries.
+**2. SOTA Weight Distribution**
+Validators set on-chain weights to direct emissions: 90% to burn address, 10% to current SOTA winner.
 
 **3. Pool Reputation System**
 For pool miners, reputation converts to RAO rewards at epoch boundaries.
@@ -34,35 +34,60 @@ This is the foundation of subnet economics. The Bittensor blockchain automatical
 Bittensor has a fixed emission schedule. Each subnet receives a portion based on subnet performance. Your share depends on your weights relative to other participants.
 
 **Weight Setting:**
-Validators run WeightManager which evaluates miners and sets on-chain weights every 5 minutes. This affects your long-term emission income.
+Validators run weight managers that set on-chain weights when SOTA events are finalized. This determines how emissions flow to miners.
 
-## Capacitor Smart Contract Rewards
+## SOTA Weight Distribution
 
-The Capacitor contract provides immediate bonuses for discovering breakthrough algorithms.
+Validators direct emissions to SOTA winners through on-chain weight setting using Yuma consensus. Two modes are available:
 
-### How It Works
-**Funding:**
-The contract is funded through emissions meant for miner rewards. These are sent to the capacitor contract. 
+### Relay Consensus Mode (winner_source: "relay")
 
-**Voting:**
 When a miner submits an algorithm that beats SOTA:
 1. Validators independently verify the algorithm
-2. Each validator calls `releaseReward(minerColdkey, score)`
-3. Contract tracks votes on-chain
-4. When 2 out of 3 trustees agree on the same (miner, score), contract executes transfer
-5. Contract transfers ALL its stake to the winning miner's coldkey
+2. Each validator votes on relay to accept new SOTA candidate
+3. Relay tracks votes and reaches consensus
+4. When enough validators agree, relay finalizes SOTA event
+5. SOTA event includes: miner_hotkey, score, start_block, end_block
 
-**Key Points:**
-- Rewards are immediate (within minutes of consensus)
-- One winner per voting round
-- Winner gets all available contract stake
-- No claiming required, stake transfers automatically
+Weight Setting:
+1. Validators fetch finalized SOTA events from relay
+2. Weight manager identifies current SOTA winner (most recent event)
+3. Validator sets on-chain weights: 90% burn_hotkey, 10% winner_hotkey
+4. Network emissions flow according to these weights
+5. Weights update only when new SOTA event is finalized
+
+This mode ensures all validators converge on the same winner before setting weights.
+
+### Local Mode (winner_source: "local")
+
+When a miner submits an algorithm that beats SOTA:
+1. Validator independently verifies the algorithm
+2. If score beats current local best, validator updates local winner
+3. Validator sets on-chain weights immediately: 90% burn, 10% local winner
+4. Optionally still votes on relay for coordination
+5. Weights update whenever validator finds better local candidate
+
+Weight Setting:
+1. Weight manager tracks best score validated by this validator
+2. When new best found, weights update immediately
+3. No waiting for relay consensus
+4. Faster response but validators may choose different winners
+5. `min_winner_improvement` prevents frequent weight changes
+
+This mode is faster but validators may temporarily diverge on winner choice.
+
+**Key Points (Both Modes):**
+- Rewards flow continuously via network emissions
+- 90% of emissions go to burn (deflationary mechanism)
+- 10% of emissions go to current SOTA winner
+- Winner changes when new SOTA is accepted (relay) or found (local)
+- No claiming required, emissions automatic
 
 ### SOTA Threshold
 
-SOTA (State-of-the-Art) is the minimum score required for rewards. It increases over time as better algorithms are discovered.
+SOTA (State-of-the-Art) is the minimum score required for acceptance. It increases over time as better algorithms are discovered.
 
-**Current SOTA:** Check with `contract_manager.get_current_sota_threshold()`
+**Current SOTA:** Check with `curl https://relay.bitsota.com/sota_threshold`
 
 **Progressive Improvement:**
 When someone beats SOTA with score 0.92, the new SOTA becomes 0.92. Next submission must beat 0.92. This ensures continuous improvement.
@@ -76,12 +101,13 @@ If your claimed score differs from validator's score by more than 10%, validator
 ### Economic Implications
 
 **For Miners:**
-Discovering SOTA-breaking algorithms can yield large instant rewards (entire contract balance). But this is competitive - only the best submission wins.
+Discovering SOTA-breaking algorithms makes you the current winner, earning you 10% of network emissions until someone beats your score. The longer your algorithm remains SOTA, the more you earn.
 
 **For Validators:**
-- Subnet is producing valuable algorithms
-- Higher subnet reputation attracts more participants
-- Long-term emissions outweigh short-term costs
+Validators earn based on stake. They distribute emissions to miners through weight setting:
+- 90% to burn reduces circulating supply (deflationary)
+- 10% to winner rewards innovation
+- Healthy subnet attracts more stake and participants
 
 ## Pool Mining Rewards
 
@@ -156,14 +182,11 @@ Your rewards (both emissions and Capacitor) are in ALPHA stake. ALPHA stake can 
 ### Example 1: Direct Miner
 
 **Setup:**
-- You run direct mining 24/7
-- You discover 1 SOTA-breaking algorithm per week
-- Your weights earn you 10 ALPHA/day from emissions
-
-**Weekly earnings:**
-- Network emissions: 10 × 7 = 70 ALPHA
-- Capacitor bonus: 50 ALPHA (from winning one round)
-- Total: 120 ALPHA/week
+- You discover SOTA-breaking algorithm
+- Validators vote and relay finalizes your SOTA event
+- You become current winner with 10% weight
+- Subnet receives 1000 ALPHA/day in emissions
+- You remain SOTA winner for 7 days
 
 ### Example 2: Pool Miner
 
@@ -240,54 +263,21 @@ WeightManager does this automatically, but monitoring miner quality helps subnet
 
 **Network Emissions:** Continuous, per-block distribution
 
-**Capacitor Rewards:** Immediate upon reaching 2/3 consensus
+**SOTA Winner Rewards:** Begin flowing after validators set weights for finalized SOTA event
 
 **Pool Rewards:** Hourly epoch conversions, withdrawals processed within 24 hours
 
-**Weight Updates:** Every 5 minutes, affects future emissions
+**Weight Updates:** Occur when new SOTA events are finalized, affects immediate emissions
 
-## Tax and Accounting Considerations
-
-Note: Not financial advice. Consult a tax professional.
-
-**Emissions:** Likely taxable as income when received
-
-**Staking Rewards:** Tax treatment varies by jurisdiction
-
-**Track:**
-- All incoming rewards (date, amount, source)
-- Wallet addresses and transaction hashes
-
-Many jurisdictions require reporting crypto income even if not converted to fiat.
-
-## Future: L2Pool Scaling
-
-When L2Pool launches, reward distribution will change:
-
-**Current (Capacitor):**
-- One winner per round
-- Validators vote on-chain
-- Winner gets all contract stake
-
-**Future (L2Pool):**
-- Thousands of winners per epoch
-- Validators sign off-chain
-- Winners claim their share with Merkle proofs
-- More gas-efficient at scale
-
-This will enable:
-- More miners receiving rewards per epoch
-- Lower validator operational costs
-- Fairer distribution across performance tiers
-
-Monitor Discord for L2Pool launch announcements.
 
 ## Common Questions
+
 **Q: Can I earn from both direct mining and pool mining?**
 A: Yes, run separate miners with different wallets. Don't use same wallet for both or pool may reject you.
 
-**Q: What happens if Capacitor contract runs out of stake?**
-A: No bonuses until a  it's funded again. Network emissions continue normally.
+
+**Q: What happens to the 90% burned?**
+A: Tokens sent to burn address are permanently removed from circulation, making the remaining supply more scarce.
 
 **Q: How is SOTA threshold initially set?**
 A: First submission sets baseline. Threshold increases from there.
@@ -296,7 +286,10 @@ A: First submission sets baseline. Threshold increases from there.
 A: No. Pool operator is registered on subnet and receives emissions, then distributes to pool participants through reputation system.
 
 **Q: Can I lose rewards?**
-A: Blacklisting blocks future rewards but doesn't take away earned rewards. Validators can't lose emissions unless they unstake.
+A: Blacklisting blocks future rewards but doesn't take away earned rewards. If you're SOTA winner when blacklisted, you continue earning until someone beats your score.
+
+**Q: What's the difference between relay mode and local mode?**
+A: Relay mode waits for multiple validators to agree on winner before setting weights (slower, more coordinated). Local mode sets weights immediately based on validator's own evaluation (faster, less coordinated). Both modes distribute 90% to burn and 10% to winner.
 
 ## Next Steps
 
