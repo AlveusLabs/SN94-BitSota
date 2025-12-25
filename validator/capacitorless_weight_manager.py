@@ -99,8 +99,17 @@ class CapacitorlessWeightManager:
                 logger.error(
                     f"Capacitorless weight loop failed ({self.consecutive_failures}x): {e}"
                 )
-                time.sleep(min(5 * (2**self.consecutive_failures), 300))
+                sleep_time = min(5 * (2**self.consecutive_failures), 300)
+                logger.info(
+                    "Capacitorless weight loop sleeping for %.1fs after failure",
+                    sleep_time,
+                )
+                time.sleep(sleep_time)
 
+            logger.info(
+                "Capacitorless weight loop sleeping for %.1fs",
+                self.poll_interval_s,
+            )
             time.sleep(self.poll_interval_s)
 
     def _tick(self):
@@ -173,6 +182,10 @@ class CapacitorlessWeightManager:
     def _fetch_events(self) -> Optional[List[SOTAEvent]]:
         if not self.relay_client:
             return []
+        logger.info(
+            "Fetching relay SOTA events (limit=%s) for windowed mode",
+            self.events_limit,
+        )
         events = self.relay_client.get_sota_events(limit=self.events_limit)
         if events is None:
             return None

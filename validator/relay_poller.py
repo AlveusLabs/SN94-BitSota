@@ -53,6 +53,7 @@ class RelayPoller:
         """The main loop for polling the relay server."""
         while self.is_running:
             try:
+                #logger.info("Relay poller fetching results")
                 results = self.relay_client.get_all_results()
                 if results:
                     self.on_new_results(results)
@@ -62,8 +63,10 @@ class RelayPoller:
                 self.last_error = str(e)
                 logger.error(f"Relay poll failed ({self.consecutive_failures}x): {e}")
                 # Exponential backoff
-                sleep_time = min(self.interval * (2**self.consecutive_failures), 3600)
+                sleep_time = min(self.interval * (2**self.consecutive_failures), 300)
+                logger.info("Relay poller sleeping for %.1fs after failure", sleep_time)
                 time.sleep(sleep_time)
                 continue
 
+            #logger.info("Relay poller sleeping for %.1fs", self.interval)
             time.sleep(self.interval)

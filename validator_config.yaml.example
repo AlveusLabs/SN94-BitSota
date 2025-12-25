@@ -62,7 +62,7 @@ server:
   port: 5000
   debug: false
 
-# Weight Management Configuration
+# Capacitorful Weight Management Configuration
 weights:
   check_interval: 300  # Check weights every 5 minutes
   auto_restart: true   # Restart weight checker if it dies
