@@ -7,6 +7,7 @@ import numpy as np
 from core.algorithm_array import AlgorithmArray
 from core.tasks.base import Task
 from .base_engine import BaseEvolutionEngine
+from miner.state_store import score_from_json, score_to_json
 
 
 class ArchiveAwareBaselineEvolution(BaseEvolutionEngine):
@@ -404,6 +405,68 @@ class ArchiveAwareBaselineEvolution(BaseEvolutionEngine):
     def initialize_population(self) -> List[AlgorithmArray]:
         """Initialize population with empty programs by default."""
         return super().initialize_population()
+
+    def get_state(self) -> Dict[str, object]:
+        state = super().get_state()
+        archive_entries = [
+            {
+                "algorithm": entry["algorithm"].to_dict(),
+                "fitness": score_to_json(entry.get("fitness")),
+                "generation": int(entry.get("generation", 0) or 0),
+                "complexity": int(entry.get("complexity", 0) or 0),
+                "signature": entry.get("signature", ""),
+            }
+            for entry in list(self.archive)
+        ]
+        state.update(
+            {
+                "engine_kind": "archive",
+                "archive": archive_entries,
+                "archive_diversity": dict(self.archive_diversity),
+                "generation_counter": int(self.generation_counter),
+                "min_archive_for_sampling": int(self.min_archive_for_sampling),
+            }
+        )
+        return state
+
+    def load_state(self, state: Dict[str, object]) -> None:
+        super().load_state(state)
+        archive_entries = state.get("archive") or []
+        self.archive = deque(maxlen=self.archive.maxlen)
+        for entry in archive_entries:
+            algo_data = entry.get("algorithm")
+            if not algo_data:
+                continue
+            algo = AlgorithmArray.from_dict(algo_data)
+            fitness = score_from_json(entry.get("fitness"))
+            signature = entry.get("signature") or self._get_algorithm_signature(algo)
+            self.archive.append(
+                {
+                    "algorithm": algo,
+                    "fitness": fitness,
+                    "generation": int(entry.get("generation", 0) or 0),
+                    "complexity": int(entry.get("complexity", 0) or 0),
+                    "signature": signature,
+                }
+            )
+        diversity = state.get("archive_diversity") or {}
+        if diversity:
+            self.archive_diversity = {str(k): int(v) for k, v in diversity.items()}
+        else:
+            self.archive_diversity = {}
+            for entry in self.archive:
+                sig = entry.get("signature")
+                if sig:
+                    self.archive_diversity[sig] = self.archive_diversity.get(sig, 0) + 1
+        try:
+            self.generation_counter = int(state.get("generation_counter", self.generation) or 0)
+        except Exception:
+            self.generation_counter = int(self.generation or 0)
+        if "min_archive_for_sampling" in state:
+            try:
+                self.min_archive_for_sampling = int(state.get("min_archive_for_sampling", 0) or 0)
+            except Exception:
+                pass
 
     def evolve_generation(
         self,

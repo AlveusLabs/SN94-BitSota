@@ -4,6 +4,7 @@ import os
 import time
 import uuid
 import json
+from pathlib import Path
 from typing import Dict, List, Optional, Any, Tuple
 
 import numpy as np
@@ -25,6 +26,14 @@ from .engines.ga_engine import BaselineEvolutionEngine
 from .engines.archive_engine import ArchiveAwareBaselineEvolution
 from .engines.base_engine import BaseEvolutionEngine, DEFAULT_MINER_TASK_COUNT
 from .metrics_logger import MinerMetricsLogger
+from .state_store import (
+    STATE_VERSION,
+    default_state_path,
+    read_state_file,
+    score_from_json,
+    score_to_json,
+    write_state_file,
+)
 
 DEFAULT_TASK_TYPE = "cifar10_binary"
 
@@ -516,17 +525,36 @@ class DirectClient:
         return self.process_evolution_task(task)
 
     def _mine_until_sota(
-        self, task_type: str, engine_type: str, checkpoint_generations: int
+        self,
+        task_type: str,
+        engine_type: str,
+        checkpoint_generations: int,
+        *,
+        state_path: Optional[str] = None,
+        resume_from_state: bool = False,
     ) -> Dict[str, Any]:
         """
         Mine continuously until SOTA is found, then submit.
 
         Returns:
             Dict with submission result
+
+        Notes:
+            When state_path is set, population state is periodically persisted and can be resumed.
         """
         # Create task
         engine = self._get_engine(task_type, engine_type)
         task = engine.task
+
+        state_path_resolved = self._resolve_state_path(state_path)
+        resume_state = None
+        if resume_from_state and state_path_resolved:
+            resume_state = self._load_population_state(
+                state_path=state_path_resolved,
+                task_type=task_type,
+                engine_type=engine_type,
+                engine=engine,
+            )
 
         # Get current SOTA threshold
         sota_threshold = self._fetch_sota_threshold()
@@ -547,6 +575,24 @@ class DirectClient:
         generation = 0
         best_ever_score = -np.inf
         generations_since_improvement = 0
+        if resume_state:
+            try:
+                generation = int(resume_state.get("generation", generation) or generation)
+            except Exception:
+                generation = 0
+            if "best_ever_score" in resume_state:
+                best_ever_score = score_from_json(
+                    resume_state.get("best_ever_score"), default=best_ever_score
+                )
+            elif engine.best_fitness is not None:
+                best_ever_score = float(engine.best_fitness)
+            if "generations_since_improvement" in resume_state:
+                try:
+                    generations_since_improvement = int(
+                        resume_state.get("generations_since_improvement", 0) or 0
+                    )
+                except Exception:
+                    generations_since_improvement = 0
         try:
             validate_every = max(1, int(getattr(self, "validate_every_n_generations", 1)))
         except Exception:
@@ -585,6 +631,19 @@ class DirectClient:
                 "generation": generation,
                 "submission_result": submission_result,
             }
+
+        def _maybe_save_state() -> None:
+            if not state_path_resolved:
+                return
+            self._save_population_state(
+                state_path=state_path_resolved,
+                task_type=task_type,
+                engine_type=engine_type,
+                engine=engine,
+                generation=generation,
+                best_ever_score=best_ever_score,
+                generations_since_improvement=generations_since_improvement,
+            )
 
         while not self.stop_signal:
             # Evolve one generation
@@ -718,6 +777,7 @@ class DirectClient:
                         int(generation),
                         float(mining_score),
                     )
+                    _maybe_save_state()
                     return _submitted_result(submission_result, mining_score)
                 if submission_result.get("status") == "not_submitted" and submission_result.get(
                     "reason"
@@ -839,6 +899,7 @@ class DirectClient:
                         float(verified_score_f),
                         float(solution_data.get("eval_score", -np.inf)),
                     )
+                    _maybe_save_state()
                     return _submitted_result(submission_result, float(solution_data["eval_score"]))
                 if throttled_mode:
                     pending_prevalidated = {
@@ -948,6 +1009,7 @@ class DirectClient:
                             pending_best_candidate_score = -np.inf
                             pending_best_candidate_over_local_count = 0
                             pending_best_candidate_from_cooldown = False
+                _maybe_save_state()
 
         # If we exit the loop due to stop_signal, return appropriate status
         logger.info(
@@ -957,6 +1019,7 @@ class DirectClient:
             float(best_verified_local),
             float(sota_threshold),
         )
+        _maybe_save_state()
         return {
             "status": "stopped",
             "reason": "Mining stopped by user or signal",
@@ -970,6 +1033,8 @@ class DirectClient:
         task_type: str = DEFAULT_TASK_TYPE,
         engine_type: str = "archive",  # "baseline" or "archive"
         checkpoint_generations: int = 10,  # Log progress every N generations
+        state_path: Optional[str] = None,
+        resume_from_state: bool = False,
     ) -> Dict[str, Any]:
         """
         Run continuous mining until stopped or SOTA found.
@@ -979,6 +1044,8 @@ class DirectClient:
             task_type: Type of task to mine (from TASK_REGISTRY)
             engine_type: Evolution engine to use
             checkpoint_generations: Generations between progress logs
+            state_path: Optional path to persist population state
+            resume_from_state: Whether to resume from existing state if available
 
         Returns:
             Dict with final mining statistics
@@ -995,7 +1062,11 @@ class DirectClient:
         while not self.stop_signal:
             try:
                 result = self._mine_until_sota(
-                    task_type, engine_type, checkpoint_generations
+                    task_type,
+                    engine_type,
+                    checkpoint_generations,
+                    state_path=state_path,
+                    resume_from_state=resume_from_state,
                 )
 
                 if result["status"] == "submitted":
@@ -1038,6 +1109,176 @@ class DirectClient:
             "total_submissions": self.total_submissions,
             "total_sota_breaks": self.total_sota_breaks,
         }
+
+    def _resolve_state_path(self, state_path: Optional[str]) -> Optional[Path]:
+        if state_path is None:
+            resolved = default_state_path()
+        else:
+            if isinstance(state_path, str) and not state_path.strip():
+                return None
+            try:
+                resolved = Path(state_path).expanduser().resolve()
+            except Exception:
+                return None
+        try:
+            resolved = resolved.expanduser().resolve()
+        except Exception:
+            return None
+        if resolved.exists() and resolved.is_dir():
+            logger.warning("State path %s is a directory; skipping state persistence", str(resolved))
+            return None
+        return resolved
+
+    def _load_population_state(
+        self,
+        *,
+        state_path: Path,
+        task_type: str,
+        engine_type: str,
+        engine: BaseEvolutionEngine,
+    ) -> Optional[Dict[str, Any]]:
+        state = read_state_file(state_path)
+        if not state:
+            return None
+        version = state.get("version")
+        if version is not None:
+            try:
+                version_int = int(version)
+            except Exception:
+                version_int = None
+            if version_int != int(STATE_VERSION):
+                logger.warning(
+                    "State file %s has unsupported version=%s; skipping resume",
+                    str(state_path),
+                    str(version),
+                )
+                return None
+        if state.get("task_type") != task_type or state.get("engine_type") != engine_type:
+            logger.warning(
+                "State file %s does not match task_type=%s engine_type=%s; skipping resume",
+                str(state_path),
+                str(task_type),
+                str(engine_type),
+            )
+            return None
+        engine_state = state.get("engine_state")
+        if not engine_state:
+            logger.warning("State file %s missing engine_state; skipping resume", str(state_path))
+            return None
+        saved_pop_size = engine_state.get("pop_size")
+        try:
+            if saved_pop_size is not None and int(saved_pop_size) != int(engine.pop_size):
+                logger.warning(
+                    "State file pop_size=%s does not match engine pop_size=%s; skipping resume",
+                    str(saved_pop_size),
+                    str(engine.pop_size),
+                )
+                return None
+        except Exception:
+            pass
+        if engine.population is not None:
+            logger.info(
+                "Engine already initialized for %s/%s; skipping state load",
+                str(task_type),
+                str(engine_type),
+            )
+            return None
+        try:
+            engine.load_state(engine_state)
+        except Exception as exc:
+            logger.warning("Failed to load engine state from %s: %s", str(state_path), str(exc))
+            return None
+        run_state = state.get("run_state") or {}
+        if "local_best_verified_score" in run_state:
+            self._local_best_verified_score[task_type] = score_from_json(
+                run_state.get("local_best_verified_score")
+            )
+        if "last_submission_timestamp" in run_state:
+            try:
+                self._last_submission_timestamp = float(
+                    run_state.get("last_submission_timestamp", 0.0) or 0.0
+                )
+            except Exception:
+                pass
+        logger.info(
+            "Resumed mining state from %s (generation=%s)",
+            str(state_path),
+            str(run_state.get("generation", "?")),
+        )
+        return run_state
+
+    def _save_population_state(
+        self,
+        *,
+        state_path: Path,
+        task_type: str,
+        engine_type: str,
+        engine: BaseEvolutionEngine,
+        generation: int,
+        best_ever_score: float,
+        generations_since_improvement: int,
+    ) -> None:
+        run_state = {
+            "generation": int(generation),
+            "best_ever_score": score_to_json(best_ever_score),
+            "generations_since_improvement": int(generations_since_improvement),
+            "last_submission_timestamp": float(self._last_submission_timestamp or 0.0),
+        }
+        local_best = self._local_best_verified_score.get(task_type)
+        if local_best is not None:
+            run_state["local_best_verified_score"] = score_to_json(local_best)
+        payload = {
+            "version": int(STATE_VERSION),
+            "saved_at": float(time.time()),
+            "task_type": str(task_type),
+            "engine_type": str(engine_type),
+            "run_state": run_state,
+            "engine_state": engine.get_state(),
+        }
+        try:
+            write_state_file(state_path, payload)
+        except Exception as exc:
+            logger.warning(
+                "Failed to save mining state to %s: %s",
+                str(state_path),
+                str(exc),
+            )
+
+    def clear_population_state(
+        self,
+        *,
+        task_type: Optional[str] = None,
+        engine_type: Optional[str] = None,
+        state_path: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        path = self._resolve_state_path(state_path)
+        cleared = False
+        error = None
+        if path and path.exists():
+            try:
+                path.unlink()
+                cleared = True
+            except Exception as exc:
+                error = str(exc)
+
+        if task_type and engine_type:
+            self._engine_cache.pop((task_type, engine_type), None)
+        else:
+            self._engine_cache = {}
+
+        if task_type:
+            self._local_best_verified_score.pop(task_type, None)
+        else:
+            self._local_best_verified_score = {}
+
+        if task_type or cleared:
+            self._last_submission_timestamp = 0.0
+
+        if error:
+            return {"status": "error", "message": error, "path": str(path) if path else None}
+        if cleared:
+            return {"status": "cleared", "path": str(path) if path else None}
+        return {"status": "not_found", "message": "No state file to clear", "path": str(path) if path else None}
 
     # ------------ internal helpers ---------------------------------------
     def _fetch_sota_threshold(self, *, force_refresh: bool = False) -> float:

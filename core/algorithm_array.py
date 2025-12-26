@@ -279,7 +279,14 @@ class AlgorithmArray:
 
     def to_dict(self) -> Dict:
         """Serialize to dictionary"""
-        result = {"input_dim": self.input_dim, "phases": {}}
+        result = {
+            "input_dim": int(self.input_dim),
+            "scalar_count": int(self.scalar_count),
+            "vector_count": int(self.vector_count),
+            "matrix_count": int(self.matrix_count),
+            "vector_dim": int(self.vector_dim) if self.vector_dim is not None else None,
+            "phases": {},
+        }
 
         for phase in self.phase_arrays:
             size = self.phase_sizes[phase]
@@ -302,11 +309,27 @@ class AlgorithmArray:
         phases = list(data["phases"].keys())
         max_sizes = {phase: data["phases"][phase]["max_size"] for phase in phases}
 
+        def _coerce_int(value, fallback):
+            try:
+                return int(value)
+            except Exception:
+                return fallback
+
+        scalar_count = _coerce_int(data.get("scalar_count"), cls.scalar_count)
+        vector_count = _coerce_int(data.get("vector_count"), cls.vector_count)
+        matrix_count = _coerce_int(data.get("matrix_count"), cls.matrix_count)
+        raw_vector_dim = data.get("vector_dim")
+        vector_dim = _coerce_int(raw_vector_dim, None) if raw_vector_dim is not None else None
+
         instance = cls(
             input_dim=data["input_dim"],
             phase_arrays={},
             phase_sizes={},
             phase_max_sizes={},
+            scalar_count=scalar_count,
+            vector_count=vector_count,
+            matrix_count=matrix_count,
+            vector_dim=vector_dim,
         )
 
         for phase in phases:
