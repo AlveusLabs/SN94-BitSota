@@ -384,6 +384,7 @@ def main(argv=None):
             if sota_override is not None:
                 current_sota = float(sota_override)
             elif is_capacitorless:
+                logging.info("Fetching relay SOTA threshold")
                 current_sota = relay_client.get_sota_threshold()
                 if current_sota is None:
                     current_sota = _fallback_sota_threshold()
@@ -504,6 +505,7 @@ def main(argv=None):
 
             if relay_client and result_id:
                 try:
+                    logging.info("Verifying relay result_id=%s", result_id)
                     if relay_client.verify_result(result_id):
                         logging.info(f"✓ Marked result {result_id} as verified on relay")
                 except Exception as e:
@@ -585,6 +587,7 @@ def main(argv=None):
         sota_score = None
         if relay_client:
             try:
+                logging.info("Fetching relay SOTA threshold")
                 sota_score = relay_client.get_sota_threshold()
                 if sota_score is not None:
                     logging.info(f"Current SOTA threshold (from relay): {sota_score:.4f}")
@@ -654,8 +657,16 @@ def main(argv=None):
                 )
                 continue
 
+            eval_start = time.time()
             is_valid, validator_score = verify_solution_quality(
                 result["algorithm_result"], sota_score
+            )
+            eval_duration_s = time.time() - eval_start
+            logging.info(
+                "Evaluation complete for result_id=%s miner=%s (%.3fs)",
+                result_id,
+                miner_hotkey[:8],
+                eval_duration_s,
             )
 
             logging.info(
@@ -686,6 +697,10 @@ def main(argv=None):
                 )
                 if relay_client:
                     try:
+                        logging.info(
+                            "Submitting blacklist request to relay for miner %s",
+                            miner_hotkey[:8],
+                        )
                         relay_client.blacklist_miner(miner_hotkey)
                     except Exception as e:
                         logging.error(f"Failed to blacklist miner on relay: {e}")

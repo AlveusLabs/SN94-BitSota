@@ -45,11 +45,16 @@ class WeightManager:
 
                 # Exponential backoff on failures
                 sleep_time = min(
-                    300 * (2**self.consecutive_failures), 3600
-                )  # max 1 hour
+                    5 * (2**self.consecutive_failures), 300
+                )  # max 5 minutes
+                logger.info(
+                    "Weight manager sleeping for %.1fs after failure",
+                    sleep_time,
+                )
                 time.sleep(sleep_time)
                 continue
 
+            logger.info("Weight manager sleeping for %.1fs", self.check_interval)
             time.sleep(self.check_interval)
 
     def _check_and_set_weights(self):

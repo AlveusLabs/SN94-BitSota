@@ -124,8 +124,17 @@ class CapacitorlessStickyBurnSplitWeightManager:
                     self.consecutive_failures,
                     e,
                 )
-                time.sleep(min(5 * (2**self.consecutive_failures), 300))
+                sleep_time = min(5 * (2**self.consecutive_failures), 300)
+                # logger.info(
+                #     "Capacitorless sticky burn-split loop sleeping for %.1fs after failure",
+                #     sleep_time,
+                # )
+                time.sleep(sleep_time)
 
+            # logger.info(
+            #     "Capacitorless sticky burn-split loop sleeping for %.1fs",
+            #     self.poll_interval_s,
+            # )
             time.sleep(self.poll_interval_s)
 
     def update_local_winner(self, miner_hotkey: str, score: float) -> bool:
@@ -200,11 +209,21 @@ class CapacitorlessStickyBurnSplitWeightManager:
             if self.winner_source == "relay"
             else None
         )
+
+        if hasattr(self.network, "should_set_weights"):
+            try:
+                if not bool(self.network.should_set_weights()):
+                    # Chain weight rate-limit not satisfied; don't attempt `set_weights()`
+                    # since bittensor will reject it with "Perhaps it is too soon...".
+                    self._last_attempt_ts = now
+                    return
+            except Exception:
+                # Fall back to attempting (safer than freezing weights forever).
+                pass
+
         local_latest = self._get_local_winner() if self.winner_source == "local" else None
         if self.winner_source == "local" and local_latest is None:
-            # In local mode we do not set weights until we have a locally-evaluated winner.
-            # This avoids setting burn-only weights before the first evaluation completes
-            # (which can then lock the validator out due to the chain rate-limit).
+            self._apply_weights(winner_hotkey=self.burn_hotkey)
             return
         desired_event_id: Optional[int] = None
         if relay_latest is not None:
@@ -219,21 +238,11 @@ class CapacitorlessStickyBurnSplitWeightManager:
             desired_winner = None
 
         if desired_signature == self._last_applied_signature and self._last_apply_success:
+            self._apply_weights(winner_hotkey=desired_winner)
             return
 
         if self.retry_interval_s and (now - self._last_attempt_ts) < self.retry_interval_s:
             return
-
-        if hasattr(self.network, "should_set_weights"):
-            try:
-                if not bool(self.network.should_set_weights()):
-                    # Chain weight rate-limit not satisfied; don't attempt `set_weights()`
-                    # since bittensor will reject it with "Perhaps it is too soon...".
-                    self._last_attempt_ts = now
-                    return
-            except Exception:
-                # Fall back to attempting (safer than freezing weights forever).
-                pass
 
         ok, applied_winner = self._apply_weights(desired_winner)
         self._last_attempt_ts = now
@@ -249,6 +258,10 @@ class CapacitorlessStickyBurnSplitWeightManager:
         if self.event_refresh_interval_s <= 0 or (
             now - self._last_event_fetch_ts > self.event_refresh_interval_s
         ):
+            logger.info(
+                "Fetching relay SOTA events (limit=%s) for sticky burn-split",
+                self.events_limit,
+            )
             events = self.relay_client.get_sota_events(limit=self.events_limit)
             if events is None:
                 # Preserve last known winner if relay fetch fails.
