@@ -101,7 +101,15 @@ class DirectMiningTask(QRunnable):
         stopping = Signal()
         stats_updated = Signal(dict)
 
-    def __init__(self, client, task_type: str, stop_flag, initial_tasks=0, initial_submissions=0, initial_best_score=None):
+    def __init__(
+        self,
+        client,
+        task_type: str,
+        stop_flag,
+        initial_tasks=0,
+        initial_submissions=0,
+        initial_best_score=None,
+    ):
         super().__init__()
         self.client = client
         self.task_type = task_type
@@ -140,6 +148,7 @@ class DirectMiningTask(QRunnable):
                     task_type=self.task_type,
                     engine_type="baseline",
                     checkpoint_generations=10,
+                    resume_from_state=True,
                 )
                 self.signals.log.emit(f"Mining session completed: {result}")
             else:
@@ -257,9 +266,6 @@ class MiningScreen(QWidget):
         task_label.setObjectName("form_label")
         layout.addWidget(task_label)
 
-        config_row = QHBoxLayout()
-        config_row.setSpacing(16)
-
         self.task_type_combo = QComboBox()
         self.task_type_combo.setObjectName("form_input")
         self.task_type_map = {
@@ -268,10 +274,17 @@ class MiningScreen(QWidget):
         self.task_type_combo.addItems(list(self.task_type_map.keys()))
         self.task_type_combo.setEnabled(False)
         self.task_type_combo.currentTextChanged.connect(lambda: self.update_global_sota())
+
+        config_row = QHBoxLayout()
+        config_row.setSpacing(16)
         config_row.addWidget(self.task_type_combo, 1)
 
         self.save_config_btn = SecondaryButton("Save Configuration", width=200, height=48)
         config_row.addWidget(self.save_config_btn)
+
+        self.clear_state_btn = SecondaryButton("Clear State", width=140, height=48)
+        self.clear_state_btn.clicked.connect(self._clear_population_state)
+        config_row.addWidget(self.clear_state_btn)
 
         self.start_mining_btn = PrimaryButton("Start Mining", width=200, height=48, icon_path=resource_path("gui/images/play.svg"))
         self.start_mining_btn.clicked.connect(self._toggle_mining)
@@ -353,6 +366,7 @@ class MiningScreen(QWidget):
 
         self.thread_pool.start(self.mining_task)
         self._append_log(f"Starting mining for task: {task_type}")
+        self.clear_state_btn.setEnabled(False)
         self.update_connection_status(True)
         self.update_global_sota()
         self.sota_timer.start(30000)
@@ -366,6 +380,7 @@ class MiningScreen(QWidget):
         self.start_mining_btn.setStyleSheet("")
         self.start_mining_btn.style().unpolish(self.start_mining_btn)
         self.start_mining_btn.style().polish(self.start_mining_btn)
+        self.clear_state_btn.setEnabled(True)
 
         if self.mining_task:
             self.mining_task.stop()
@@ -472,6 +487,25 @@ class MiningScreen(QWidget):
         from gui.wallet_utils_gui import save_mining_stats
         save_mining_stats(self.tasks_completed, self.successful_submissions, self.best_score)
 
+    def _clear_population_state(self):
+        if self.is_mining:
+            self._append_log("ERROR: Stop mining before clearing state.")
+            return
+        if not self.main_window or not self.main_window.client:
+            self._append_log("ERROR: Client not initialized.")
+            return
+        task_display = self.task_type_combo.currentText()
+        task_type = self.task_type_map.get(task_display, "cifar10_binary")
+        result = self.main_window.client.clear_population_state(
+            task_type=task_type,
+            engine_type="baseline",
+        )
+        if result.get("status") == "cleared":
+            cleared_path = result.get("path") or "unknown"
+            self._append_log(f"[state] Cleared population state: {cleared_path}")
+        else:
+            self._append_log(f"[state] {result.get('message', 'Failed to clear state')}")
+
     def _update_stats(self, stats: dict):
         tasks = stats.get("tasks_completed", 0)
         submissions = stats.get("successful_submissions", 0)
@@ -510,6 +544,7 @@ class MiningScreen(QWidget):
         self.start_mining_btn.setStyleSheet("")
         self.start_mining_btn.style().unpolish(self.start_mining_btn)
         self.start_mining_btn.style().polish(self.start_mining_btn)
+        self.clear_state_btn.setEnabled(True)
         self.update_connection_status(False)
         self._append_log("Mining stopped.")
 

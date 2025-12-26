@@ -7,6 +7,7 @@ import numpy as np
 
 from core.algorithm_array import AlgorithmArray
 from .base_engine import BaseEvolutionEngine
+from miner.state_store import score_from_json, score_to_json
 
 logger = logging.getLogger(__name__)
 
@@ -143,6 +144,49 @@ class BaselineEvolutionEngine(BaseEvolutionEngine):
                 self.best_fitness = fitness
 
         self.population = [entry["algo"] for entry in self._population_queue]
+
+    def get_state(self) -> Dict[str, object]:
+        state = super().get_state()
+        queue_entries = None
+        if self._population_queue is not None:
+            queue_entries = [
+                {
+                    "algo": entry["algo"].to_dict(),
+                    "fitness": score_to_json(entry.get("fitness")),
+                }
+                for entry in list(self._population_queue)
+            ]
+        state.update(
+            {
+                "engine_kind": "baseline",
+                "population_queue": queue_entries,
+                "stagnation": int(self._stagnation),
+                "tournament_size": int(self.tournament_size),
+                "mutation_prob": float(self.mutation_prob),
+            }
+        )
+        return state
+
+    def load_state(self, state: Dict[str, object]) -> None:
+        super().load_state(state)
+        queue_entries = state.get("population_queue")
+        if queue_entries:
+            self._population_queue = deque(maxlen=self.pop_size)
+            for entry in queue_entries:
+                algo_data = entry.get("algo")
+                if not algo_data:
+                    continue
+                algo = AlgorithmArray.from_dict(algo_data)
+                fitness = score_from_json(entry.get("fitness"))
+                self._population_queue.append({"algo": algo, "fitness": fitness})
+            self.population = [entry["algo"] for entry in self._population_queue]
+        else:
+            self._population_queue = None
+        if "stagnation" in state:
+            try:
+                self._stagnation = int(state.get("stagnation", 0) or 0)
+            except Exception:
+                self._stagnation = 0
 
     def _select_tournament_parent(self, default_entry: Dict[str, object]):
         """Sample T individuals uniformly and return the best fitness entry."""

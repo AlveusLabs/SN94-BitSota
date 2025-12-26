@@ -5,6 +5,7 @@ from typing import Tuple, List, Optional, Dict
 import numpy as np
 
 from core.algorithm_array import AlgorithmArray
+from miner.state_store import score_from_json, score_to_json
 from core.tasks.base import Task
 from core.tasks.cifar10 import CIFAR10BinaryTask
 
@@ -174,3 +175,32 @@ class BaseEvolutionEngine:
         except Exception:
             return None
         return (fingerprint, descriptor, self.miner_task_count)
+
+    def get_state(self) -> Dict[str, object]:
+        population = None
+        if self.population is not None:
+            population = [algo.to_dict() for algo in self.population]
+        return {
+            "engine_name": type(self).__name__,
+            "pop_size": int(self.pop_size),
+            "generation": int(self.generation),
+            "best_fitness": score_to_json(self.best_fitness),
+            "best_algo": self.best_algo.to_dict() if self.best_algo is not None else None,
+            "population": population,
+        }
+
+    def load_state(self, state: Dict[str, object]) -> None:
+        if not state:
+            return
+        try:
+            self.generation = int(state.get("generation", 0) or 0)
+        except Exception:
+            self.generation = 0
+        self.best_fitness = score_from_json(state.get("best_fitness"))
+        best_algo = state.get("best_algo")
+        self.best_algo = AlgorithmArray.from_dict(best_algo) if best_algo else None
+        population = state.get("population")
+        if population:
+            self.population = [AlgorithmArray.from_dict(entry) for entry in population]
+        else:
+            self.population = None
