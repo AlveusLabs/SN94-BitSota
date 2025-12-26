@@ -227,8 +227,8 @@ class BaselineEvolutionEngine(BaseEvolutionEngine):
 
         max_size = algo.phase_max_sizes.get(phase, 0)
         current_size = algo.get_phase_size(phase)
-        if current_size >= max_size > 0:
-            return  # Phase is full
+        if max_size <= 0 or current_size >= max_size:
+            return  # Phase is full; ignore insert mutation.
 
         op_name = np.random.choice(list(OPCODE_METADATA.keys()))
         op_meta = OPCODE_METADATA[op_name]

@@ -187,20 +187,11 @@ class ArchiveAwareBaselineEvolution(BaseEvolutionEngine):
         current_size = algo.get_phase_size(phase)
         max_size = algo.get_phase_max_size(phase)
 
-        if current_size < max_size:
-            # Phase has space, add new instruction
-            algo.add_instruction(phase, op_name, arg1, arg2, dest, const1, const2)
-        elif current_size > 0:
-            # Phase is full, replace a random existing instruction
-            idx = np.random.randint(0, current_size)
-            arrays = algo.phase_arrays[phase]
+        if max_size <= 0 or current_size >= max_size:
+            return  # Phase is full; ignore insert mutation.
 
-            arrays["ops"][idx] = OPCODES[op_name]
-            arrays["arg1"][idx] = arg1
-            arrays["arg2"][idx] = arg2
-            arrays["dest"][idx] = dest
-            arrays["const1"][idx] = const1
-            arrays["const2"][idx] = const2
+        # Phase has space, add new instruction
+        algo.add_instruction(phase, op_name, arg1, arg2, dest, const1, const2)
 
     def _mutate_instruction_components(
         self, algo: AlgorithmArray, phase: str, idx: int
