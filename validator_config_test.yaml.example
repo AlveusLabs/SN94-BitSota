@@ -1,0 +1,109 @@
+# Validator Configuration for BitSota
+# This file configures the validator for testnet deployment
+
+# Reward mode:
+# - "capacitor" (default): vote via Capacitor EVM contract
+# - "capacitorless": vote via relay + weights (burn by default, award winners on schedule)
+# - "capacitorless_sticky": vote via relay + weights (burn 90%, pay 10% to latest accepted SOTA winner)
+reward_mode: "capacitorless"
+
+# Bittensor Network Configuration
+netuid: 402
+wallet_name: "automl_launch_test"
+wallet_hotkey: "automl_launch_test_hot"
+path: "~/.bittensor/wallets/"
+#evm_key_path: "~/.bittensor/wallets/val1/h160/val1_hot"
+network: "test"  # Use "test" for testnet, "finney" for mainnet
+epoch_length: 100
+subtensor_chain_endpoint: "wss://entrypoint-finney.opentensor.ai:443"
+
+
+# Smart Contract Configuration
+contract:
+  rpc_url: "https://test.chain.opentensor.ai"
+  address: "0x2629eD4E44B74f2A0883Cc7bEDEA4C9b9a0BaFD9"
+  abi_file: "capacitor_abi.json"
+
+# Capacitorless reward configuration (used when reward_mode: "capacitorless")
+capacitorless:
+  # Mode:
+  # - "sticky_burnsplit" (default): ignore windows; keep paying the latest accepted winner indefinitely.
+  # - "windowed": full weight to winner during relay SOTA reward windows, else burn.
+  mode: "sticky_burnsplit"
+  # Winner selection:
+  # - "relay": follow relay-finalized SOTA events (/sota/events)
+  # - "local": follow this validator's locally-evaluated best miner (no relay finalization required)
+  winner_source: "local"
+  # Minimum improvement required to replace the current local winner.
+  min_winner_improvement: 0.0
+  # If false, do not submit SOTA votes to the relay at all (local-only capacitorless mode).
+  submit_sota_votes: true
+  # When winner_source == "local", apply weights immediately after evaluation instead of waiting
+  # for the weight background loop.
+  apply_weights_inline: true
+  # Hotkey that receives emissions when "burning" (must be registered on the subnet)
+  burn_hotkey: "5GQwFPBicWVUEKDZtwwGgtX5zXABuq1ddi37jY4eozPi7eXK"
+  # Used when mode == "sticky_burnsplit"
+  burn_share: 0.9
+  # winner_share: 0.1  # optional; defaults to 1 - burn_share
+  # Block modulus for synchronized weight updates and T1 alignment
+  # Set to 360 to match commit→reveal timing.
+  alignment_mod: 360
+  # Relay event polling + chain sync intervals
+  events_limit: 50
+  event_refresh_interval_s: 6
+  metagraph_refresh_interval_s: 6
+  poll_interval_s: 6.0
+  retry_interval_s: 5.0
+
+# Validator Server Configuration
+server:
+  host: "0.0.0.0"
+  port: 5000
+  debug: false
+
+# Weight Management Configuration
+weights:
+  check_interval: 300  # Check weights every 5 minutes
+  auto_restart: true   # Restart weight checker if it dies
+  # We call `set_weights`; the chain may still use commit-reveal internally (timelocked),
+  # in which case weights take effect after the returned `reveal_round`.
+  # Make chain weight updates blocking (safer/less spammy, but slower).
+  wait_for_inclusion: true
+  wait_for_finalization: false
+
+# Rate Limiting Configuration
+rate_limiting:
+  ip_requests_per_hour: 240
+  address_requests_per_hour: 240
+  blacklist_duration_hours: 1
+
+# SOTA Threshold Configuration
+sota:
+  cache_duration: 300  # Cache SOTA threshold for 5 minutes
+  default_threshold: 0.0  # Fallback if contract is unavailable
+
+# Relay Configuration #""
+relay:
+  url: "http://127.0.0.1:8002"
+  poll_interval_seconds: 60
+
+# Optional submission schedule to throttle contract votes
+submission_schedule:
+  mode: "interval"        # "immediate", "interval", or "utc_times"
+  interval_seconds: 600      # used when mode == "interval"
+  utc_times: []            # e.g., ["00:00","12:00"] when mode == "utc_times"
+
+# Submission threshold mode
+submission_threshold:
+  mode: "local_best"        # "sota_only" or "local_best"
+
+# Blacklist Configuration  
+blacklist:
+  cutoff_percentage: 9999999999999
+
+# Logging Configuration
+logging:
+  level: "INFO"  # DEBUG, INFO, WARNING, ERROR
+  file: "logs/validator.log"  # Set to null for console only
+  format: "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
