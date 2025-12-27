@@ -46,6 +46,11 @@ Used by:
 
 - `evolution.max_generations` (int): Direct mode only; number of generations per mining loop. The CLI sets `MAX_EVOLUTION_GENERATIONS` from this value.
 - `evolution.verbose` (bool): Enables extra miner logging.
+- `evolution.fec` (dict, optional): Functional Equivalence Cache (FEC) settings.
+  - `evolution.fec.cache_size` (int): LRU cache size for probe-based FEC (default: `100000`, `0` disables).
+- `evolution.fec.num_train_examples` (int): Probe train subset size (default: `32`).
+- `evolution.fec.num_valid_examples` (int): Probe validation subset size (default: `32`).
+  - `evolution.fec.forget_every` (int): Clear cache every N inserts (default: `0`, disabled).
 
 ### `logging`
 
@@ -153,6 +158,10 @@ These env vars are optional overrides used by miner/validator code paths.
 - `MAX_EVOLUTION_GENERATIONS` (default: `15`): Upper bound for direct mining loops (normally set from `evolution.max_generations`).
 - `MINER_TASK_COUNT` (default: `32`): Number of deterministic subtasks scored per genome (CIFAR-10 only).
 - `MINER_TASK_SEED` (default: `0`): Seed for deterministic miner task suite generation.
+- `MINER_FEC_CACHE_SIZE` (default: `100000`): LRU cache size for functional equivalence caching (0 disables).
+- `MINER_FEC_TRAIN_EXAMPLES` (default: `32`): Probe train subset size for FEC.
+- `MINER_FEC_VALID_EXAMPLES` (default: `32`): Probe validation subset size for FEC.
+- `MINER_FEC_FORGET_EVERY` (default: `0`): Clear the FEC cache every N inserts (0 disables).
 - `MINER_SUBMISSION_COOLDOWN_SECONDS` (default: `60`): Minimum seconds between relay submissions.
 - `MINER_SUBMIT_ONLY_IF_IMPROVED` (default: false): If enabled, only submit when verified score beats the miner’s local best.
 - `MINER_MAX_SUBMISSION_ATTEMPTS_PER_GENERATION` (default: `1` or `3`): Per-generation submission attempts.

@@ -28,7 +28,10 @@ class BaselineEvolutionEngine(BaseEvolutionEngine):
         vector_count: Optional[int] = None,
         matrix_count: Optional[int] = None,
         vector_dim: Optional[int] = None,
-        fec_cache_size: int = 0,
+        fec_cache_size: Optional[int] = None,
+        fec_train_examples: Optional[int] = None,
+        fec_valid_examples: Optional[int] = None,
+        fec_forget_every: Optional[int] = None,
         cifar_seed: Optional[int] = None,
     ):
         super().__init__(
@@ -42,6 +45,9 @@ class BaselineEvolutionEngine(BaseEvolutionEngine):
             matrix_count=matrix_count,
             vector_dim=vector_dim,
             fec_cache_size=fec_cache_size,
+            fec_train_examples=fec_train_examples,
+            fec_valid_examples=fec_valid_examples,
+            fec_forget_every=fec_forget_every,
             cifar_seed=cifar_seed,
         )
         self.tournament_size = max(1, min(pop_size, tournament_size))
@@ -316,11 +322,44 @@ class BaselineEvolutionEngine(BaseEvolutionEngine):
         arrays = algo.phase_arrays[phase]
         mutation_type = np.random.choice(["opcode", "address", "constant"])
 
+        s_start = ADDR_SCALARS
+        s_end = ADDR_SCALARS + algo.scalar_count
+        v_start = ADDR_VECTORS
+        v_end = ADDR_VECTORS + algo.vector_count
+        m_start = ADDR_MATRICES
+        m_end = ADDR_MATRICES + algo.matrix_count
+
+        def sample_addr(kind: str) -> int:
+            if kind == "s":
+                return np.random.randint(s_start, s_end) if algo.scalar_count > 0 else s_start
+            if kind == "v":
+                return np.random.randint(v_start, v_end) if algo.vector_count > 0 else v_start
+            if kind == "m":
+                return np.random.randint(m_start, m_end) if algo.matrix_count > 0 else m_start
+            return 0
+
+        def addr_type(addr: int) -> str:
+            if addr < ADDR_VECTORS:
+                return "s"
+            if addr < ADDR_MATRICES:
+                return "v"
+            return "m"
+
+        def ensure_addr(field: str, expected: str) -> None:
+            if expected == "none":
+                arrays[field][idx] = 0
+                return
+            addr = int(arrays[field][idx])
+            if addr_type(addr) != expected:
+                arrays[field][idx] = sample_addr(expected)
+
         if mutation_type == "opcode":
             op_name = np.random.choice(list(OPCODE_METADATA.keys()))
             arrays["ops"][idx] = OPCODES[op_name]
-            # Recursively tidy addresses/constants for new opcode
-            self._mutate_instruction_components(algo, phase, idx)
+            op_meta = OPCODE_METADATA[op_name]
+            ensure_addr("arg1", op_meta["arg1"])
+            ensure_addr("arg2", op_meta["arg2"])
+            ensure_addr("dest", op_meta["dest"])
             return
 
         if mutation_type == "address":
@@ -332,27 +371,21 @@ class BaselineEvolutionEngine(BaseEvolutionEngine):
             op_meta = OPCODE_METADATA[op_name]
             addr_field = np.random.choice(["arg1", "arg2", "dest"])
 
-            s_start = ADDR_SCALARS
-            s_end = ADDR_SCALARS + algo.scalar_count
-            v_start = ADDR_VECTORS
-            v_end = ADDR_VECTORS + algo.vector_count
-            m_start = ADDR_MATRICES
-            m_end = ADDR_MATRICES + algo.matrix_count
-
-            def sample_addr(kind: str) -> int:
-                if kind == "s":
-                    return np.random.randint(s_start, s_end) if algo.scalar_count > 0 else s_start
-                if kind == "v":
-                    return np.random.randint(v_start, v_end) if algo.vector_count > 0 else v_start
-                if kind == "m":
-                    return np.random.randint(m_start, m_end) if algo.matrix_count > 0 else m_start
-                return 0
-
             if op_meta[addr_field] != "none":
                 arrays[addr_field][idx] = sample_addr(op_meta[addr_field])
+            ensure_addr("arg1", op_meta["arg1"])
+            ensure_addr("arg2", op_meta["arg2"])
+            ensure_addr("dest", op_meta["dest"])
         else:
             const_field = np.random.choice(["const1", "const2"])
             arrays[const_field][idx] = np.random.uniform(-2.0, 2.0)
+            op_code = arrays["ops"][idx]
+            op_name = next((name for name, code in OPCODES.items() if code == op_code), None)
+            if op_name and op_name in OPCODE_METADATA:
+                op_meta = OPCODE_METADATA[op_name]
+                ensure_addr("arg1", op_meta["arg1"])
+                ensure_addr("arg2", op_meta["arg2"])
+                ensure_addr("dest", op_meta["dest"])
 
     def _remove_instruction(self, algo: AlgorithmArray, phase: str, idx: int) -> None:
         arrays = algo.phase_arrays[phase]

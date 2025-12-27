@@ -58,6 +58,10 @@ class DirectClient:
         metrics_log_file: Optional[str] = "miner_metrics.log",
         contract_manager: Optional[Any] = None,
         miner_task_count: Optional[int] = None,
+        fec_cache_size: Optional[int] = None,
+        fec_train_examples: Optional[int] = None,
+        fec_valid_examples: Optional[int] = None,
+        fec_forget_every: Optional[int] = None,
         engine_type: str = "archive",
         submit_only_if_improved: Optional[bool] = None,
         max_submission_attempts_per_generation: Optional[int] = None,
@@ -73,6 +77,10 @@ class DirectClient:
         self.metrics_logger = MinerMetricsLogger(metrics_log_file) if metrics_log_file else None
         self.contract_manager = contract_manager
         self.miner_task_count = max(1, miner_task_count or DEFAULT_MINER_TASK_COUNT)
+        self.fec_cache_size = fec_cache_size
+        self.fec_train_examples = fec_train_examples
+        self.fec_valid_examples = fec_valid_examples
+        self.fec_forget_every = fec_forget_every
         self.default_engine_type = engine_type
         self._engine_cache: Dict[Tuple[str, str], BaseEvolutionEngine] = {}
         self._local_best_verified_score: Dict[str, float] = {}
@@ -243,11 +251,23 @@ class DirectClient:
 
         if engine_type == "archive":
             engine = ArchiveAwareBaselineEvolution(
-                task, verbose=self.verbose, miner_task_count=self.miner_task_count
+                task,
+                verbose=self.verbose,
+                miner_task_count=self.miner_task_count,
+                fec_cache_size=self.fec_cache_size,
+                fec_train_examples=self.fec_train_examples,
+                fec_valid_examples=self.fec_valid_examples,
+                fec_forget_every=self.fec_forget_every,
             )
         elif engine_type == "baseline":
             engine = BaselineEvolutionEngine(
-                task, verbose=self.verbose, miner_task_count=self.miner_task_count
+                task,
+                verbose=self.verbose,
+                miner_task_count=self.miner_task_count,
+                fec_cache_size=self.fec_cache_size,
+                fec_train_examples=self.fec_train_examples,
+                fec_valid_examples=self.fec_valid_examples,
+                fec_forget_every=self.fec_forget_every,
             )
         else:
             raise ValueError(f"Unknown engine type: {engine_type}")
