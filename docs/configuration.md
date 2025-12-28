@@ -151,7 +151,7 @@ All keys below live under `capacitorless:`.
 
 ## Runtime tuning (environment variables)
 
-These env vars are optional overrides used by miner/validator code paths.
+These env vars are optional overrides used by miner code paths and validator evaluation.
 
 ### Miner
 
@@ -169,6 +169,9 @@ These env vars are optional overrides used by miner/validator code paths.
 - `MINER_SOTA_CACHE_SECONDS` (default: `30`): Cache duration for SOTA fetches.
 - `MINER_SOTA_FAILURE_BACKOFF_SECONDS` (default: `5`): Backoff after failed SOTA fetch.
 - `MINER_GENE_DUMP_EVERY` (default: `1000`): Frequency for debug gene dumps (when enabled in code).
+- `AUTOML_ZERO_USE_NUMBA` (default: on if numba is installed): Enables numba kernels. Faster, but floating‑point differences can shift scores; keep an eye on reproducibility if you toggle it.
+- `AUTOML_ZERO_USE_NUMBA_BATCH` (default: `0`): Enables batched numba execution. Higher throughput for large batches, but same numerical drift caveat as numba single.
+- `AUTOML_ZERO_SHARED_MEMORY` (default: `1`): Uses the shared‑memory execution path. Good for speed; disabling it forces the batch path, which can change results slightly and slow throughput.
 
 ### Validator evaluation
 

@@ -2,6 +2,7 @@ import argparse
 import copy
 import json
 import logging
+import os
 import sys
 import threading
 import time
@@ -45,6 +46,9 @@ def main(argv=None):
         help="Path to validator YAML config (default: validator_config.yaml)",
     )
     args, remaining = parser.parse_known_args(argv)
+
+    if os.getenv("AUTOML_ZERO_USE_NUMBA") is None:
+        os.environ["AUTOML_ZERO_USE_NUMBA"] = "0"
 
     logging.info("=" * 60)
     logging.info("Starting Validator Node")

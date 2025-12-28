@@ -1,5 +1,6 @@
 bittensor==9.12.2
 numpy==2.3.5
+numba==0.63.1
 pandas==2.3.3
 pydantic==2.12.5
 PyNaCl==1.6.1

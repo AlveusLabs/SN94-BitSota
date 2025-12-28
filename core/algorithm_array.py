@@ -37,6 +37,37 @@ ADDR_MATRICES = 30  # m0-m4 → 30-34
 ADDR_INPUT = 20  # v0 is input vector
 ADDR_OUTPUT = 0  # s0 is output scalar
 
+
+def addr_type(addr: int) -> str:
+    if addr < 0:
+        return "none"
+    if addr < ADDR_VECTORS:
+        return "s"
+    if addr < ADDR_MATRICES:
+        return "v"
+    return "m"
+
+
+def binary_result_type(type1: str, type2: str) -> Optional[str]:
+    if type1 == "none" or type2 == "none":
+        return None
+    if type1 == type2:
+        return type1
+    if type1 == "s" and type2 == "v":
+        return "v"
+    if type1 == "v" and type2 == "s":
+        return "v"
+    if type1 == "s" and type2 == "m":
+        return "m"
+    if type1 == "m" and type2 == "s":
+        return "m"
+    if type1 == "v" and type2 == "m":
+        return "m"
+    if type1 == "m" and type2 == "v":
+        return "m"
+    return None
+
+
 OPCODE_METADATA = {
     "NOOP": {"arg1": "none", "arg2": "none", "dest": "none"},
     "CONST": {"arg1": "none", "arg2": "none", "dest": "s"},
@@ -207,6 +238,7 @@ class AlgorithmArray:
         """Validate all addresses are within bounds"""
         errors = []
         max_addr = ADDR_MATRICES + self.matrix_count - 1
+        opcode_map = {v: k for k, v in OPCODES.items()}
 
         for phase in self.phase_arrays:
             arrays = self.phase_arrays[phase]
@@ -217,22 +249,24 @@ class AlgorithmArray:
                 dest = arrays["dest"][i]
                 arg1 = arrays["arg1"][i]
                 arg2 = arrays["arg2"][i]
+                op_name = opcode_map.get(op)
+                meta = OPCODE_METADATA.get(op_name) if op_name else None
 
                 # Check destination
-                if dest < 0 or dest > max_addr:
-                    errors.append(f"{phase} instruction {i}: dest {dest} out of bounds")
+                if meta is None or meta["dest"] != "none":
+                    if dest < 0 or dest > max_addr:
+                        errors.append(
+                            f"{phase} instruction {i}: dest {dest} out of bounds"
+                        )
 
                 # Check arguments (skip for NOOP/CONST)
-                if op not in [OPCODES["NOOP"], OPCODES["CONST"], OPCODES["CONST_VEC"]]:
+                if meta is None or meta["arg1"] != "none":
                     if arg1 < 0 or arg1 > max_addr:
                         errors.append(
                             f"{phase} instruction {i}: arg1 {arg1} out of bounds"
                         )
-                    if (
-                        arg2 < 0
-                        or arg2 > max_addr
-                        and op not in [OPCODES["ABS"], OPCODES["EXP"], OPCODES["LOG"]]
-                    ):
+                if meta is None or meta["arg2"] != "none":
+                    if arg2 < 0 or arg2 > max_addr:
                         errors.append(
                             f"{phase} instruction {i}: arg2 {arg2} out of bounds"
                         )
@@ -243,22 +277,81 @@ class AlgorithmArray:
         """Validate type semantics of all instructions."""
         errors = []
         opcode_map = {v: k for k, v in OPCODES.items()}
+        arithmetic_ops = {"ADD", "SUB", "MUL", "DIV"}
+        unary_ops = {"ABS", "EXP", "LOG", "SIN", "COS", "TAN", "HEAVISIDE"}
+        random_ops = {"GAUSSIAN", "UNIFORM"}
+        vector_stats_ops = {"NORM", "MEAN", "STD"}
 
         for phase in self.get_phases():
             ops, arg1s, arg2s, dests, _, _ = self.get_phase_ops(phase)
             for i in range(len(ops)):
                 op_name = opcode_map.get(ops[i])
-                if not op_name or op_name not in OPCODE_METADATA:
+                if not op_name:
+                    continue
+
+                if op_name in arithmetic_ops:
+                    type1 = addr_type(arg1s[i])
+                    type2 = addr_type(arg2s[i])
+                    dest_type = addr_type(dests[i])
+                    result_type = binary_result_type(type1, type2)
+                    if result_type is None:
+                        errors.append(
+                            f"Phase {phase}, op {i} ({op_name}): "
+                            f"unsupported types {type1}, {type2}"
+                        )
+                    elif dest_type != result_type:
+                        errors.append(
+                            f"Phase {phase}, op {i} ({op_name}): "
+                            f"dest type {dest_type} does not match {result_type}"
+                        )
+                    continue
+
+                if op_name in unary_ops:
+                    type1 = addr_type(arg1s[i])
+                    dest_type = addr_type(dests[i])
+                    if type1 == "none" or dest_type != type1:
+                        errors.append(
+                            f"Phase {phase}, op {i} ({op_name}): "
+                            f"dest type {dest_type} does not match {type1}"
+                        )
+                    continue
+
+                if op_name in random_ops:
+                    dest_type = addr_type(dests[i])
+                    if dest_type not in ("s", "v", "m"):
+                        errors.append(
+                            f"Phase {phase}, op {i} ({op_name}): "
+                            f"dest type {dest_type} not supported"
+                        )
+                    continue
+
+                if op_name == "COPY":
+                    type1 = addr_type(arg1s[i])
+                    dest_type = addr_type(dests[i])
+                    if dest_type != "s" or type1 not in ("s", "v", "m"):
+                        errors.append(
+                            f"Phase {phase}, op {i} ({op_name}): "
+                            f"invalid types {type1} -> {dest_type}"
+                        )
+                    continue
+
+                if op_name in vector_stats_ops:
+                    type1 = addr_type(arg1s[i])
+                    dest_type = addr_type(dests[i])
+                    if type1 != "v" or dest_type not in ("s", "v"):
+                        errors.append(
+                            f"Phase {phase}, op {i} ({op_name}): "
+                            f"invalid types {type1} -> {dest_type}"
+                        )
+                    continue
+
+                if op_name not in OPCODE_METADATA:
                     continue
 
                 meta = OPCODE_METADATA[op_name]
 
                 def get_type(addr):
-                    if addr < ADDR_VECTORS:
-                        return "s"
-                    if addr < ADDR_MATRICES:
-                        return "v"
-                    return "m"
+                    return addr_type(addr)
 
                 # Check arg1
                 if meta["arg1"] != "none" and meta["arg1"] != get_type(arg1s[i]):

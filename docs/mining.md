@@ -95,6 +95,7 @@ Payouts are automatic to a coldkey that you provide once the vote finalizes.
 * **Repro discipline:** Pin seeds, envs, and versions; match the challenge’s sandbox spec.
 * **Throughput matters:** More candidate evals per minute → more hits. Optimize evaluation bottlenecks.
 * **Stay current:** Bars can move as stronger submissions land. Pull challenge metadata before long runs.
+* **Advanced runtime toggles:** `AUTOML_ZERO_USE_NUMBA` and `AUTOML_ZERO_SHARED_MEMORY` can speed up evaluation, but they may shift floating‑point results. Only change them if you’re comfortable with possible reproducibility drift.
 
 ## Troubleshooting
 

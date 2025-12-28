@@ -4,7 +4,14 @@ from typing import Optional, List, Tuple
 
 import numpy as np
 
-from .algorithm_array import AlgorithmArray, OPCODES, ADDR_VECTORS, ADDR_MATRICES
+from .algorithm_array import (
+    AlgorithmArray,
+    OPCODES,
+    ADDR_VECTORS,
+    ADDR_MATRICES,
+    addr_type,
+    binary_result_type,
+)
 
 try:
     import numba as nb
@@ -118,78 +125,171 @@ if _NUMBA_AVAILABLE:
             c1 = float(const1[i])
             c2 = float(const2[i])
 
-            if op == _OP_ADD:
-                if d < ADDR_VECTORS:
-                    scalars[d] = scalars[a1] + scalars[a2]
-                elif d < ADDR_MATRICES:
-                    vd = vectors[d - ADDR_VECTORS]
-                    v1 = vectors[a1 - ADDR_VECTORS]
-                    v2 = vectors[a2 - ADDR_VECTORS]
-                    for j in range(vector_dim):
-                        vd[j] = v1[j] + v2[j]
-                else:
-                    md = matrices[d - ADDR_MATRICES]
-                    m1 = matrices[a1 - ADDR_MATRICES]
-                    m2 = matrices[a2 - ADDR_MATRICES]
-                    for r in range(vector_dim):
-                        for c in range(vector_dim):
-                            md[r, c] = m1[r, c] + m2[r, c]
+            if op == _OP_ADD or op == _OP_SUB or op == _OP_MUL or op == _OP_DIV:
+                t1 = 0
+                if a1 >= ADDR_MATRICES:
+                    t1 = 2
+                elif a1 >= ADDR_VECTORS:
+                    t1 = 1
+                t2 = 0
+                if a2 >= ADDR_MATRICES:
+                    t2 = 2
+                elif a2 >= ADDR_VECTORS:
+                    t2 = 1
+                td = 0
+                if d >= ADDR_MATRICES:
+                    td = 2
+                elif d >= ADDR_VECTORS:
+                    td = 1
 
-            elif op == _OP_SUB:
-                if d < ADDR_VECTORS:
-                    scalars[d] = scalars[a1] - scalars[a2]
-                elif d < ADDR_MATRICES:
-                    vd = vectors[d - ADDR_VECTORS]
-                    v1 = vectors[a1 - ADDR_VECTORS]
-                    v2 = vectors[a2 - ADDR_VECTORS]
-                    for j in range(vector_dim):
-                        vd[j] = v1[j] - v2[j]
-                else:
-                    md = matrices[d - ADDR_MATRICES]
-                    m1 = matrices[a1 - ADDR_MATRICES]
-                    m2 = matrices[a2 - ADDR_MATRICES]
-                    for r in range(vector_dim):
-                        for c in range(vector_dim):
-                            md[r, c] = m1[r, c] - m2[r, c]
+                res = -1
+                if t1 == t2:
+                    res = t1
+                elif (t1 == 0 and t2 == 1) or (t1 == 1 and t2 == 0):
+                    res = 1
+                elif (t1 == 0 and t2 == 2) or (t1 == 2 and t2 == 0):
+                    res = 2
+                elif (t1 == 1 and t2 == 2) or (t1 == 2 and t2 == 1):
+                    res = 2
 
-            elif op == _OP_MUL:
-                if d < ADDR_VECTORS:
-                    scalars[d] = scalars[a1] * scalars[a2]
-                elif d < ADDR_MATRICES:
-                    vd = vectors[d - ADDR_VECTORS]
-                    v1 = vectors[a1 - ADDR_VECTORS]
-                    v2 = vectors[a2 - ADDR_VECTORS]
-                    for j in range(vector_dim):
-                        vd[j] = v1[j] * v2[j]
-                else:
-                    md = matrices[d - ADDR_MATRICES]
-                    m1 = matrices[a1 - ADDR_MATRICES]
-                    m2 = matrices[a2 - ADDR_MATRICES]
-                    for r in range(vector_dim):
-                        for c in range(vector_dim):
-                            md[r, c] = m1[r, c] * m2[r, c]
+                if res != td:
+                    raise ValueError("Arithmetic type mismatch")
 
-            elif op == _OP_DIV:
-                if d < ADDR_VECTORS:
-                    scalars[d] = scalars[a1] / (scalars[a2] + 1e-8)
-                elif d < ADDR_MATRICES:
+                if res == 0:
+                    if op == _OP_ADD:
+                        scalars[d] = scalars[a1] + scalars[a2]
+                    elif op == _OP_SUB:
+                        scalars[d] = scalars[a1] - scalars[a2]
+                    elif op == _OP_MUL:
+                        scalars[d] = scalars[a1] * scalars[a2]
+                    else:
+                        scalars[d] = scalars[a1] / (scalars[a2] + 1e-8)
+
+                elif res == 1:
                     vd = vectors[d - ADDR_VECTORS]
-                    v1 = vectors[a1 - ADDR_VECTORS]
-                    v2 = vectors[a2 - ADDR_VECTORS]
-                    for j in range(vector_dim):
-                        vd[j] = v1[j] / (v2[j] + 1e-8)
+                    if t1 == 0:
+                        s = scalars[a1]
+                        v2 = vectors[a2 - ADDR_VECTORS]
+                        for j in range(vector_dim):
+                            if op == _OP_ADD:
+                                vd[j] = s + v2[j]
+                            elif op == _OP_SUB:
+                                vd[j] = s - v2[j]
+                            elif op == _OP_MUL:
+                                vd[j] = s * v2[j]
+                            else:
+                                vd[j] = s / (v2[j] + 1e-8)
+                    elif t2 == 0:
+                        v1 = vectors[a1 - ADDR_VECTORS]
+                        s = scalars[a2]
+                        for j in range(vector_dim):
+                            if op == _OP_ADD:
+                                vd[j] = v1[j] + s
+                            elif op == _OP_SUB:
+                                vd[j] = v1[j] - s
+                            elif op == _OP_MUL:
+                                vd[j] = v1[j] * s
+                            else:
+                                vd[j] = v1[j] / (s + 1e-8)
+                    else:
+                        v1 = vectors[a1 - ADDR_VECTORS]
+                        v2 = vectors[a2 - ADDR_VECTORS]
+                        for j in range(vector_dim):
+                            if op == _OP_ADD:
+                                vd[j] = v1[j] + v2[j]
+                            elif op == _OP_SUB:
+                                vd[j] = v1[j] - v2[j]
+                            elif op == _OP_MUL:
+                                vd[j] = v1[j] * v2[j]
+                            else:
+                                vd[j] = v1[j] / (v2[j] + 1e-8)
+
                 else:
                     md = matrices[d - ADDR_MATRICES]
-                    m1 = matrices[a1 - ADDR_MATRICES]
-                    m2 = matrices[a2 - ADDR_MATRICES]
-                    for r in range(vector_dim):
-                        for c in range(vector_dim):
-                            md[r, c] = m1[r, c] / (m2[r, c] + 1e-8)
+                    if t1 == 0:
+                        s = scalars[a1]
+                        m2 = matrices[a2 - ADDR_MATRICES]
+                        for r in range(vector_dim):
+                            for c in range(vector_dim):
+                                if op == _OP_ADD:
+                                    md[r, c] = s + m2[r, c]
+                                elif op == _OP_SUB:
+                                    md[r, c] = s - m2[r, c]
+                                elif op == _OP_MUL:
+                                    md[r, c] = s * m2[r, c]
+                                else:
+                                    md[r, c] = s / (m2[r, c] + 1e-8)
+                    elif t2 == 0:
+                        m1 = matrices[a1 - ADDR_MATRICES]
+                        s = scalars[a2]
+                        for r in range(vector_dim):
+                            for c in range(vector_dim):
+                                if op == _OP_ADD:
+                                    md[r, c] = m1[r, c] + s
+                                elif op == _OP_SUB:
+                                    md[r, c] = m1[r, c] - s
+                                elif op == _OP_MUL:
+                                    md[r, c] = m1[r, c] * s
+                                else:
+                                    md[r, c] = m1[r, c] / (s + 1e-8)
+                    elif t1 == 1 and t2 == 2:
+                        v1 = vectors[a1 - ADDR_VECTORS]
+                        m2 = matrices[a2 - ADDR_MATRICES]
+                        for r in range(vector_dim):
+                            for c in range(vector_dim):
+                                if op == _OP_ADD:
+                                    md[r, c] = v1[c] + m2[r, c]
+                                elif op == _OP_SUB:
+                                    md[r, c] = v1[c] - m2[r, c]
+                                elif op == _OP_MUL:
+                                    md[r, c] = v1[c] * m2[r, c]
+                                else:
+                                    md[r, c] = v1[c] / (m2[r, c] + 1e-8)
+                    elif t1 == 2 and t2 == 1:
+                        m1 = matrices[a1 - ADDR_MATRICES]
+                        v2 = vectors[a2 - ADDR_VECTORS]
+                        for r in range(vector_dim):
+                            for c in range(vector_dim):
+                                if op == _OP_ADD:
+                                    md[r, c] = m1[r, c] + v2[c]
+                                elif op == _OP_SUB:
+                                    md[r, c] = m1[r, c] - v2[c]
+                                elif op == _OP_MUL:
+                                    md[r, c] = m1[r, c] * v2[c]
+                                else:
+                                    md[r, c] = m1[r, c] / (v2[c] + 1e-8)
+                    else:
+                        m1 = matrices[a1 - ADDR_MATRICES]
+                        m2 = matrices[a2 - ADDR_MATRICES]
+                        for r in range(vector_dim):
+                            for c in range(vector_dim):
+                                if op == _OP_ADD:
+                                    md[r, c] = m1[r, c] + m2[r, c]
+                                elif op == _OP_SUB:
+                                    md[r, c] = m1[r, c] - m2[r, c]
+                                elif op == _OP_MUL:
+                                    md[r, c] = m1[r, c] * m2[r, c]
+                                else:
+                                    md[r, c] = m1[r, c] / (m2[r, c] + 1e-8)
+                continue
 
             elif op == _OP_ABS:
                 if d < ADDR_VECTORS:
                     val = scalars[a1]
                     scalars[d] = val if val >= 0 else -val
+                elif d < ADDR_MATRICES:
+                    vd = vectors[d - ADDR_VECTORS]
+                    v1 = vectors[a1 - ADDR_VECTORS]
+                    for j in range(vector_dim):
+                        val = v1[j]
+                        vd[j] = val if val >= 0 else -val
+                else:
+                    md = matrices[d - ADDR_MATRICES]
+                    m1 = matrices[a1 - ADDR_MATRICES]
+                    for r in range(vector_dim):
+                        for c in range(vector_dim):
+                            val = m1[r, c]
+                            md[r, c] = val if val >= 0 else -val
 
             elif op == _OP_EXP:
                 if d < ADDR_VECTORS:
@@ -199,6 +299,27 @@ if _NUMBA_AVAILABLE:
                     elif val > 10.0:
                         val = 10.0
                     scalars[d] = math.exp(val)
+                elif d < ADDR_MATRICES:
+                    vd = vectors[d - ADDR_VECTORS]
+                    v1 = vectors[a1 - ADDR_VECTORS]
+                    for j in range(vector_dim):
+                        val = v1[j]
+                        if val < -10.0:
+                            val = -10.0
+                        elif val > 10.0:
+                            val = 10.0
+                        vd[j] = math.exp(val)
+                else:
+                    md = matrices[d - ADDR_MATRICES]
+                    m1 = matrices[a1 - ADDR_MATRICES]
+                    for r in range(vector_dim):
+                        for c in range(vector_dim):
+                            val = m1[r, c]
+                            if val < -10.0:
+                                val = -10.0
+                            elif val > 10.0:
+                                val = 10.0
+                            md[r, c] = math.exp(val)
 
             elif op == _OP_LOG:
                 if d < ADDR_VECTORS:
@@ -206,22 +327,83 @@ if _NUMBA_AVAILABLE:
                     if val < 0:
                         val = -val
                     scalars[d] = math.log(val + 1e-8)
+                elif d < ADDR_MATRICES:
+                    vd = vectors[d - ADDR_VECTORS]
+                    v1 = vectors[a1 - ADDR_VECTORS]
+                    for j in range(vector_dim):
+                        val = v1[j]
+                        if val < 0:
+                            val = -val
+                        vd[j] = math.log(val + 1e-8)
+                else:
+                    md = matrices[d - ADDR_MATRICES]
+                    m1 = matrices[a1 - ADDR_MATRICES]
+                    for r in range(vector_dim):
+                        for c in range(vector_dim):
+                            val = m1[r, c]
+                            if val < 0:
+                                val = -val
+                            md[r, c] = math.log(val + 1e-8)
 
             elif op == _OP_SIN:
                 if d < ADDR_VECTORS:
                     scalars[d] = math.sin(scalars[a1])
+                elif d < ADDR_MATRICES:
+                    vd = vectors[d - ADDR_VECTORS]
+                    v1 = vectors[a1 - ADDR_VECTORS]
+                    for j in range(vector_dim):
+                        vd[j] = math.sin(v1[j])
+                else:
+                    md = matrices[d - ADDR_MATRICES]
+                    m1 = matrices[a1 - ADDR_MATRICES]
+                    for r in range(vector_dim):
+                        for c in range(vector_dim):
+                            md[r, c] = math.sin(m1[r, c])
 
             elif op == _OP_COS:
                 if d < ADDR_VECTORS:
                     scalars[d] = math.cos(scalars[a1])
+                elif d < ADDR_MATRICES:
+                    vd = vectors[d - ADDR_VECTORS]
+                    v1 = vectors[a1 - ADDR_VECTORS]
+                    for j in range(vector_dim):
+                        vd[j] = math.cos(v1[j])
+                else:
+                    md = matrices[d - ADDR_MATRICES]
+                    m1 = matrices[a1 - ADDR_MATRICES]
+                    for r in range(vector_dim):
+                        for c in range(vector_dim):
+                            md[r, c] = math.cos(m1[r, c])
 
             elif op == _OP_TAN:
                 if d < ADDR_VECTORS:
                     scalars[d] = math.tan(scalars[a1])
+                elif d < ADDR_MATRICES:
+                    vd = vectors[d - ADDR_VECTORS]
+                    v1 = vectors[a1 - ADDR_VECTORS]
+                    for j in range(vector_dim):
+                        vd[j] = math.tan(v1[j])
+                else:
+                    md = matrices[d - ADDR_MATRICES]
+                    m1 = matrices[a1 - ADDR_MATRICES]
+                    for r in range(vector_dim):
+                        for c in range(vector_dim):
+                            md[r, c] = math.tan(m1[r, c])
 
             elif op == _OP_HEAVISIDE:
                 if d < ADDR_VECTORS:
                     scalars[d] = 1.0 if scalars[a1] > 0 else 0.0
+                elif d < ADDR_MATRICES:
+                    vd = vectors[d - ADDR_VECTORS]
+                    v1 = vectors[a1 - ADDR_VECTORS]
+                    for j in range(vector_dim):
+                        vd[j] = 1.0 if v1[j] > 0 else 0.0
+                else:
+                    md = matrices[d - ADDR_MATRICES]
+                    m1 = matrices[a1 - ADDR_MATRICES]
+                    for r in range(vector_dim):
+                        for c in range(vector_dim):
+                            md[r, c] = 1.0 if m1[r, c] > 0 else 0.0
 
             elif op == _OP_CONST:
                 if d < ADDR_VECTORS:
@@ -296,11 +478,21 @@ if _NUMBA_AVAILABLE:
                     m = matrices[a1 - ADDR_MATRICES]
                     v = vectors[a2 - ADDR_VECTORS]
                     vd = vectors[d - ADDR_VECTORS]
-                    for r in range(vector_dim):
-                        acc = 0.0
-                        for c in range(vector_dim):
-                            acc += m[r, c] * v[c]
-                        vd[r] = acc
+                    if d == a2:
+                        tmp = np.empty(vector_dim, dtype=vd.dtype)
+                        for r in range(vector_dim):
+                            acc = 0.0
+                            for c in range(vector_dim):
+                                acc += m[r, c] * v[c]
+                            tmp[r] = acc
+                        for r in range(vector_dim):
+                            vd[r] = tmp[r]
+                    else:
+                        for r in range(vector_dim):
+                            acc = 0.0
+                            for c in range(vector_dim):
+                                acc += m[r, c] * v[c]
+                            vd[r] = acc
 
             elif op == _OP_OUTER:
                 if d >= ADDR_MATRICES:
@@ -379,78 +571,171 @@ if _NUMBA_AVAILABLE:
             c1 = float(const1[i])
             c2 = float(const2[i])
 
-            if op == _OP_ADD:
-                if d < ADDR_VECTORS:
-                    scalars[d] = scalars[a1] + scalars[a2]
-                elif d < ADDR_MATRICES:
-                    vd = vectors[d - ADDR_VECTORS]
-                    v1 = vectors[a1 - ADDR_VECTORS]
-                    v2 = vectors[a2 - ADDR_VECTORS]
-                    for j in range(vector_dim):
-                        vd[j] = v1[j] + v2[j]
-                else:
-                    md = matrices[d - ADDR_MATRICES]
-                    m1 = matrices[a1 - ADDR_MATRICES]
-                    m2 = matrices[a2 - ADDR_MATRICES]
-                    for r in range(vector_dim):
-                        for c in range(vector_dim):
-                            md[r, c] = m1[r, c] + m2[r, c]
+            if op == _OP_ADD or op == _OP_SUB or op == _OP_MUL or op == _OP_DIV:
+                t1 = 0
+                if a1 >= ADDR_MATRICES:
+                    t1 = 2
+                elif a1 >= ADDR_VECTORS:
+                    t1 = 1
+                t2 = 0
+                if a2 >= ADDR_MATRICES:
+                    t2 = 2
+                elif a2 >= ADDR_VECTORS:
+                    t2 = 1
+                td = 0
+                if d >= ADDR_MATRICES:
+                    td = 2
+                elif d >= ADDR_VECTORS:
+                    td = 1
 
-            elif op == _OP_SUB:
-                if d < ADDR_VECTORS:
-                    scalars[d] = scalars[a1] - scalars[a2]
-                elif d < ADDR_MATRICES:
-                    vd = vectors[d - ADDR_VECTORS]
-                    v1 = vectors[a1 - ADDR_VECTORS]
-                    v2 = vectors[a2 - ADDR_VECTORS]
-                    for j in range(vector_dim):
-                        vd[j] = v1[j] - v2[j]
-                else:
-                    md = matrices[d - ADDR_MATRICES]
-                    m1 = matrices[a1 - ADDR_MATRICES]
-                    m2 = matrices[a2 - ADDR_MATRICES]
-                    for r in range(vector_dim):
-                        for c in range(vector_dim):
-                            md[r, c] = m1[r, c] - m2[r, c]
+                res = -1
+                if t1 == t2:
+                    res = t1
+                elif (t1 == 0 and t2 == 1) or (t1 == 1 and t2 == 0):
+                    res = 1
+                elif (t1 == 0 and t2 == 2) or (t1 == 2 and t2 == 0):
+                    res = 2
+                elif (t1 == 1 and t2 == 2) or (t1 == 2 and t2 == 1):
+                    res = 2
 
-            elif op == _OP_MUL:
-                if d < ADDR_VECTORS:
-                    scalars[d] = scalars[a1] * scalars[a2]
-                elif d < ADDR_MATRICES:
-                    vd = vectors[d - ADDR_VECTORS]
-                    v1 = vectors[a1 - ADDR_VECTORS]
-                    v2 = vectors[a2 - ADDR_VECTORS]
-                    for j in range(vector_dim):
-                        vd[j] = v1[j] * v2[j]
-                else:
-                    md = matrices[d - ADDR_MATRICES]
-                    m1 = matrices[a1 - ADDR_MATRICES]
-                    m2 = matrices[a2 - ADDR_MATRICES]
-                    for r in range(vector_dim):
-                        for c in range(vector_dim):
-                            md[r, c] = m1[r, c] * m2[r, c]
+                if res != td:
+                    raise ValueError("Arithmetic type mismatch")
 
-            elif op == _OP_DIV:
-                if d < ADDR_VECTORS:
-                    scalars[d] = scalars[a1] / (scalars[a2] + 1e-8)
-                elif d < ADDR_MATRICES:
+                if res == 0:
+                    if op == _OP_ADD:
+                        scalars[d] = scalars[a1] + scalars[a2]
+                    elif op == _OP_SUB:
+                        scalars[d] = scalars[a1] - scalars[a2]
+                    elif op == _OP_MUL:
+                        scalars[d] = scalars[a1] * scalars[a2]
+                    else:
+                        scalars[d] = scalars[a1] / (scalars[a2] + 1e-8)
+
+                elif res == 1:
                     vd = vectors[d - ADDR_VECTORS]
-                    v1 = vectors[a1 - ADDR_VECTORS]
-                    v2 = vectors[a2 - ADDR_VECTORS]
-                    for j in range(vector_dim):
-                        vd[j] = v1[j] / (v2[j] + 1e-8)
+                    if t1 == 0:
+                        s = scalars[a1]
+                        v2 = vectors[a2 - ADDR_VECTORS]
+                        for j in range(vector_dim):
+                            if op == _OP_ADD:
+                                vd[j] = s + v2[j]
+                            elif op == _OP_SUB:
+                                vd[j] = s - v2[j]
+                            elif op == _OP_MUL:
+                                vd[j] = s * v2[j]
+                            else:
+                                vd[j] = s / (v2[j] + 1e-8)
+                    elif t2 == 0:
+                        v1 = vectors[a1 - ADDR_VECTORS]
+                        s = scalars[a2]
+                        for j in range(vector_dim):
+                            if op == _OP_ADD:
+                                vd[j] = v1[j] + s
+                            elif op == _OP_SUB:
+                                vd[j] = v1[j] - s
+                            elif op == _OP_MUL:
+                                vd[j] = v1[j] * s
+                            else:
+                                vd[j] = v1[j] / (s + 1e-8)
+                    else:
+                        v1 = vectors[a1 - ADDR_VECTORS]
+                        v2 = vectors[a2 - ADDR_VECTORS]
+                        for j in range(vector_dim):
+                            if op == _OP_ADD:
+                                vd[j] = v1[j] + v2[j]
+                            elif op == _OP_SUB:
+                                vd[j] = v1[j] - v2[j]
+                            elif op == _OP_MUL:
+                                vd[j] = v1[j] * v2[j]
+                            else:
+                                vd[j] = v1[j] / (v2[j] + 1e-8)
+
                 else:
                     md = matrices[d - ADDR_MATRICES]
-                    m1 = matrices[a1 - ADDR_MATRICES]
-                    m2 = matrices[a2 - ADDR_MATRICES]
-                    for r in range(vector_dim):
-                        for c in range(vector_dim):
-                            md[r, c] = m1[r, c] / (m2[r, c] + 1e-8)
+                    if t1 == 0:
+                        s = scalars[a1]
+                        m2 = matrices[a2 - ADDR_MATRICES]
+                        for r in range(vector_dim):
+                            for c in range(vector_dim):
+                                if op == _OP_ADD:
+                                    md[r, c] = s + m2[r, c]
+                                elif op == _OP_SUB:
+                                    md[r, c] = s - m2[r, c]
+                                elif op == _OP_MUL:
+                                    md[r, c] = s * m2[r, c]
+                                else:
+                                    md[r, c] = s / (m2[r, c] + 1e-8)
+                    elif t2 == 0:
+                        m1 = matrices[a1 - ADDR_MATRICES]
+                        s = scalars[a2]
+                        for r in range(vector_dim):
+                            for c in range(vector_dim):
+                                if op == _OP_ADD:
+                                    md[r, c] = m1[r, c] + s
+                                elif op == _OP_SUB:
+                                    md[r, c] = m1[r, c] - s
+                                elif op == _OP_MUL:
+                                    md[r, c] = m1[r, c] * s
+                                else:
+                                    md[r, c] = m1[r, c] / (s + 1e-8)
+                    elif t1 == 1 and t2 == 2:
+                        v1 = vectors[a1 - ADDR_VECTORS]
+                        m2 = matrices[a2 - ADDR_MATRICES]
+                        for r in range(vector_dim):
+                            for c in range(vector_dim):
+                                if op == _OP_ADD:
+                                    md[r, c] = v1[c] + m2[r, c]
+                                elif op == _OP_SUB:
+                                    md[r, c] = v1[c] - m2[r, c]
+                                elif op == _OP_MUL:
+                                    md[r, c] = v1[c] * m2[r, c]
+                                else:
+                                    md[r, c] = v1[c] / (m2[r, c] + 1e-8)
+                    elif t1 == 2 and t2 == 1:
+                        m1 = matrices[a1 - ADDR_MATRICES]
+                        v2 = vectors[a2 - ADDR_VECTORS]
+                        for r in range(vector_dim):
+                            for c in range(vector_dim):
+                                if op == _OP_ADD:
+                                    md[r, c] = m1[r, c] + v2[c]
+                                elif op == _OP_SUB:
+                                    md[r, c] = m1[r, c] - v2[c]
+                                elif op == _OP_MUL:
+                                    md[r, c] = m1[r, c] * v2[c]
+                                else:
+                                    md[r, c] = m1[r, c] / (v2[c] + 1e-8)
+                    else:
+                        m1 = matrices[a1 - ADDR_MATRICES]
+                        m2 = matrices[a2 - ADDR_MATRICES]
+                        for r in range(vector_dim):
+                            for c in range(vector_dim):
+                                if op == _OP_ADD:
+                                    md[r, c] = m1[r, c] + m2[r, c]
+                                elif op == _OP_SUB:
+                                    md[r, c] = m1[r, c] - m2[r, c]
+                                elif op == _OP_MUL:
+                                    md[r, c] = m1[r, c] * m2[r, c]
+                                else:
+                                    md[r, c] = m1[r, c] / (m2[r, c] + 1e-8)
+                continue
 
             elif op == _OP_ABS:
                 if d < ADDR_VECTORS:
                     val = scalars[a1]
                     scalars[d] = val if val >= 0 else -val
+                elif d < ADDR_MATRICES:
+                    vd = vectors[d - ADDR_VECTORS]
+                    v1 = vectors[a1 - ADDR_VECTORS]
+                    for j in range(vector_dim):
+                        val = v1[j]
+                        vd[j] = val if val >= 0 else -val
+                else:
+                    md = matrices[d - ADDR_MATRICES]
+                    m1 = matrices[a1 - ADDR_MATRICES]
+                    for r in range(vector_dim):
+                        for c in range(vector_dim):
+                            val = m1[r, c]
+                            md[r, c] = val if val >= 0 else -val
 
             elif op == _OP_EXP:
                 if d < ADDR_VECTORS:
@@ -460,6 +745,27 @@ if _NUMBA_AVAILABLE:
                     elif val > 10.0:
                         val = 10.0
                     scalars[d] = math.exp(val)
+                elif d < ADDR_MATRICES:
+                    vd = vectors[d - ADDR_VECTORS]
+                    v1 = vectors[a1 - ADDR_VECTORS]
+                    for j in range(vector_dim):
+                        val = v1[j]
+                        if val < -10.0:
+                            val = -10.0
+                        elif val > 10.0:
+                            val = 10.0
+                        vd[j] = math.exp(val)
+                else:
+                    md = matrices[d - ADDR_MATRICES]
+                    m1 = matrices[a1 - ADDR_MATRICES]
+                    for r in range(vector_dim):
+                        for c in range(vector_dim):
+                            val = m1[r, c]
+                            if val < -10.0:
+                                val = -10.0
+                            elif val > 10.0:
+                                val = 10.0
+                            md[r, c] = math.exp(val)
 
             elif op == _OP_LOG:
                 if d < ADDR_VECTORS:
@@ -467,22 +773,83 @@ if _NUMBA_AVAILABLE:
                     if val < 0:
                         val = -val
                     scalars[d] = math.log(val + 1e-8)
+                elif d < ADDR_MATRICES:
+                    vd = vectors[d - ADDR_VECTORS]
+                    v1 = vectors[a1 - ADDR_VECTORS]
+                    for j in range(vector_dim):
+                        val = v1[j]
+                        if val < 0:
+                            val = -val
+                        vd[j] = math.log(val + 1e-8)
+                else:
+                    md = matrices[d - ADDR_MATRICES]
+                    m1 = matrices[a1 - ADDR_MATRICES]
+                    for r in range(vector_dim):
+                        for c in range(vector_dim):
+                            val = m1[r, c]
+                            if val < 0:
+                                val = -val
+                            md[r, c] = math.log(val + 1e-8)
 
             elif op == _OP_SIN:
                 if d < ADDR_VECTORS:
                     scalars[d] = math.sin(scalars[a1])
+                elif d < ADDR_MATRICES:
+                    vd = vectors[d - ADDR_VECTORS]
+                    v1 = vectors[a1 - ADDR_VECTORS]
+                    for j in range(vector_dim):
+                        vd[j] = math.sin(v1[j])
+                else:
+                    md = matrices[d - ADDR_MATRICES]
+                    m1 = matrices[a1 - ADDR_MATRICES]
+                    for r in range(vector_dim):
+                        for c in range(vector_dim):
+                            md[r, c] = math.sin(m1[r, c])
 
             elif op == _OP_COS:
                 if d < ADDR_VECTORS:
                     scalars[d] = math.cos(scalars[a1])
+                elif d < ADDR_MATRICES:
+                    vd = vectors[d - ADDR_VECTORS]
+                    v1 = vectors[a1 - ADDR_VECTORS]
+                    for j in range(vector_dim):
+                        vd[j] = math.cos(v1[j])
+                else:
+                    md = matrices[d - ADDR_MATRICES]
+                    m1 = matrices[a1 - ADDR_MATRICES]
+                    for r in range(vector_dim):
+                        for c in range(vector_dim):
+                            md[r, c] = math.cos(m1[r, c])
 
             elif op == _OP_TAN:
                 if d < ADDR_VECTORS:
                     scalars[d] = math.tan(scalars[a1])
+                elif d < ADDR_MATRICES:
+                    vd = vectors[d - ADDR_VECTORS]
+                    v1 = vectors[a1 - ADDR_VECTORS]
+                    for j in range(vector_dim):
+                        vd[j] = math.tan(v1[j])
+                else:
+                    md = matrices[d - ADDR_MATRICES]
+                    m1 = matrices[a1 - ADDR_MATRICES]
+                    for r in range(vector_dim):
+                        for c in range(vector_dim):
+                            md[r, c] = math.tan(m1[r, c])
 
             elif op == _OP_HEAVISIDE:
                 if d < ADDR_VECTORS:
                     scalars[d] = 1.0 if scalars[a1] > 0 else 0.0
+                elif d < ADDR_MATRICES:
+                    vd = vectors[d - ADDR_VECTORS]
+                    v1 = vectors[a1 - ADDR_VECTORS]
+                    for j in range(vector_dim):
+                        vd[j] = 1.0 if v1[j] > 0 else 0.0
+                else:
+                    md = matrices[d - ADDR_MATRICES]
+                    m1 = matrices[a1 - ADDR_MATRICES]
+                    for r in range(vector_dim):
+                        for c in range(vector_dim):
+                            md[r, c] = 1.0 if m1[r, c] > 0 else 0.0
 
             elif op == _OP_CONST:
                 if d < ADDR_VECTORS:
@@ -553,11 +920,21 @@ if _NUMBA_AVAILABLE:
                     m = matrices[a1 - ADDR_MATRICES]
                     v = vectors[a2 - ADDR_VECTORS]
                     vd = vectors[d - ADDR_VECTORS]
-                    for r in range(vector_dim):
-                        acc = 0.0
-                        for c in range(vector_dim):
-                            acc += m[r, c] * v[c]
-                        vd[r] = acc
+                    if d == a2:
+                        tmp = np.empty(vector_dim, dtype=vd.dtype)
+                        for r in range(vector_dim):
+                            acc = 0.0
+                            for c in range(vector_dim):
+                                acc += m[r, c] * v[c]
+                            tmp[r] = acc
+                        for r in range(vector_dim):
+                            vd[r] = tmp[r]
+                    else:
+                        for r in range(vector_dim):
+                            acc = 0.0
+                            for c in range(vector_dim):
+                                acc += m[r, c] * v[c]
+                            vd[r] = acc
 
             elif op == _OP_OUTER:
                 if d >= ADDR_MATRICES:
@@ -642,111 +1019,579 @@ if _NUMBA_AVAILABLE:
             c1 = float(const1[i])
             c2 = float(const2[i])
 
-            if op == _OP_ADD:
-                if use_parallel:
-                    for b in prange(batch_size):
-                        scalars[b, d] = scalars[b, a1] + scalars[b, a2]
-                else:
-                    for b in range(batch_size):
-                        scalars[b, d] = scalars[b, a1] + scalars[b, a2]
+            if op == _OP_ADD or op == _OP_SUB or op == _OP_MUL or op == _OP_DIV:
+                t1 = 0
+                if a1 >= ADDR_MATRICES:
+                    t1 = 2
+                elif a1 >= ADDR_VECTORS:
+                    t1 = 1
+                t2 = 0
+                if a2 >= ADDR_MATRICES:
+                    t2 = 2
+                elif a2 >= ADDR_VECTORS:
+                    t2 = 1
+                td = 0
+                if d >= ADDR_MATRICES:
+                    td = 2
+                elif d >= ADDR_VECTORS:
+                    td = 1
 
-            elif op == _OP_SUB:
-                if use_parallel:
-                    for b in prange(batch_size):
-                        scalars[b, d] = scalars[b, a1] - scalars[b, a2]
-                else:
-                    for b in range(batch_size):
-                        scalars[b, d] = scalars[b, a1] - scalars[b, a2]
+                res = -1
+                if t1 == t2:
+                    res = t1
+                elif (t1 == 0 and t2 == 1) or (t1 == 1 and t2 == 0):
+                    res = 1
+                elif (t1 == 0 and t2 == 2) or (t1 == 2 and t2 == 0):
+                    res = 2
+                elif (t1 == 1 and t2 == 2) or (t1 == 2 and t2 == 1):
+                    res = 2
 
-            elif op == _OP_MUL:
-                if use_parallel:
-                    for b in prange(batch_size):
-                        scalars[b, d] = scalars[b, a1] * scalars[b, a2]
-                else:
-                    for b in range(batch_size):
-                        scalars[b, d] = scalars[b, a1] * scalars[b, a2]
+                if res != td:
+                    raise ValueError("Arithmetic type mismatch")
 
-            elif op == _OP_DIV:
-                if use_parallel:
-                    for b in prange(batch_size):
-                        scalars[b, d] = scalars[b, a1] / (scalars[b, a2] + 1e-8)
+                if res == 0:
+                    if use_parallel:
+                        for b in prange(batch_size):
+                            if op == _OP_ADD:
+                                scalars[b, d] = scalars[b, a1] + scalars[b, a2]
+                            elif op == _OP_SUB:
+                                scalars[b, d] = scalars[b, a1] - scalars[b, a2]
+                            elif op == _OP_MUL:
+                                scalars[b, d] = scalars[b, a1] * scalars[b, a2]
+                            else:
+                                scalars[b, d] = scalars[b, a1] / (scalars[b, a2] + 1e-8)
+                    else:
+                        for b in range(batch_size):
+                            if op == _OP_ADD:
+                                scalars[b, d] = scalars[b, a1] + scalars[b, a2]
+                            elif op == _OP_SUB:
+                                scalars[b, d] = scalars[b, a1] - scalars[b, a2]
+                            elif op == _OP_MUL:
+                                scalars[b, d] = scalars[b, a1] * scalars[b, a2]
+                            else:
+                                scalars[b, d] = scalars[b, a1] / (scalars[b, a2] + 1e-8)
+
+                elif res == 1:
+                    vd = d - ADDR_VECTORS
+                    if t1 == 0:
+                        v2 = a2 - ADDR_VECTORS
+                        if use_parallel:
+                            for b in prange(batch_size):
+                                s = scalars[b, a1]
+                                for j in range(vector_dim):
+                                    if op == _OP_ADD:
+                                        vectors[b, vd, j] = s + vectors[b, v2, j]
+                                    elif op == _OP_SUB:
+                                        vectors[b, vd, j] = s - vectors[b, v2, j]
+                                    elif op == _OP_MUL:
+                                        vectors[b, vd, j] = s * vectors[b, v2, j]
+                                    else:
+                                        vectors[b, vd, j] = s / (vectors[b, v2, j] + 1e-8)
+                        else:
+                            for b in range(batch_size):
+                                s = scalars[b, a1]
+                                for j in range(vector_dim):
+                                    if op == _OP_ADD:
+                                        vectors[b, vd, j] = s + vectors[b, v2, j]
+                                    elif op == _OP_SUB:
+                                        vectors[b, vd, j] = s - vectors[b, v2, j]
+                                    elif op == _OP_MUL:
+                                        vectors[b, vd, j] = s * vectors[b, v2, j]
+                                    else:
+                                        vectors[b, vd, j] = s / (vectors[b, v2, j] + 1e-8)
+                    elif t2 == 0:
+                        v1 = a1 - ADDR_VECTORS
+                        if use_parallel:
+                            for b in prange(batch_size):
+                                s = scalars[b, a2]
+                                for j in range(vector_dim):
+                                    if op == _OP_ADD:
+                                        vectors[b, vd, j] = vectors[b, v1, j] + s
+                                    elif op == _OP_SUB:
+                                        vectors[b, vd, j] = vectors[b, v1, j] - s
+                                    elif op == _OP_MUL:
+                                        vectors[b, vd, j] = vectors[b, v1, j] * s
+                                    else:
+                                        vectors[b, vd, j] = vectors[b, v1, j] / (s + 1e-8)
+                        else:
+                            for b in range(batch_size):
+                                s = scalars[b, a2]
+                                for j in range(vector_dim):
+                                    if op == _OP_ADD:
+                                        vectors[b, vd, j] = vectors[b, v1, j] + s
+                                    elif op == _OP_SUB:
+                                        vectors[b, vd, j] = vectors[b, v1, j] - s
+                                    elif op == _OP_MUL:
+                                        vectors[b, vd, j] = vectors[b, v1, j] * s
+                                    else:
+                                        vectors[b, vd, j] = vectors[b, v1, j] / (s + 1e-8)
+                    else:
+                        v1 = a1 - ADDR_VECTORS
+                        v2 = a2 - ADDR_VECTORS
+                        if use_parallel:
+                            for b in prange(batch_size):
+                                for j in range(vector_dim):
+                                    if op == _OP_ADD:
+                                        vectors[b, vd, j] = (
+                                            vectors[b, v1, j] + vectors[b, v2, j]
+                                        )
+                                    elif op == _OP_SUB:
+                                        vectors[b, vd, j] = (
+                                            vectors[b, v1, j] - vectors[b, v2, j]
+                                        )
+                                    elif op == _OP_MUL:
+                                        vectors[b, vd, j] = (
+                                            vectors[b, v1, j] * vectors[b, v2, j]
+                                        )
+                                    else:
+                                        vectors[b, vd, j] = vectors[b, v1, j] / (
+                                            vectors[b, v2, j] + 1e-8
+                                        )
+                        else:
+                            for b in range(batch_size):
+                                for j in range(vector_dim):
+                                    if op == _OP_ADD:
+                                        vectors[b, vd, j] = (
+                                            vectors[b, v1, j] + vectors[b, v2, j]
+                                        )
+                                    elif op == _OP_SUB:
+                                        vectors[b, vd, j] = (
+                                            vectors[b, v1, j] - vectors[b, v2, j]
+                                        )
+                                    elif op == _OP_MUL:
+                                        vectors[b, vd, j] = (
+                                            vectors[b, v1, j] * vectors[b, v2, j]
+                                        )
+                                    else:
+                                        vectors[b, vd, j] = vectors[b, v1, j] / (
+                                            vectors[b, v2, j] + 1e-8
+                                        )
+
                 else:
-                    for b in range(batch_size):
-                        scalars[b, d] = scalars[b, a1] / (scalars[b, a2] + 1e-8)
+                    md = d - ADDR_MATRICES
+                    if t1 == 0:
+                        m2 = a2 - ADDR_MATRICES
+                        if use_parallel:
+                            for b in prange(batch_size):
+                                s = scalars[b, a1]
+                                for r in range(vector_dim):
+                                    for c in range(vector_dim):
+                                        if op == _OP_ADD:
+                                            matrices[b, md, r, c] = s + matrices[b, m2, r, c]
+                                        elif op == _OP_SUB:
+                                            matrices[b, md, r, c] = s - matrices[b, m2, r, c]
+                                        elif op == _OP_MUL:
+                                            matrices[b, md, r, c] = s * matrices[b, m2, r, c]
+                                        else:
+                                            matrices[b, md, r, c] = s / (matrices[b, m2, r, c] + 1e-8)
+                        else:
+                            for b in range(batch_size):
+                                s = scalars[b, a1]
+                                for r in range(vector_dim):
+                                    for c in range(vector_dim):
+                                        if op == _OP_ADD:
+                                            matrices[b, md, r, c] = s + matrices[b, m2, r, c]
+                                        elif op == _OP_SUB:
+                                            matrices[b, md, r, c] = s - matrices[b, m2, r, c]
+                                        elif op == _OP_MUL:
+                                            matrices[b, md, r, c] = s * matrices[b, m2, r, c]
+                                        else:
+                                            matrices[b, md, r, c] = s / (matrices[b, m2, r, c] + 1e-8)
+                    elif t2 == 0:
+                        m1 = a1 - ADDR_MATRICES
+                        if use_parallel:
+                            for b in prange(batch_size):
+                                s = scalars[b, a2]
+                                for r in range(vector_dim):
+                                    for c in range(vector_dim):
+                                        if op == _OP_ADD:
+                                            matrices[b, md, r, c] = matrices[b, m1, r, c] + s
+                                        elif op == _OP_SUB:
+                                            matrices[b, md, r, c] = matrices[b, m1, r, c] - s
+                                        elif op == _OP_MUL:
+                                            matrices[b, md, r, c] = matrices[b, m1, r, c] * s
+                                        else:
+                                            matrices[b, md, r, c] = matrices[b, m1, r, c] / (s + 1e-8)
+                        else:
+                            for b in range(batch_size):
+                                s = scalars[b, a2]
+                                for r in range(vector_dim):
+                                    for c in range(vector_dim):
+                                        if op == _OP_ADD:
+                                            matrices[b, md, r, c] = matrices[b, m1, r, c] + s
+                                        elif op == _OP_SUB:
+                                            matrices[b, md, r, c] = matrices[b, m1, r, c] - s
+                                        elif op == _OP_MUL:
+                                            matrices[b, md, r, c] = matrices[b, m1, r, c] * s
+                                        else:
+                                            matrices[b, md, r, c] = matrices[b, m1, r, c] / (s + 1e-8)
+                    elif t1 == 1 and t2 == 2:
+                        v1 = a1 - ADDR_VECTORS
+                        m2 = a2 - ADDR_MATRICES
+                        if use_parallel:
+                            for b in prange(batch_size):
+                                for r in range(vector_dim):
+                                    for c in range(vector_dim):
+                                        if op == _OP_ADD:
+                                            matrices[b, md, r, c] = vectors[b, v1, c] + matrices[b, m2, r, c]
+                                        elif op == _OP_SUB:
+                                            matrices[b, md, r, c] = vectors[b, v1, c] - matrices[b, m2, r, c]
+                                        elif op == _OP_MUL:
+                                            matrices[b, md, r, c] = vectors[b, v1, c] * matrices[b, m2, r, c]
+                                        else:
+                                            matrices[b, md, r, c] = vectors[b, v1, c] / (matrices[b, m2, r, c] + 1e-8)
+                        else:
+                            for b in range(batch_size):
+                                for r in range(vector_dim):
+                                    for c in range(vector_dim):
+                                        if op == _OP_ADD:
+                                            matrices[b, md, r, c] = vectors[b, v1, c] + matrices[b, m2, r, c]
+                                        elif op == _OP_SUB:
+                                            matrices[b, md, r, c] = vectors[b, v1, c] - matrices[b, m2, r, c]
+                                        elif op == _OP_MUL:
+                                            matrices[b, md, r, c] = vectors[b, v1, c] * matrices[b, m2, r, c]
+                                        else:
+                                            matrices[b, md, r, c] = vectors[b, v1, c] / (matrices[b, m2, r, c] + 1e-8)
+                    elif t1 == 2 and t2 == 1:
+                        m1 = a1 - ADDR_MATRICES
+                        v2 = a2 - ADDR_VECTORS
+                        if use_parallel:
+                            for b in prange(batch_size):
+                                for r in range(vector_dim):
+                                    for c in range(vector_dim):
+                                        if op == _OP_ADD:
+                                            matrices[b, md, r, c] = matrices[b, m1, r, c] + vectors[b, v2, c]
+                                        elif op == _OP_SUB:
+                                            matrices[b, md, r, c] = matrices[b, m1, r, c] - vectors[b, v2, c]
+                                        elif op == _OP_MUL:
+                                            matrices[b, md, r, c] = matrices[b, m1, r, c] * vectors[b, v2, c]
+                                        else:
+                                            matrices[b, md, r, c] = matrices[b, m1, r, c] / (vectors[b, v2, c] + 1e-8)
+                        else:
+                            for b in range(batch_size):
+                                for r in range(vector_dim):
+                                    for c in range(vector_dim):
+                                        if op == _OP_ADD:
+                                            matrices[b, md, r, c] = matrices[b, m1, r, c] + vectors[b, v2, c]
+                                        elif op == _OP_SUB:
+                                            matrices[b, md, r, c] = matrices[b, m1, r, c] - vectors[b, v2, c]
+                                        elif op == _OP_MUL:
+                                            matrices[b, md, r, c] = matrices[b, m1, r, c] * vectors[b, v2, c]
+                                        else:
+                                            matrices[b, md, r, c] = matrices[b, m1, r, c] / (vectors[b, v2, c] + 1e-8)
+                    else:
+                        m1 = a1 - ADDR_MATRICES
+                        m2 = a2 - ADDR_MATRICES
+                        if use_parallel:
+                            for b in prange(batch_size):
+                                for r in range(vector_dim):
+                                    for c in range(vector_dim):
+                                        if op == _OP_ADD:
+                                            matrices[b, md, r, c] = matrices[b, m1, r, c] + matrices[b, m2, r, c]
+                                        elif op == _OP_SUB:
+                                            matrices[b, md, r, c] = matrices[b, m1, r, c] - matrices[b, m2, r, c]
+                                        elif op == _OP_MUL:
+                                            matrices[b, md, r, c] = matrices[b, m1, r, c] * matrices[b, m2, r, c]
+                                        else:
+                                            matrices[b, md, r, c] = matrices[b, m1, r, c] / (matrices[b, m2, r, c] + 1e-8)
+                        else:
+                            for b in range(batch_size):
+                                for r in range(vector_dim):
+                                    for c in range(vector_dim):
+                                        if op == _OP_ADD:
+                                            matrices[b, md, r, c] = matrices[b, m1, r, c] + matrices[b, m2, r, c]
+                                        elif op == _OP_SUB:
+                                            matrices[b, md, r, c] = matrices[b, m1, r, c] - matrices[b, m2, r, c]
+                                        elif op == _OP_MUL:
+                                            matrices[b, md, r, c] = matrices[b, m1, r, c] * matrices[b, m2, r, c]
+                                        else:
+                                            matrices[b, md, r, c] = matrices[b, m1, r, c] / (matrices[b, m2, r, c] + 1e-8)
+                continue
 
             elif op == _OP_ABS:
-                if use_parallel:
-                    for b in prange(batch_size):
-                        val = scalars[b, a1]
-                        scalars[b, d] = val if val >= 0 else -val
+                if d < ADDR_VECTORS:
+                    if use_parallel:
+                        for b in prange(batch_size):
+                            val = scalars[b, a1]
+                            scalars[b, d] = val if val >= 0 else -val
+                    else:
+                        for b in range(batch_size):
+                            val = scalars[b, a1]
+                            scalars[b, d] = val if val >= 0 else -val
+                elif d < ADDR_MATRICES:
+                    vd = d - ADDR_VECTORS
+                    v1 = a1 - ADDR_VECTORS
+                    if use_parallel:
+                        for b in prange(batch_size):
+                            for j in range(vector_dim):
+                                val = vectors[b, v1, j]
+                                vectors[b, vd, j] = val if val >= 0 else -val
+                    else:
+                        for b in range(batch_size):
+                            for j in range(vector_dim):
+                                val = vectors[b, v1, j]
+                                vectors[b, vd, j] = val if val >= 0 else -val
                 else:
-                    for b in range(batch_size):
-                        val = scalars[b, a1]
-                        scalars[b, d] = val if val >= 0 else -val
+                    md = d - ADDR_MATRICES
+                    m1 = a1 - ADDR_MATRICES
+                    if use_parallel:
+                        for b in prange(batch_size):
+                            for r in range(vector_dim):
+                                for c in range(vector_dim):
+                                    val = matrices[b, m1, r, c]
+                                    matrices[b, md, r, c] = val if val >= 0 else -val
+                    else:
+                        for b in range(batch_size):
+                            for r in range(vector_dim):
+                                for c in range(vector_dim):
+                                    val = matrices[b, m1, r, c]
+                                    matrices[b, md, r, c] = val if val >= 0 else -val
 
             elif op == _OP_EXP:
-                if use_parallel:
-                    for b in prange(batch_size):
-                        val = scalars[b, a1]
-                        if val < -10.0:
-                            val = -10.0
-                        elif val > 10.0:
-                            val = 10.0
-                        scalars[b, d] = math.exp(val)
+                if d < ADDR_VECTORS:
+                    if use_parallel:
+                        for b in prange(batch_size):
+                            val = scalars[b, a1]
+                            if val < -10.0:
+                                val = -10.0
+                            elif val > 10.0:
+                                val = 10.0
+                            scalars[b, d] = math.exp(val)
+                    else:
+                        for b in range(batch_size):
+                            val = scalars[b, a1]
+                            if val < -10.0:
+                                val = -10.0
+                            elif val > 10.0:
+                                val = 10.0
+                            scalars[b, d] = math.exp(val)
+                elif d < ADDR_MATRICES:
+                    vd = d - ADDR_VECTORS
+                    v1 = a1 - ADDR_VECTORS
+                    if use_parallel:
+                        for b in prange(batch_size):
+                            for j in range(vector_dim):
+                                val = vectors[b, v1, j]
+                                if val < -10.0:
+                                    val = -10.0
+                                elif val > 10.0:
+                                    val = 10.0
+                                vectors[b, vd, j] = math.exp(val)
+                    else:
+                        for b in range(batch_size):
+                            for j in range(vector_dim):
+                                val = vectors[b, v1, j]
+                                if val < -10.0:
+                                    val = -10.0
+                                elif val > 10.0:
+                                    val = 10.0
+                                vectors[b, vd, j] = math.exp(val)
                 else:
-                    for b in range(batch_size):
-                        val = scalars[b, a1]
-                        if val < -10.0:
-                            val = -10.0
-                        elif val > 10.0:
-                            val = 10.0
-                        scalars[b, d] = math.exp(val)
+                    md = d - ADDR_MATRICES
+                    m1 = a1 - ADDR_MATRICES
+                    if use_parallel:
+                        for b in prange(batch_size):
+                            for r in range(vector_dim):
+                                for c in range(vector_dim):
+                                    val = matrices[b, m1, r, c]
+                                    if val < -10.0:
+                                        val = -10.0
+                                    elif val > 10.0:
+                                        val = 10.0
+                                    matrices[b, md, r, c] = math.exp(val)
+                    else:
+                        for b in range(batch_size):
+                            for r in range(vector_dim):
+                                for c in range(vector_dim):
+                                    val = matrices[b, m1, r, c]
+                                    if val < -10.0:
+                                        val = -10.0
+                                    elif val > 10.0:
+                                        val = 10.0
+                                    matrices[b, md, r, c] = math.exp(val)
 
             elif op == _OP_LOG:
-                if use_parallel:
-                    for b in prange(batch_size):
-                        val = scalars[b, a1]
-                        if val < 0:
-                            val = -val
-                        scalars[b, d] = math.log(val + 1e-8)
+                if d < ADDR_VECTORS:
+                    if use_parallel:
+                        for b in prange(batch_size):
+                            val = scalars[b, a1]
+                            if val < 0:
+                                val = -val
+                            scalars[b, d] = math.log(val + 1e-8)
+                    else:
+                        for b in range(batch_size):
+                            val = scalars[b, a1]
+                            if val < 0:
+                                val = -val
+                            scalars[b, d] = math.log(val + 1e-8)
+                elif d < ADDR_MATRICES:
+                    vd = d - ADDR_VECTORS
+                    v1 = a1 - ADDR_VECTORS
+                    if use_parallel:
+                        for b in prange(batch_size):
+                            for j in range(vector_dim):
+                                val = vectors[b, v1, j]
+                                if val < 0:
+                                    val = -val
+                                vectors[b, vd, j] = math.log(val + 1e-8)
+                    else:
+                        for b in range(batch_size):
+                            for j in range(vector_dim):
+                                val = vectors[b, v1, j]
+                                if val < 0:
+                                    val = -val
+                                vectors[b, vd, j] = math.log(val + 1e-8)
                 else:
-                    for b in range(batch_size):
-                        val = scalars[b, a1]
-                        if val < 0:
-                            val = -val
-                        scalars[b, d] = math.log(val + 1e-8)
+                    md = d - ADDR_MATRICES
+                    m1 = a1 - ADDR_MATRICES
+                    if use_parallel:
+                        for b in prange(batch_size):
+                            for r in range(vector_dim):
+                                for c in range(vector_dim):
+                                    val = matrices[b, m1, r, c]
+                                    if val < 0:
+                                        val = -val
+                                    matrices[b, md, r, c] = math.log(val + 1e-8)
+                    else:
+                        for b in range(batch_size):
+                            for r in range(vector_dim):
+                                for c in range(vector_dim):
+                                    val = matrices[b, m1, r, c]
+                                    if val < 0:
+                                        val = -val
+                                    matrices[b, md, r, c] = math.log(val + 1e-8)
 
             elif op == _OP_SIN:
-                if use_parallel:
-                    for b in prange(batch_size):
-                        scalars[b, d] = math.sin(scalars[b, a1])
+                if d < ADDR_VECTORS:
+                    if use_parallel:
+                        for b in prange(batch_size):
+                            scalars[b, d] = math.sin(scalars[b, a1])
+                    else:
+                        for b in range(batch_size):
+                            scalars[b, d] = math.sin(scalars[b, a1])
+                elif d < ADDR_MATRICES:
+                    vd = d - ADDR_VECTORS
+                    v1 = a1 - ADDR_VECTORS
+                    if use_parallel:
+                        for b in prange(batch_size):
+                            for j in range(vector_dim):
+                                vectors[b, vd, j] = math.sin(vectors[b, v1, j])
+                    else:
+                        for b in range(batch_size):
+                            for j in range(vector_dim):
+                                vectors[b, vd, j] = math.sin(vectors[b, v1, j])
                 else:
-                    for b in range(batch_size):
-                        scalars[b, d] = math.sin(scalars[b, a1])
+                    md = d - ADDR_MATRICES
+                    m1 = a1 - ADDR_MATRICES
+                    if use_parallel:
+                        for b in prange(batch_size):
+                            for r in range(vector_dim):
+                                for c in range(vector_dim):
+                                    matrices[b, md, r, c] = math.sin(matrices[b, m1, r, c])
+                    else:
+                        for b in range(batch_size):
+                            for r in range(vector_dim):
+                                for c in range(vector_dim):
+                                    matrices[b, md, r, c] = math.sin(matrices[b, m1, r, c])
 
             elif op == _OP_COS:
-                if use_parallel:
-                    for b in prange(batch_size):
-                        scalars[b, d] = math.cos(scalars[b, a1])
+                if d < ADDR_VECTORS:
+                    if use_parallel:
+                        for b in prange(batch_size):
+                            scalars[b, d] = math.cos(scalars[b, a1])
+                    else:
+                        for b in range(batch_size):
+                            scalars[b, d] = math.cos(scalars[b, a1])
+                elif d < ADDR_MATRICES:
+                    vd = d - ADDR_VECTORS
+                    v1 = a1 - ADDR_VECTORS
+                    if use_parallel:
+                        for b in prange(batch_size):
+                            for j in range(vector_dim):
+                                vectors[b, vd, j] = math.cos(vectors[b, v1, j])
+                    else:
+                        for b in range(batch_size):
+                            for j in range(vector_dim):
+                                vectors[b, vd, j] = math.cos(vectors[b, v1, j])
                 else:
-                    for b in range(batch_size):
-                        scalars[b, d] = math.cos(scalars[b, a1])
+                    md = d - ADDR_MATRICES
+                    m1 = a1 - ADDR_MATRICES
+                    if use_parallel:
+                        for b in prange(batch_size):
+                            for r in range(vector_dim):
+                                for c in range(vector_dim):
+                                    matrices[b, md, r, c] = math.cos(matrices[b, m1, r, c])
+                    else:
+                        for b in range(batch_size):
+                            for r in range(vector_dim):
+                                for c in range(vector_dim):
+                                    matrices[b, md, r, c] = math.cos(matrices[b, m1, r, c])
 
             elif op == _OP_TAN:
-                if use_parallel:
-                    for b in prange(batch_size):
-                        scalars[b, d] = math.tan(scalars[b, a1])
+                if d < ADDR_VECTORS:
+                    if use_parallel:
+                        for b in prange(batch_size):
+                            scalars[b, d] = math.tan(scalars[b, a1])
+                    else:
+                        for b in range(batch_size):
+                            scalars[b, d] = math.tan(scalars[b, a1])
+                elif d < ADDR_MATRICES:
+                    vd = d - ADDR_VECTORS
+                    v1 = a1 - ADDR_VECTORS
+                    if use_parallel:
+                        for b in prange(batch_size):
+                            for j in range(vector_dim):
+                                vectors[b, vd, j] = math.tan(vectors[b, v1, j])
+                    else:
+                        for b in range(batch_size):
+                            for j in range(vector_dim):
+                                vectors[b, vd, j] = math.tan(vectors[b, v1, j])
                 else:
-                    for b in range(batch_size):
-                        scalars[b, d] = math.tan(scalars[b, a1])
+                    md = d - ADDR_MATRICES
+                    m1 = a1 - ADDR_MATRICES
+                    if use_parallel:
+                        for b in prange(batch_size):
+                            for r in range(vector_dim):
+                                for c in range(vector_dim):
+                                    matrices[b, md, r, c] = math.tan(matrices[b, m1, r, c])
+                    else:
+                        for b in range(batch_size):
+                            for r in range(vector_dim):
+                                for c in range(vector_dim):
+                                    matrices[b, md, r, c] = math.tan(matrices[b, m1, r, c])
 
             elif op == _OP_HEAVISIDE:
-                if use_parallel:
-                    for b in prange(batch_size):
-                        scalars[b, d] = 1.0 if scalars[b, a1] > 0 else 0.0
+                if d < ADDR_VECTORS:
+                    if use_parallel:
+                        for b in prange(batch_size):
+                            scalars[b, d] = 1.0 if scalars[b, a1] > 0 else 0.0
+                    else:
+                        for b in range(batch_size):
+                            scalars[b, d] = 1.0 if scalars[b, a1] > 0 else 0.0
+                elif d < ADDR_MATRICES:
+                    vd = d - ADDR_VECTORS
+                    v1 = a1 - ADDR_VECTORS
+                    if use_parallel:
+                        for b in prange(batch_size):
+                            for j in range(vector_dim):
+                                vectors[b, vd, j] = 1.0 if vectors[b, v1, j] > 0 else 0.0
+                    else:
+                        for b in range(batch_size):
+                            for j in range(vector_dim):
+                                vectors[b, vd, j] = 1.0 if vectors[b, v1, j] > 0 else 0.0
                 else:
-                    for b in range(batch_size):
-                        scalars[b, d] = 1.0 if scalars[b, a1] > 0 else 0.0
+                    md = d - ADDR_MATRICES
+                    m1 = a1 - ADDR_MATRICES
+                    if use_parallel:
+                        for b in prange(batch_size):
+                            for r in range(vector_dim):
+                                for c in range(vector_dim):
+                                    matrices[b, md, r, c] = 1.0 if matrices[b, m1, r, c] > 0 else 0.0
+                    else:
+                        for b in range(batch_size):
+                            for r in range(vector_dim):
+                                for c in range(vector_dim):
+                                    matrices[b, md, r, c] = 1.0 if matrices[b, m1, r, c] > 0 else 0.0
 
             elif op == _OP_CONST:
                 if use_parallel:
@@ -759,29 +1604,114 @@ if _NUMBA_AVAILABLE:
             elif op == _OP_GAUSSIAN or op == _OP_UNIFORM:
                 offset = rand_offsets[i]
                 size = rand_sizes[i]
-                if offset >= 0 and size >= batch_size:
-                    if use_parallel:
-                        for b in prange(batch_size):
-                            val = rand_vals[offset + b]
-                            if op == _OP_GAUSSIAN:
-                                scalars[b, d] = val * c2 + c1
-                            else:
-                                scalars[b, d] = val * (c2 - c1) + c1
-                    else:
-                        for b in range(batch_size):
-                            val = rand_vals[offset + b]
-                            if op == _OP_GAUSSIAN:
-                                scalars[b, d] = val * c2 + c1
-                            else:
-                                scalars[b, d] = val * (c2 - c1) + c1
+                if d < ADDR_VECTORS:
+                    if offset >= 0 and size >= batch_size:
+                        if use_parallel:
+                            for b in prange(batch_size):
+                                val = rand_vals[offset + b]
+                                if op == _OP_GAUSSIAN:
+                                    scalars[b, d] = val * c2 + c1
+                                else:
+                                    scalars[b, d] = val * (c2 - c1) + c1
+                        else:
+                            for b in range(batch_size):
+                                val = rand_vals[offset + b]
+                                if op == _OP_GAUSSIAN:
+                                    scalars[b, d] = val * c2 + c1
+                                else:
+                                    scalars[b, d] = val * (c2 - c1) + c1
+                elif d < ADDR_MATRICES:
+                    expected = batch_size * vector_dim
+                    if offset >= 0 and size >= expected:
+                        vd = d - ADDR_VECTORS
+                        if use_parallel:
+                            for b in prange(batch_size):
+                                base = offset + b * vector_dim
+                                for j in range(vector_dim):
+                                    val = rand_vals[base + j]
+                                    if op == _OP_GAUSSIAN:
+                                        vectors[b, vd, j] = val * c2 + c1
+                                    else:
+                                        vectors[b, vd, j] = val * (c2 - c1) + c1
+                        else:
+                            for b in range(batch_size):
+                                base = offset + b * vector_dim
+                                for j in range(vector_dim):
+                                    val = rand_vals[base + j]
+                                    if op == _OP_GAUSSIAN:
+                                        vectors[b, vd, j] = val * c2 + c1
+                                    else:
+                                        vectors[b, vd, j] = val * (c2 - c1) + c1
+                else:
+                    expected = batch_size * vector_dim * vector_dim
+                    if offset >= 0 and size >= expected:
+                        md = d - ADDR_MATRICES
+                        if use_parallel:
+                            for b in prange(batch_size):
+                                base = offset + b * vector_dim * vector_dim
+                                idx = 0
+                                for r in range(vector_dim):
+                                    for c in range(vector_dim):
+                                        val = rand_vals[base + idx]
+                                        idx += 1
+                                        if op == _OP_GAUSSIAN:
+                                            matrices[b, md, r, c] = val * c2 + c1
+                                        else:
+                                            matrices[b, md, r, c] = val * (c2 - c1) + c1
+                        else:
+                            for b in range(batch_size):
+                                base = offset + b * vector_dim * vector_dim
+                                idx = 0
+                                for r in range(vector_dim):
+                                    for c in range(vector_dim):
+                                        val = rand_vals[base + idx]
+                                        idx += 1
+                                        if op == _OP_GAUSSIAN:
+                                            matrices[b, md, r, c] = val * c2 + c1
+                                        else:
+                                            matrices[b, md, r, c] = val * (c2 - c1) + c1
 
             elif op == _OP_COPY:
-                if use_parallel:
-                    for b in prange(batch_size):
-                        scalars[b, d] = scalars[b, a1]
-                else:
-                    for b in range(batch_size):
-                        scalars[b, d] = scalars[b, a1]
+                if d < ADDR_VECTORS:
+                    if a1 < ADDR_VECTORS:
+                        if use_parallel:
+                            for b in prange(batch_size):
+                                scalars[b, d] = scalars[b, a1]
+                        else:
+                            for b in range(batch_size):
+                                scalars[b, d] = scalars[b, a1]
+                    elif a1 < ADDR_MATRICES:
+                        v1 = a1 - ADDR_VECTORS
+                        if use_parallel:
+                            for b in prange(batch_size):
+                                acc = 0.0
+                                for j in range(vector_dim):
+                                    acc += vectors[b, v1, j] * vectors[b, v1, j]
+                                scalars[b, d] = math.sqrt(acc)
+                        else:
+                            for b in range(batch_size):
+                                acc = 0.0
+                                for j in range(vector_dim):
+                                    acc += vectors[b, v1, j] * vectors[b, v1, j]
+                                scalars[b, d] = math.sqrt(acc)
+                    else:
+                        m1 = a1 - ADDR_MATRICES
+                        if use_parallel:
+                            for b in prange(batch_size):
+                                acc = 0.0
+                                for r in range(vector_dim):
+                                    for c in range(vector_dim):
+                                        val = matrices[b, m1, r, c]
+                                        acc += val * val
+                                scalars[b, d] = math.sqrt(acc)
+                        else:
+                            for b in range(batch_size):
+                                acc = 0.0
+                                for r in range(vector_dim):
+                                    for c in range(vector_dim):
+                                        val = matrices[b, m1, r, c]
+                                        acc += val * val
+                                scalars[b, d] = math.sqrt(acc)
 
             elif op == _OP_CONST_VEC:
                 if d >= ADDR_VECTORS and d < ADDR_MATRICES:
@@ -816,20 +1746,42 @@ if _NUMBA_AVAILABLE:
                     m1 = a1 - ADDR_MATRICES
                     v2 = a2 - ADDR_VECTORS
                     vd = d - ADDR_VECTORS
-                    if use_parallel:
-                        for b in prange(batch_size):
-                            for r in range(vector_dim):
-                                acc = 0.0
-                                for c in range(vector_dim):
-                                    acc += matrices[b, m1, r, c] * vectors[b, v2, c]
-                                vectors[b, vd, r] = acc
+                    if vd == v2:
+                        if use_parallel:
+                            for b in prange(batch_size):
+                                tmp = np.empty(vector_dim, dtype=vectors.dtype)
+                                for r in range(vector_dim):
+                                    acc = 0.0
+                                    for c in range(vector_dim):
+                                        acc += matrices[b, m1, r, c] * vectors[b, v2, c]
+                                    tmp[r] = acc
+                                for r in range(vector_dim):
+                                    vectors[b, vd, r] = tmp[r]
+                        else:
+                            for b in range(batch_size):
+                                tmp = np.empty(vector_dim, dtype=vectors.dtype)
+                                for r in range(vector_dim):
+                                    acc = 0.0
+                                    for c in range(vector_dim):
+                                        acc += matrices[b, m1, r, c] * vectors[b, v2, c]
+                                    tmp[r] = acc
+                                for r in range(vector_dim):
+                                    vectors[b, vd, r] = tmp[r]
                     else:
-                        for b in range(batch_size):
-                            for r in range(vector_dim):
-                                acc = 0.0
-                                for c in range(vector_dim):
-                                    acc += matrices[b, m1, r, c] * vectors[b, v2, c]
-                                vectors[b, vd, r] = acc
+                        if use_parallel:
+                            for b in prange(batch_size):
+                                for r in range(vector_dim):
+                                    acc = 0.0
+                                    for c in range(vector_dim):
+                                        acc += matrices[b, m1, r, c] * vectors[b, v2, c]
+                                    vectors[b, vd, r] = acc
+                        else:
+                            for b in range(batch_size):
+                                for r in range(vector_dim):
+                                    acc = 0.0
+                                    for c in range(vector_dim):
+                                        acc += matrices[b, m1, r, c] * vectors[b, v2, c]
+                                    vectors[b, vd, r] = acc
 
             elif op == _OP_OUTER:
                 if d >= ADDR_MATRICES:
@@ -852,8 +1804,8 @@ if _NUMBA_AVAILABLE:
                                     )
 
             elif op == _OP_NORM:
+                v1 = a1 - ADDR_VECTORS
                 if d < ADDR_VECTORS:
-                    v1 = a1 - ADDR_VECTORS
                     if use_parallel:
                         for b in prange(batch_size):
                             acc = 0.0
@@ -866,10 +1818,28 @@ if _NUMBA_AVAILABLE:
                             for j in range(vector_dim):
                                 acc += vectors[b, v1, j] * vectors[b, v1, j]
                             scalars[b, d] = math.sqrt(acc)
+                else:
+                    vd = d - ADDR_VECTORS
+                    if use_parallel:
+                        for b in prange(batch_size):
+                            acc = 0.0
+                            for j in range(vector_dim):
+                                acc += vectors[b, v1, j] * vectors[b, v1, j]
+                            norm = math.sqrt(acc)
+                            for j in range(vector_dim):
+                                vectors[b, vd, j] = norm
+                    else:
+                        for b in range(batch_size):
+                            acc = 0.0
+                            for j in range(vector_dim):
+                                acc += vectors[b, v1, j] * vectors[b, v1, j]
+                            norm = math.sqrt(acc)
+                            for j in range(vector_dim):
+                                vectors[b, vd, j] = norm
 
             elif op == _OP_MEAN:
+                v1 = a1 - ADDR_VECTORS
                 if d < ADDR_VECTORS:
-                    v1 = a1 - ADDR_VECTORS
                     if use_parallel:
                         for b in prange(batch_size):
                             acc = 0.0
@@ -882,10 +1852,28 @@ if _NUMBA_AVAILABLE:
                             for j in range(vector_dim):
                                 acc += vectors[b, v1, j]
                             scalars[b, d] = acc / float(vector_dim)
+                else:
+                    vd = d - ADDR_VECTORS
+                    if use_parallel:
+                        for b in prange(batch_size):
+                            acc = 0.0
+                            for j in range(vector_dim):
+                                acc += vectors[b, v1, j]
+                            mean = acc / float(vector_dim)
+                            for j in range(vector_dim):
+                                vectors[b, vd, j] = mean
+                    else:
+                        for b in range(batch_size):
+                            acc = 0.0
+                            for j in range(vector_dim):
+                                acc += vectors[b, v1, j]
+                            mean = acc / float(vector_dim)
+                            for j in range(vector_dim):
+                                vectors[b, vd, j] = mean
 
             elif op == _OP_STD:
+                v1 = a1 - ADDR_VECTORS
                 if d < ADDR_VECTORS:
-                    v1 = a1 - ADDR_VECTORS
                     if use_parallel:
                         for b in prange(batch_size):
                             acc = 0.0
@@ -908,6 +1896,34 @@ if _NUMBA_AVAILABLE:
                                 diff = vectors[b, v1, j] - mean
                                 var += diff * diff
                             scalars[b, d] = math.sqrt(var / float(vector_dim))
+                else:
+                    vd = d - ADDR_VECTORS
+                    if use_parallel:
+                        for b in prange(batch_size):
+                            acc = 0.0
+                            for j in range(vector_dim):
+                                acc += vectors[b, v1, j]
+                            mean = acc / float(vector_dim)
+                            var = 0.0
+                            for j in range(vector_dim):
+                                diff = vectors[b, v1, j] - mean
+                                var += diff * diff
+                            std = math.sqrt(var / float(vector_dim))
+                            for j in range(vector_dim):
+                                vectors[b, vd, j] = std
+                    else:
+                        for b in range(batch_size):
+                            acc = 0.0
+                            for j in range(vector_dim):
+                                acc += vectors[b, v1, j]
+                            mean = acc / float(vector_dim)
+                            var = 0.0
+                            for j in range(vector_dim):
+                                diff = vectors[b, v1, j] - mean
+                                var += diff * diff
+                            std = math.sqrt(var / float(vector_dim))
+                            for j in range(vector_dim):
+                                vectors[b, vd, j] = std
 
     @nb.njit(cache=True)
     def _execute_phase_numba_batch_rng(
@@ -1199,9 +2215,9 @@ class ArrayExecutor:
                 continue
 
             if op == OPCODES["GAUSSIAN"]:
-                values = self._rng.standard_normal(size).astype(np.float32, copy=False)
+                values = self._rng.standard_normal(size, dtype=np.float32)
             else:
-                values = self._rng.random(size).astype(np.float32, copy=False)
+                values = self._rng.random(size, dtype=np.float32)
 
             rand_offsets[i] = offset
             rand_sizes[i] = size
@@ -1227,14 +2243,20 @@ class ArrayExecutor:
         for i, op in enumerate(ops):
             if op != OPCODES["GAUSSIAN"] and op != OPCODES["UNIFORM"]:
                 continue
-            size = int(batch_size)
+            d = int(dest[i])
+            if d < ADDR_VECTORS:
+                size = int(batch_size)
+            elif d < ADDR_MATRICES:
+                size = int(batch_size) * int(self.vector_dim)
+            else:
+                size = int(batch_size) * int(self.vector_dim) * int(self.vector_dim)
             if size <= 0:
                 continue
 
             if op == OPCODES["GAUSSIAN"]:
-                values = self._rng.standard_normal(size).astype(np.float32, copy=False)
+                values = self._rng.standard_normal(size, dtype=np.float32)
             else:
-                values = self._rng.random(size).astype(np.float32, copy=False)
+                values = self._rng.random(size, dtype=np.float32)
 
             rand_offsets[i] = offset
             rand_sizes[i] = size
@@ -1246,6 +2268,234 @@ class ArrayExecutor:
         return rand_offsets, rand_sizes, np.concatenate(rand_values).astype(
             np.float32, copy=False
         )
+
+    def _opcode_name(self, op: int) -> str:
+        if op == _OP_ADD:
+            return "ADD"
+        if op == _OP_SUB:
+            return "SUB"
+        if op == _OP_MUL:
+            return "MUL"
+        if op == _OP_DIV:
+            return "DIV"
+        return f"OP_{int(op)}"
+
+    def _ensure_vector_matrix_dims(
+        self, vectors: np.ndarray, matrices: np.ndarray, op_name: str
+    ) -> None:
+        vec_dim = int(vectors.shape[-1])
+        mat_rows = int(matrices.shape[-2])
+        mat_cols = int(matrices.shape[-1])
+        if mat_rows != mat_cols or vec_dim != mat_cols:
+            raise ValueError(
+                f"{op_name} vector/matrix shape mismatch: "
+                f"vector_dim={vec_dim}, matrix_dim={mat_rows}x{mat_cols}"
+            )
+
+    def _apply_binary_arithmetic(
+        self,
+        op: int,
+        a1: int,
+        a2: int,
+        d: int,
+        scalars: np.ndarray,
+        vectors: np.ndarray,
+        matrices: np.ndarray,
+    ) -> None:
+        type1 = addr_type(a1)
+        type2 = addr_type(a2)
+        dest_type = addr_type(d)
+        result_type = binary_result_type(type1, type2)
+        if result_type is None:
+            raise ValueError(
+                f"{self._opcode_name(op)} unsupported types: {type1}, {type2}"
+            )
+        if dest_type != result_type:
+            raise ValueError(
+                f"{self._opcode_name(op)} dest type {dest_type} does not match {result_type}"
+            )
+
+        def apply(lhs: np.ndarray, rhs: np.ndarray) -> np.ndarray:
+            if op == _OP_ADD:
+                return lhs + rhs
+            if op == _OP_SUB:
+                return lhs - rhs
+            if op == _OP_MUL:
+                return lhs * rhs
+            return lhs / (rhs + 1e-8)
+
+        if result_type == "s":
+            scalars[:, d] = apply(scalars[:, a1], scalars[:, a2])
+            return
+
+        if result_type == "v":
+            out = vectors[:, d - ADDR_VECTORS]
+            if type1 == "s":
+                left = scalars[:, a1][:, None]
+                right = vectors[:, a2 - ADDR_VECTORS]
+            elif type2 == "s":
+                left = vectors[:, a1 - ADDR_VECTORS]
+                right = scalars[:, a2][:, None]
+            else:
+                left = vectors[:, a1 - ADDR_VECTORS]
+                right = vectors[:, a2 - ADDR_VECTORS]
+            out[...] = apply(left, right)
+            return
+
+        out = matrices[:, d - ADDR_MATRICES]
+        if type1 == "s":
+            left = scalars[:, a1][:, None, None]
+            right = matrices[:, a2 - ADDR_MATRICES]
+        elif type2 == "s":
+            left = matrices[:, a1 - ADDR_MATRICES]
+            right = scalars[:, a2][:, None, None]
+        elif type1 == "v" and type2 == "m":
+            # Broadcast the vector across matrix rows.
+            self._ensure_vector_matrix_dims(vectors, matrices, self._opcode_name(op))
+            left = vectors[:, a1 - ADDR_VECTORS][:, None, :]
+            right = matrices[:, a2 - ADDR_MATRICES]
+        elif type1 == "m" and type2 == "v":
+            # Broadcast the vector across matrix rows.
+            self._ensure_vector_matrix_dims(vectors, matrices, self._opcode_name(op))
+            left = matrices[:, a1 - ADDR_MATRICES]
+            right = vectors[:, a2 - ADDR_VECTORS][:, None, :]
+        else:
+            left = matrices[:, a1 - ADDR_MATRICES]
+            right = matrices[:, a2 - ADDR_MATRICES]
+        out[...] = apply(left, right)
+
+    def _phase_supports_numba_single(
+        self,
+        ops: np.ndarray,
+        arg1: np.ndarray,
+        arg2: np.ndarray,
+        dest: np.ndarray,
+    ) -> bool:
+        for i in range(len(ops)):
+            op = int(ops[i])
+            if op == _OP_NOOP:
+                continue
+            t1 = addr_type(int(arg1[i]))
+            t2 = addr_type(int(arg2[i]))
+            td = addr_type(int(dest[i]))
+
+            if op in (_OP_ADD, _OP_SUB, _OP_MUL, _OP_DIV):
+                result_type = binary_result_type(t1, t2)
+                if result_type is None or td != result_type:
+                    return False
+            elif op in (
+                _OP_ABS,
+                _OP_EXP,
+                _OP_LOG,
+                _OP_SIN,
+                _OP_COS,
+                _OP_TAN,
+                _OP_HEAVISIDE,
+            ):
+                if t1 != td or t1 not in ("s", "v", "m"):
+                    return False
+            elif op == _OP_CONST:
+                if td != "s":
+                    return False
+            elif op in (_OP_GAUSSIAN, _OP_UNIFORM):
+                if td not in ("s", "v", "m"):
+                    return False
+            elif op == _OP_COPY:
+                if td != "s":
+                    return False
+            elif op == _OP_CONST_VEC:
+                if td != "v":
+                    return False
+            elif op == _OP_DOT:
+                if t1 != "v" or t2 != "v" or td != "s":
+                    return False
+            elif op == _OP_MATMUL:
+                if t1 != "m" or t2 != "v" or td != "v":
+                    return False
+            elif op == _OP_OUTER:
+                if t1 != "v" or t2 != "v" or td != "m":
+                    return False
+            elif op in (_OP_NORM, _OP_MEAN, _OP_STD):
+                if t1 != "v" or td not in ("s", "v"):
+                    return False
+            else:
+                return False
+
+        return True
+
+    def _phase_supports_numba_batch(
+        self,
+        ops: np.ndarray,
+        arg1: np.ndarray,
+        arg2: np.ndarray,
+        dest: np.ndarray,
+    ) -> bool:
+        for i in range(len(ops)):
+            op = int(ops[i])
+            if op == _OP_NOOP:
+                continue
+            t1 = addr_type(int(arg1[i]))
+            t2 = addr_type(int(arg2[i]))
+            td = addr_type(int(dest[i]))
+
+            if op in (_OP_ADD, _OP_SUB, _OP_MUL, _OP_DIV):
+                result_type = binary_result_type(t1, t2)
+                if result_type is None or td != result_type:
+                    return False
+            elif op in (
+                _OP_ABS,
+                _OP_EXP,
+                _OP_LOG,
+                _OP_SIN,
+                _OP_COS,
+                _OP_TAN,
+                _OP_HEAVISIDE,
+            ):
+                if t1 != td or t1 not in ("s", "v", "m"):
+                    return False
+            elif op == _OP_CONST:
+                if td != "s":
+                    return False
+            elif op in (_OP_GAUSSIAN, _OP_UNIFORM):
+                if td not in ("s", "v", "m"):
+                    return False
+            elif op == _OP_COPY:
+                if td != "s":
+                    return False
+            elif op == _OP_CONST_VEC:
+                if td != "v":
+                    return False
+            elif op == _OP_DOT:
+                if t1 != "v" or t2 != "v" or td != "s":
+                    return False
+            elif op == _OP_MATMUL:
+                if t1 != "m" or t2 != "v" or td != "v":
+                    return False
+            elif op == _OP_OUTER:
+                if t1 != "v" or t2 != "v" or td != "m":
+                    return False
+            elif op in (_OP_NORM, _OP_MEAN, _OP_STD):
+                if t1 != "v" or td not in ("s", "v"):
+                    return False
+            else:
+                return False
+
+        return True
+
+    def _phase_has_vector_matrix_arithmetic(
+        self,
+        ops: np.ndarray,
+        arg1: np.ndarray,
+        arg2: np.ndarray,
+    ) -> bool:
+        for i in range(len(ops)):
+            op = int(ops[i])
+            if op in (_OP_ADD, _OP_SUB, _OP_MUL, _OP_DIV):
+                t1 = addr_type(int(arg1[i]))
+                t2 = addr_type(int(arg2[i]))
+                if (t1 == "v" and t2 == "m") or (t1 == "m" and t2 == "v"):
+                    return True
+        return False
 
     def execute_shared_memory_numba(
         self,
@@ -1278,6 +2528,19 @@ class ArrayExecutor:
                 self.algorithm.get_phase_ops("learn")
             )
         except Exception:
+            return None
+
+        if not (
+            self._phase_supports_numba_single(
+                setup_ops, setup_arg1, setup_arg2, setup_dest
+            )
+            and self._phase_supports_numba_single(
+                predict_ops, predict_arg1, predict_arg2, predict_dest
+            )
+            and self._phase_supports_numba_single(
+                learn_ops, learn_arg1, learn_arg2, learn_dest
+            )
+        ):
             return None
 
         try:
@@ -1339,7 +2602,11 @@ class ArrayExecutor:
         ops, arg1, arg2, dest, const1, const2 = self.algorithm.get_phase_ops(phase)
         batch_size = scalars.shape[0]
         if self._use_numba and _NUMBA_AVAILABLE and self._numba_safe:
-            if batch_size == 1:
+            if self._phase_has_vector_matrix_arithmetic(ops, arg1, arg2):
+                self._ensure_vector_matrix_dims(vectors, matrices, "ARITHMETIC")
+            if batch_size == 1 and self._phase_supports_numba_single(
+                ops, arg1, arg2, dest
+            ):
                 rand_offsets, rand_sizes, rand_vals = self._prepare_random_buffers(ops, dest)
                 _execute_phase_numba(
                     ops,
@@ -1357,7 +2624,9 @@ class ArrayExecutor:
                     int(self.vector_dim),
                 )
                 return True
-            if self._use_numba_batch:
+            if self._use_numba_batch and self._phase_supports_numba_batch(
+                ops, arg1, arg2, dest
+            ):
                 rand_offsets, rand_sizes, rand_vals = self._prepare_random_buffers_batch(
                     ops, dest, batch_size
                 )
@@ -1384,7 +2653,11 @@ class ArrayExecutor:
             a1, a2, d = arg1[i], arg2[i], dest[i]
             c1, c2 = const1[i], const2[i]
 
-            if op == OPCODES["NOOP"]:
+            if op == _OP_NOOP:
+                continue
+
+            if op in (_OP_ADD, _OP_SUB, _OP_MUL, _OP_DIV):
+                self._apply_binary_arithmetic(op, int(a1), int(a2), int(d), scalars, vectors, matrices)
                 continue
 
             # Get memory references
@@ -1392,18 +2665,8 @@ class ArrayExecutor:
             mem_a1, idx_a1 = self._get_mem(a1, scalars, vectors, matrices)
             mem_a2, idx_a2 = self._get_mem(a2, scalars, vectors, matrices)
 
-            # --- Universal Operations ---
-            if op == OPCODES["ADD"]:
-                mem_d[:, idx_d] = mem_a1[:, idx_a1] + mem_a2[:, idx_a2]
-            elif op == OPCODES["SUB"]:
-                mem_d[:, idx_d] = mem_a1[:, idx_a1] - mem_a2[:, idx_a2]
-            elif op == OPCODES["MUL"]:
-                mem_d[:, idx_d] = mem_a1[:, idx_a1] * mem_a2[:, idx_a2]
-            elif op == OPCODES["DIV"]:
-                mem_d[:, idx_d] = mem_a1[:, idx_a1] / (mem_a2[:, idx_a2] + 1e-8)
-
             # --- Unary Operations ---
-            elif op == OPCODES["ABS"]:
+            if op == OPCODES["ABS"]:
                 mem_d[:, idx_d] = np.abs(mem_a1[:, idx_a1])
             elif op == OPCODES["EXP"]:
                 mem_d[:, idx_d] = np.exp(np.clip(mem_a1[:, idx_a1], -10, 10))
@@ -1422,15 +2685,17 @@ class ArrayExecutor:
             elif op == OPCODES["CONST"]:
                 mem_d[:, idx_d] = c1
             elif op == OPCODES["GAUSSIAN"]:
-                dest = mem_d[:, idx_d]
-                self._rng.standard_normal(dest.shape, dtype=dest.dtype, out=dest)
-                dest *= c2
-                dest += c1
+                dest_buf = mem_d[:, idx_d]
+                dest_buf[...] = self._rng.standard_normal(
+                    dest_buf.shape, dtype=dest_buf.dtype
+                )
+                dest_buf *= c2
+                dest_buf += c1
             elif op == OPCODES["UNIFORM"]:
-                dest = mem_d[:, idx_d]
-                self._rng.random(dest.shape, out=dest)
-                dest *= (c2 - c1)
-                dest += c1
+                dest_buf = mem_d[:, idx_d]
+                dest_buf[...] = self._rng.random(dest_buf.shape, dtype=dest_buf.dtype)
+                dest_buf *= (c2 - c1)
+                dest_buf += c1
 
             elif op == OPCODES["COPY"]:
                 if d < ADDR_VECTORS:  # Scalar destination
