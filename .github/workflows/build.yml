@@ -85,7 +85,7 @@ jobs:
           --acl public-read
 
   build-macos-intel:
-    if: ${{ (github.event.inputs.build_macos_intel == 'true' || github.event.inputs.build_macos_intel == '') && github.actor == 'karamazov19' }}
+    if: ${{ (github.event.inputs.build_macos_intel == 'true' || github.event.inputs.build_macos_intel == '') }}
     runs-on: macos-14
 
     steps:
@@ -144,7 +144,7 @@ jobs:
           --acl public-read
 
   build-windows-x64:
-    if: ${{ (github.event.inputs.build_windows == 'true' || github.event.inputs.build_windows == '') && github.actor == 'karamazov19' }}
+    if: ${{ (github.event.inputs.build_windows == 'true' || github.event.inputs.build_windows == '') }}
     runs-on: windows-latest
 
     steps:
@@ -191,7 +191,7 @@ jobs:
         aws s3 cp dist/BitSota.exe s3://${{ secrets.SPACES_BUCKET_DIGITALOCEAN }}/builds/windows-x64/BitSota.exe --endpoint-url ${{ secrets.SPACES_ENDPOINT_DIGITALOCEAN }} --acl public-read
 
   build-linux-x64:
-    if: ${{ (github.event.inputs.build_linux == 'true' || github.event.inputs.build_linux == '') && github.actor == 'karamazov19' }}
+    if: ${{ (github.event.inputs.build_linux == 'true' || github.event.inputs.build_linux == '')  }}
     runs-on: ubuntu-latest
 
     steps:
