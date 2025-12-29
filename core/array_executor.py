@@ -8,7 +8,7 @@ from .algorithm_array import AlgorithmArray, OPCODES, ADDR_VECTORS, ADDR_MATRICE
 class ArrayExecutor:
     """Vectorized executor for AlgorithmArray format"""
 
-    def __init__(self, algorithm: AlgorithmArray):
+    def __init__(self, algorithm: AlgorithmArray, rng_seed: Optional[int] = None):
         self.algorithm = algorithm
         self.input_dim = algorithm.input_dim
 
@@ -17,7 +17,7 @@ class ArrayExecutor:
         self.vector_count = algorithm.vector_count
         self.matrix_count = algorithm.matrix_count
         self.vector_dim = algorithm.vector_dim
-        self._rng = np.random.default_rng()
+        self._rng = np.random.default_rng(rng_seed)
 
         # Internal state buffers (initialized lazily)
         self._scalars: Optional[np.ndarray] = None
