@@ -1,4 +1,5 @@
 import re
+from typing import Optional
 
 from .algorithm_array import (
     AlgorithmArray,
@@ -13,6 +14,11 @@ class DSLParser:
     """Parse DSL strings directly into AlgorithmArray format"""
 
     _NUMBER_RE = r"[-+]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][-+]?\d+)?"
+    _DEFAULT_PHASE_MAX_SIZES = {
+        "setup": 64,
+        "predict": 64,
+        "learn": 64,
+    }
 
     @staticmethod
     def parse_address(addr: str) -> int:
@@ -64,16 +70,22 @@ class DSLParser:
                     continue
                 meta[key] = value
 
-        # Count total instructions
-        total_ops = sum(1 for line in lines if not line.startswith("#"))
-
-        # Create algorithm with proper phases
         phases = ["setup", "predict", "learn"]
-        max_sizes = {
-            "setup": max(total_ops // 3, 10),
-            "predict": max(total_ops * 2 // 3, 20),
-            "learn": max(total_ops // 3, 10),
-        }
+        phase_counts = {phase: 0 for phase in phases}
+        current_phase = "predict"
+        for line in lines:
+            line_lower = line.lower()
+
+            if line.startswith("#") or line.endswith(":"):
+                if "setup" in line_lower:
+                    current_phase = "setup"
+                elif "predict" in line_lower:
+                    current_phase = "predict"
+                elif "learn" in line_lower:
+                    current_phase = "learn"
+                continue
+
+            phase_counts[current_phase] += 1
 
         def _meta_int(name: str):
             raw = meta.get(name)
@@ -83,6 +95,27 @@ class DSLParser:
                 return int(raw)
             except Exception:
                 return None
+
+        def _meta_phase_max(phase: str) -> Optional[int]:
+            for key in (
+                f"{phase}_max_ops",
+                f"{phase}_max",
+                f"{phase}_max_size",
+                f"{phase}_max_instructions",
+            ):
+                value = _meta_int(key)
+                if value is not None:
+                    return max(0, value)
+            return None
+
+        max_sizes = {}
+        for phase in phases:
+            meta_max = _meta_phase_max(phase)
+            default_max = cls._DEFAULT_PHASE_MAX_SIZES.get(phase, 0)
+            if meta_max is None:
+                max_sizes[phase] = max(default_max, phase_counts.get(phase, 0))
+            else:
+                max_sizes[phase] = max(meta_max, phase_counts.get(phase, 0))
 
         array_algo = AlgorithmArray.create_empty(
             input_dim,
@@ -209,6 +242,18 @@ class DSLParser:
     @classmethod
     def to_dsl(cls, array_algo: AlgorithmArray) -> str:
         """Convert AlgorithmArray back to DSL string"""
+        phase_meta = []
+        for phase in array_algo.get_phases():
+            try:
+                phase_max = array_algo.get_phase_max_size(phase)
+            except Exception:
+                continue
+            phase_meta.append(f"{phase}_max_ops={int(phase_max)}")
+
+        phase_meta_txt = ""
+        if phase_meta:
+            phase_meta_txt = " " + " ".join(phase_meta)
+
         lines = [
             (
                 "# meta:"
@@ -216,6 +261,7 @@ class DSLParser:
                 f" vector_count={int(array_algo.vector_count)}"
                 f" matrix_count={int(array_algo.matrix_count)}"
                 f" vector_dim={int(array_algo.vector_dim)}"
+                f"{phase_meta_txt}"
             )
         ]
 
