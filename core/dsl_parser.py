@@ -15,9 +15,9 @@ class DSLParser:
 
     _NUMBER_RE = r"[-+]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][-+]?\d+)?"
     _DEFAULT_PHASE_MAX_SIZES = {
-        "setup": 64,
-        "predict": 64,
-        "learn": 64,
+        "setup": 30,
+        "predict": 30,
+        "learn": 30,
     }
 
     @staticmethod
