@@ -3,6 +3,7 @@ Evaluation utilities for connecting algorithm evaluation to validator verificati
 This module provides the bridge between the core evaluation functions and the validator.
 """
 
+import os
 from typing import Dict, Any
 
 # Import from core
@@ -16,4 +17,5 @@ def verify_solution_quality(
     Verify that a submitted solution beats the global SOTA threshold.
     Delegates to core implementation.
     """
+    os.environ["AUTOML_ZERO_SHARED_MEMORY"] = "1"
     return core_verify_solution_quality(solution_data, sota_threshold)
