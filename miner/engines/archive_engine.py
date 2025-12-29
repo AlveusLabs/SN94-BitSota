@@ -28,7 +28,10 @@ class ArchiveAwareBaselineEvolution(BaseEvolutionEngine):
         vector_count: Optional[int] = None,
         matrix_count: Optional[int] = None,
         vector_dim: Optional[int] = None,
-        fec_cache_size: int = 0,
+        fec_cache_size: Optional[int] = None,
+        fec_train_examples: Optional[int] = None,
+        fec_valid_examples: Optional[int] = None,
+        fec_forget_every: Optional[int] = None,
         cifar_seed: Optional[int] = None,
     ):
         super().__init__(
@@ -42,6 +45,9 @@ class ArchiveAwareBaselineEvolution(BaseEvolutionEngine):
             matrix_count=matrix_count,
             vector_dim=vector_dim,
             fec_cache_size=fec_cache_size,
+            fec_train_examples=fec_train_examples,
+            fec_valid_examples=fec_valid_examples,
+            fec_forget_every=fec_forget_every,
             cifar_seed=cifar_seed,
         )
         self.archive = deque(maxlen=archive_size)

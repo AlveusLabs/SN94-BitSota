@@ -1,3 +1,4 @@
+import hashlib
 import os
 from collections import OrderedDict
 from typing import Tuple, List, Optional, Dict
@@ -11,6 +12,16 @@ from core.tasks.cifar10 import CIFAR10BinaryTask
 
 DEFAULT_MINER_TASK_COUNT = int(os.getenv("MINER_TASK_COUNT", "32"))
 DEFAULT_MINER_TASK_SEED = int(os.getenv("MINER_TASK_SEED", "0"))
+DEFAULT_FEC_CACHE_SIZE = int(os.getenv("MINER_FEC_CACHE_SIZE", "100000"))
+DEFAULT_FEC_TRAIN_EXAMPLES = int(os.getenv("MINER_FEC_TRAIN_EXAMPLES", "32"))
+DEFAULT_FEC_VALID_EXAMPLES = int(os.getenv("MINER_FEC_VALID_EXAMPLES", "32"))
+DEFAULT_FEC_FORGET_EVERY = int(os.getenv("MINER_FEC_FORGET_EVERY", "0"))
+_FEC_PROBE_SEED = 1337
+_FEC_TRACE_DECIMALS = 3
+
+FECProbeData = Tuple[
+    "Task", object, np.ndarray, np.ndarray, np.ndarray, np.ndarray
+]
 
 
 class BaseEvolutionEngine:
@@ -27,7 +38,10 @@ class BaseEvolutionEngine:
         vector_count: Optional[int] = None,
         matrix_count: Optional[int] = None,
         vector_dim: Optional[int] = None,
-        fec_cache_size: int = 0,
+        fec_cache_size: Optional[int] = None,
+        fec_train_examples: Optional[int] = None,
+        fec_valid_examples: Optional[int] = None,
+        fec_forget_every: Optional[int] = None,
         cifar_seed: Optional[int] = None,
     ):
         self.task = task
@@ -47,8 +61,28 @@ class BaseEvolutionEngine:
         self._vector_count = vector_count
         self._matrix_count = matrix_count
         self._vector_dim = vector_dim
+        if fec_cache_size is None:
+            fec_cache_size = DEFAULT_FEC_CACHE_SIZE
+        if fec_train_examples is None:
+            fec_train_examples = DEFAULT_FEC_TRAIN_EXAMPLES
+        if fec_valid_examples is None:
+            fec_valid_examples = DEFAULT_FEC_VALID_EXAMPLES
+        if fec_forget_every is None:
+            fec_forget_every = DEFAULT_FEC_FORGET_EVERY
+
         self._fec_cache_size = max(0, int(fec_cache_size))
+        self._fec_train_examples = max(1, int(fec_train_examples))
+        self._fec_valid_examples = max(1, int(fec_valid_examples))
+        self._fec_forget_every = max(0, int(fec_forget_every))
         self._fec_cache: OrderedDict = OrderedDict()
+        self._fec_probe_cache: Dict[int, FECProbeData] = {}
+        self._fec_inserts = 0
+        self._fec_lookups = 0
+        self._fec_hits = 0
+        self._fec_misses = 0
+        self._fec_key_failures = 0
+        self._fec_probe_seed = _FEC_PROBE_SEED
+        self._fec_trace_decimals = _FEC_TRACE_DECIMALS
         self._cifar_seed = DEFAULT_MINER_TASK_SEED if cifar_seed is None else int(cifar_seed)
         self._fixed_task_specs_by_dim: Dict[int, List[object]] = {}
 
@@ -121,6 +155,164 @@ class BaseEvolutionEngine:
         self._fixed_task_specs_by_dim[input_dim] = specs
         return specs
 
+    def _get_fec_task_descriptor(self, task: Task, input_dim: int):
+        descriptor = None
+        try:
+            descriptor = task.cache_descriptor()
+        except Exception:
+            descriptor = None
+        if descriptor is None:
+            name = getattr(task, "name", type(task).__name__)
+            task_type = getattr(task, "task_type", None)
+            try:
+                dim = int(input_dim)
+            except Exception:
+                dim = None
+            descriptor = (name, task_type, dim)
+        return descriptor
+
+    def _select_fec_subset(
+        self,
+        X: np.ndarray,
+        y: np.ndarray,
+        count: int,
+        rng: np.random.Generator,
+    ) -> Tuple[np.ndarray, np.ndarray]:
+        if X is None or y is None:
+            return np.array([], dtype=np.float32), np.array([], dtype=np.float32)
+        n = len(X)
+        if n <= 0:
+            return X[:0], y[:0]
+        if count >= n:
+            return X, y
+        indices = rng.choice(n, size=count, replace=False)
+        return X[indices], y[indices]
+
+    def _get_fec_probe_data(self, input_dim: int) -> Optional[FECProbeData]:
+        try:
+            input_dim = int(input_dim)
+        except Exception:
+            return None
+
+        cached = self._fec_probe_cache.get(input_dim)
+        if cached is not None:
+            return cached
+
+        probe_task: Optional[Task] = None
+        if isinstance(self.task, CIFAR10BinaryTask):
+            task_specs = self._get_fixed_miner_task_specs(input_dim)
+            if not task_specs:
+                return None
+            probe_spec = task_specs[0]
+            probe_task = CIFAR10BinaryTask()
+            try:
+                if hasattr(self.task, "_n_samples"):
+                    probe_task._n_samples = self.task._n_samples
+                if hasattr(self.task, "_train_split"):
+                    probe_task._train_split = self.task._train_split
+            except Exception:
+                pass
+            probe_task.load_data(task_spec=probe_spec)
+        else:
+            probe_task = self.task
+
+        if (
+            probe_task is None
+            or probe_task.X_train is None
+            or probe_task.y_train is None
+            or probe_task.X_val is None
+            or probe_task.y_val is None
+        ):
+            return None
+
+        rng_train = np.random.default_rng(self._fec_probe_seed)
+        rng_val = np.random.default_rng(self._fec_probe_seed + 1)
+        X_train, y_train = self._select_fec_subset(
+            probe_task.X_train,
+            probe_task.y_train,
+            self._fec_train_examples,
+            rng_train,
+        )
+        X_val, y_val = self._select_fec_subset(
+            probe_task.X_val,
+            probe_task.y_val,
+            self._fec_valid_examples,
+            rng_val,
+        )
+
+        descriptor = self._get_fec_task_descriptor(probe_task, input_dim)
+        if descriptor is None:
+            return None
+
+        data = (probe_task, descriptor, X_train, y_train, X_val, y_val)
+        self._fec_probe_cache[input_dim] = data
+        return data
+
+    def _compute_fec_trace(
+        self,
+        probe_task: Task,
+        algo: AlgorithmArray,
+        X_train: np.ndarray,
+        y_train: np.ndarray,
+        X_val: np.ndarray,
+        y_val: np.ndarray,
+    ) -> Optional[np.ndarray]:
+        try:
+            predictions = probe_task._predict_after_training(
+                algo,
+                X_train,
+                y_train,
+                X_val,
+                epochs=1,
+                rng_seed=self._fec_probe_seed,
+            )
+        except Exception:
+            return None
+
+        if predictions is None or len(predictions) == 0:
+            return None
+
+        labels = None
+        if y_val is not None:
+            labels = y_val[: len(predictions)]
+        if labels is None or len(labels) == 0:
+            trace = predictions
+        else:
+            trace = predictions - labels
+
+        trace = np.round(trace, decimals=self._fec_trace_decimals)
+        trace = np.nan_to_num(
+            trace.astype(np.float32, copy=False),
+            nan=0.0,
+            posinf=1e6,
+            neginf=-1e6,
+        )
+        return np.ascontiguousarray(trace, dtype=np.float32)
+
+    def _hash_fec_trace(
+        self,
+        trace: np.ndarray,
+        descriptor: object,
+        train_count: int,
+        valid_count: int,
+        input_dim: int,
+    ) -> str:
+        hasher = hashlib.sha1()
+        hasher.update(b"fec-v1")
+        hasher.update(repr(descriptor).encode("utf-8"))
+        for value in (
+            int(train_count),
+            int(valid_count),
+            int(input_dim),
+            int(self.miner_task_count),
+            int(self._cifar_seed),
+            int(self._fec_probe_seed),
+            int(self._fec_trace_decimals),
+        ):
+            hasher.update(int(value).to_bytes(8, "little", signed=True))
+        hasher.update(trace.tobytes())
+        return hasher.hexdigest()
+
     def _evaluate_on_miner_tasks(self, algo: AlgorithmArray) -> float:
         """Evaluate an algorithm across multiple sampled tasks and return median fitness."""
 
@@ -128,9 +320,11 @@ class BaseEvolutionEngine:
         if cache_key is not None:
             cached = self._fec_cache.get(cache_key)
             if cached is not None:
+                self._fec_hits += 1
                 # LRU bump
                 self._fec_cache.move_to_end(cache_key)
                 return cached
+            self._fec_misses += 1
 
         scores = []
         if isinstance(self.task, CIFAR10BinaryTask):
@@ -152,8 +346,12 @@ class BaseEvolutionEngine:
         median_score = float(np.median(finite_scores))
 
         if cache_key is not None:
+            if self._fec_forget_every > 0 and self._fec_inserts >= self._fec_forget_every:
+                self._fec_cache.clear()
+                self._fec_inserts = 0
             self._fec_cache[cache_key] = median_score
             self._fec_cache.move_to_end(cache_key)
+            self._fec_inserts += 1
             while len(self._fec_cache) > self._fec_cache_size > 0:
                 self._fec_cache.popitem(last=False)
 
@@ -162,15 +360,30 @@ class BaseEvolutionEngine:
     def _make_cache_key(self, algo: AlgorithmArray):
         if self._fec_cache_size <= 0:
             return None
-        descriptor = None
-        try:
-            descriptor = self.task.cache_descriptor()
-        except Exception:
-            descriptor = None
-        if descriptor is None:
+        self._fec_lookups += 1
+        probe_data = self._get_fec_probe_data(algo.input_dim)
+        if not probe_data:
+            self._fec_key_failures += 1
             return None
-        try:
-            fingerprint = algo.fingerprint()
-        except Exception:
+        probe_task, descriptor, X_train, y_train, X_val, y_val = probe_data
+        trace = self._compute_fec_trace(probe_task, algo, X_train, y_train, X_val, y_val)
+        if trace is None:
+            self._fec_key_failures += 1
             return None
-        return (fingerprint, descriptor, self.miner_task_count)
+        return self._hash_fec_trace(
+            trace,
+            descriptor,
+            len(X_train),
+            int(trace.shape[0]),
+            algo.input_dim,
+        )
+
+    def get_fec_stats(self) -> Dict[str, int]:
+        return {
+            "lookups": int(self._fec_lookups),
+            "hits": int(self._fec_hits),
+            "misses": int(self._fec_misses),
+            "key_failures": int(self._fec_key_failures),
+            "size": int(len(self._fec_cache)),
+            "capacity": int(self._fec_cache_size),
+        }

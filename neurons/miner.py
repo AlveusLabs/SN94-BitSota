@@ -74,10 +74,15 @@ def create_client(config, wallet):
         # Direct validator mode - use first validator as relay endpoint
         validators = config["validators"]
         relay_endpoint = validators[0] if validators else "https://relay.bitsota.ai"
+        fec_config = (config.get("evolution", {}) or {}).get("fec", {}) or {}
         return BittensorDirectClient(
             wallet=wallet,
             relay_endpoint=relay_endpoint,
             verbose=config["evolution"]["verbose"],
+            fec_cache_size=fec_config.get("cache_size"),
+            fec_train_examples=fec_config.get("num_train_examples"),
+            fec_valid_examples=fec_config.get("num_valid_examples"),
+            fec_forget_every=fec_config.get("forget_every"),
         )
     else:
         # Pool mode
