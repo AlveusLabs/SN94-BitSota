@@ -1,5 +1,6 @@
 from abc import ABC, abstractmethod
 import logging
+import os
 
 import numpy as np
 from core.algorithm_array import AlgorithmArray
@@ -67,6 +68,44 @@ class Task(ABC):
             val_len = len(self.X_val)
             if train_len <= 0 or val_len <= 0:
                 return self.get_baseline_fitness()
+
+            use_shared_memory = str(
+                os.getenv("AUTOML_ZERO_SHARED_MEMORY", "1")
+            ).strip().lower() in {"1", "true", "yes", "on"}
+
+            if use_shared_memory:
+                batch_size = 1
+
+                setup_input = np.zeros((batch_size, self.input_dim), dtype=np.float32)
+                executor.execute_batch(setup_input, phases=["setup"], reset_state=True)
+
+                train_input = np.zeros((batch_size, self.input_dim), dtype=np.float32)
+                train_labels = np.zeros(batch_size, dtype=np.float32)
+                for _ in range(epochs):
+                    for idx in range(train_len):
+                        train_input[0] = self.X_train[idx]
+                        train_labels[0] = self.y_train[idx]
+                        executor.execute_batch(
+                            train_input,
+                            y=train_labels,
+                            phases=["predict", "learn"],
+                            reset_state=False,
+                        )
+
+                predictions = np.zeros(val_len, dtype=np.float32)
+                val_input = np.zeros((batch_size, self.input_dim), dtype=np.float32)
+                for idx in range(val_len):
+                    val_input[0] = self.X_val[idx]
+                    pred_batch = executor.execute_batch(
+                        val_input, phases=["predict"], reset_state=False
+                    )
+                    predictions[idx] = pred_batch[0]
+
+                labels = self.y_val[: len(predictions)]
+                if len(predictions) == 0 or len(labels) == 0:
+                    return self.get_baseline_fitness()
+
+                return self.evaluate(predictions, labels)
 
             batch_size = max(train_len, 1)
 
