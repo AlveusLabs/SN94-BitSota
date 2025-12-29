@@ -97,6 +97,9 @@ class ArrayExecutor:
                 scalars[:, 1] = y
 
             self._execute_phase(phase, scalars, vectors, matrices, X, y)
+            if phase == "learn":
+                # Clear labels after learning to avoid leakage into later predicts.
+                scalars[:, 1] = 0.0
 
         # Return predictions from s0
         return scalars[:, 0].copy()
