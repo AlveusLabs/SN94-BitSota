@@ -184,6 +184,12 @@ class DirectClient:
             persist_state = raw not in {"0", "false", "no", "off"}
         self.persist_state = bool(persist_state)
 
+        try:
+            raw_checkpoint = os.getenv("MINER_PERSIST_EVERY_N_GENERATIONS", "5000").strip()
+            self.persist_every_n_generations = max(0, int(raw_checkpoint or 0))
+        except Exception:
+            self.persist_every_n_generations = 5000
+
         state_dir_path: Optional[Path] = None
         if state_dir:
             try:
@@ -198,6 +204,40 @@ class DirectClient:
         )
         if self.persist_state:
             self._restore_persisted_client_state()
+
+    def _maybe_persist_checkpoint(
+        self,
+        *,
+        generation: int,
+        task_type: str,
+        engine_type: str,
+        engine: BaseEvolutionEngine,
+    ) -> None:
+        if not self.persist_state:
+            return
+
+        every = int(getattr(self, "persist_every_n_generations", 0) or 0)
+        if every <= 0:
+            return
+        if int(generation) <= 0 or (int(generation) % every) != 0:
+            return
+
+        try:
+            path = self._state_store.save_engine_state(
+                task_type=str(task_type),
+                engine_type=str(engine_type),
+                engine=engine,
+            )
+            self._persist_client_state()
+            if path is not None and logger.isEnabledFor(logging.INFO):
+                logger.info(
+                    "Checkpointed miner state at gen=%d to %s",
+                    int(generation),
+                    str(path),
+                )
+        except Exception:
+            # Persistence must never crash mining.
+            return
 
     def _restore_persisted_client_state(self) -> None:
         payload = self._state_store.load_client_state()
@@ -610,6 +650,12 @@ class DirectClient:
         for gen in range(max_generations):
             # Evolve one generation
             best_algo, best_score, population, scores = engine.evolve_generation()
+            self._maybe_persist_checkpoint(
+                generation=gen + 1,
+                task_type=str(task_type),
+                engine_type=str(engine_type),
+                engine=engine,
+            )
 
             best_candidate_algo = None
             best_candidate_score = -np.inf
@@ -801,6 +847,12 @@ class DirectClient:
             # Evolve one generation
             best_algo, best_score, population, scores = engine.evolve_generation()
             generation += 1
+            self._maybe_persist_checkpoint(
+                generation=generation,
+                task_type=str(task_type),
+                engine_type=str(engine_type),
+                engine=engine,
+            )
 
             # Check for improvement
             if best_score > best_ever_score:
