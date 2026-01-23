@@ -33,7 +33,7 @@ Used by:
 
 - `mining.mode` (string): UI/metadata hint (`direct` or `pool`). The current CLI decides direct vs pool strictly via `pool_url`.
 - `mining.task_type` (string): Task identifier.
-  - Current implementation supports `cifar10_binary` only.
+  - Default/subnet task is `cifar10_binary`. In `test_mode` (local testing), the GUI also exposes `mnist_binary` and `scalar_linear`.
 - `mining.engine_type` (string): Evolution engine in direct mode (`archive` or `ga`).
 - `mining.cycles` (int): Pool mode only; `0` means run forever.
 - `mining.alternate_tasks` (bool): Pool mode only; alternate `evolve`/`evaluate` task requests.
@@ -205,8 +205,10 @@ If set, `BITSOTA_GUI_CONFIG` points to a JSON file that overrides GUI endpoints:
 - `test_invite_code` (string)
 - `miner_task_count` (int)
 - `validator_task_count` (int)
+- `miner_validate_every_n_generations` (int)
+- `problem_config_path` (string)
 
 If `BITSOTA_GUI_CONFIG` is not set, the app looks for:
 - `./bitsota_gui_config.json`
-- `./new_gui_config.json`
+- `./gui_config.json`
 - `~/.bitsota/gui_config.json`

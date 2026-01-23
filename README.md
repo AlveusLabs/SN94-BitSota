@@ -129,6 +129,7 @@ python neurons/validator_node.py
 - **[Mining Guide](docs/mining.md)** - Direct mining setup and strategies
 - **[Pool Mining Guide](docs/pool-mining.md)** - Collaborative mining details
 - **[Validation Guide](docs/validation.md)** - Running a validator node
+- **[Local Testing Guide](docs/local-testing.md)** - Run GUI + local relay + local validator
 - **[Rewards Guide](docs/rewards.md)** - Understanding incentive mechanisms
 
 ## Links

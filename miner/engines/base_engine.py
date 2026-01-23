@@ -122,6 +122,13 @@ class BaseEvolutionEngine:
         if input_dim is None:
             raise ValueError("Task input dimension must be set before initialization")
 
+        default_vector_dim = self._vector_dim
+        if default_vector_dim is None:
+            try:
+                default_vector_dim = int(input_dim)
+            except Exception:
+                default_vector_dim = None
+
         return AlgorithmArray.create_empty(
             input_dim=input_dim,
             phases=self._phase_order,
@@ -129,7 +136,7 @@ class BaseEvolutionEngine:
             scalar_count=self._scalar_count,
             vector_count=self._vector_count,
             matrix_count=self._matrix_count,
-            vector_dim=self._vector_dim,
+            vector_dim=default_vector_dim,
         )
 
     def _get_fixed_miner_task_specs(self, input_dim: int):

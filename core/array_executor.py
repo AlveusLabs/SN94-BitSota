@@ -127,118 +127,229 @@ class ArrayExecutor:
         """Execute a single phase on the entire batch"""
 
         ops, arg1, arg2, dest, const1, const2 = self.algorithm.get_phase_ops(phase)
-        batch_size = scalars.shape[0]
+
+        def addr_type(addr: int) -> str:
+            if addr < 0:
+                return "none"
+            if addr < ADDR_VECTORS:
+                return "s"
+            if addr < ADDR_MATRICES:
+                return "v"
+            return "m"
+
+        def pad_after_batch(arr: np.ndarray, target_ndim: int) -> np.ndarray:
+            while arr.ndim < target_ndim:
+                arr = arr[:, None, ...]
+            return arr
+
+        def is_broadcastable(src_shape: tuple[int, ...], dst_shape: tuple[int, ...]) -> bool:
+            if len(src_shape) != len(dst_shape):
+                return False
+            if src_shape[0] != dst_shape[0]:
+                return False
+            for src_dim, dst_dim in zip(src_shape[1:], dst_shape[1:]):
+                if src_dim != 1 and src_dim != dst_dim:
+                    return False
+            return True
+
+        def are_broadcast_compatible(shape_a: tuple[int, ...], shape_b: tuple[int, ...]) -> bool:
+            if len(shape_a) != len(shape_b):
+                return False
+            if shape_a[0] != shape_b[0]:
+                return False
+            for dim_a, dim_b in zip(shape_a[1:], shape_b[1:]):
+                if dim_a != dim_b and dim_a != 1 and dim_b != 1:
+                    return False
+            return True
+
+        def assign(dest_view: np.ndarray, value: np.ndarray) -> bool:
+            if value.ndim > dest_view.ndim:
+                return False
+            if value.ndim < dest_view.ndim:
+                value = pad_after_batch(value, dest_view.ndim)
+            if not is_broadcastable(value.shape, dest_view.shape):
+                return False
+            dest_view[...] = value
+            return True
+
+        def valid_reg(mem: np.ndarray, idx: int) -> bool:
+            return 0 <= int(idx) < int(mem.shape[1])
+
+        binary_ops = {
+            OPCODES["ADD"],
+            OPCODES["SUB"],
+            OPCODES["MUL"],
+            OPCODES["DIV"],
+            OPCODES["DOT"],
+            OPCODES["MATMUL"],
+            OPCODES["OUTER"],
+        }
 
         for i in range(len(ops)):
-            op = ops[i]
-            a1, a2, d = arg1[i], arg2[i], dest[i]
-            c1, c2 = const1[i], const2[i]
+            op = int(ops[i])
+            a1, a2, d = int(arg1[i]), int(arg2[i]), int(dest[i])
+            c1, c2 = float(const1[i]), float(const2[i])
 
             if op == OPCODES["NOOP"]:
                 continue
 
-            # Get memory references
-            mem_d, idx_d = self._get_mem(d, scalars, vectors, matrices)
-            mem_a1, idx_a1 = self._get_mem(a1, scalars, vectors, matrices)
-            mem_a2, idx_a2 = self._get_mem(a2, scalars, vectors, matrices)
+            # Guard against sentinel "-1" ("none") operands.
+            if d < 0:
+                continue
+            if op not in (OPCODES["CONST"], OPCODES["CONST_VEC"], OPCODES["GAUSSIAN"], OPCODES["UNIFORM"]):
+                if a1 < 0:
+                    continue
+                if op in binary_ops and a2 < 0:
+                    continue
 
-            # --- Universal Operations ---
-            if op == OPCODES["ADD"]:
-                mem_d[:, idx_d] = mem_a1[:, idx_a1] + mem_a2[:, idx_a2]
-            elif op == OPCODES["SUB"]:
-                mem_d[:, idx_d] = mem_a1[:, idx_a1] - mem_a2[:, idx_a2]
-            elif op == OPCODES["MUL"]:
-                mem_d[:, idx_d] = mem_a1[:, idx_a1] * mem_a2[:, idx_a2]
-            elif op == OPCODES["DIV"]:
-                mem_d[:, idx_d] = mem_a1[:, idx_a1] / (mem_a2[:, idx_a2] + 1e-8)
+            mem_d, idx_d = self._get_mem(d, scalars, vectors, matrices)
+            if not valid_reg(mem_d, idx_d):
+                continue
+            dest_view = mem_d[:, idx_d]
+
+            mem_a1 = idx_a1 = None
+            mem_a2 = idx_a2 = None
+            if a1 >= 0:
+                mem_a1, idx_a1 = self._get_mem(a1, scalars, vectors, matrices)
+                if mem_a1 is not None and not valid_reg(mem_a1, idx_a1):
+                    continue
+            if a2 >= 0:
+                mem_a2, idx_a2 = self._get_mem(a2, scalars, vectors, matrices)
+                if mem_a2 is not None and not valid_reg(mem_a2, idx_a2):
+                    continue
+
+            # --- Universal Operations (broadcasts per-sample across vectors/matrices) ---
+            if op in (OPCODES["ADD"], OPCODES["SUB"], OPCODES["MUL"], OPCODES["DIV"]):
+                if mem_a1 is None or mem_a2 is None:
+                    continue
+                lhs = mem_a1[:, idx_a1]
+                rhs = mem_a2[:, idx_a2]
+                target_ndim = max(lhs.ndim, rhs.ndim)
+                lhs = pad_after_batch(lhs, target_ndim)
+                rhs = pad_after_batch(rhs, target_ndim)
+                if not are_broadcast_compatible(lhs.shape, rhs.shape):
+                    continue
+                if op == OPCODES["ADD"]:
+                    result = lhs + rhs
+                elif op == OPCODES["SUB"]:
+                    result = lhs - rhs
+                elif op == OPCODES["MUL"]:
+                    result = lhs * rhs
+                else:
+                    result = lhs / (rhs + 1e-8)
+                assign(dest_view, result)
 
             # --- Unary Operations ---
-            elif op == OPCODES["ABS"]:
-                mem_d[:, idx_d] = np.abs(mem_a1[:, idx_a1])
-            elif op == OPCODES["EXP"]:
-                mem_d[:, idx_d] = np.exp(np.clip(mem_a1[:, idx_a1], -10, 10))
-            elif op == OPCODES["LOG"]:
-                mem_d[:, idx_d] = np.log(np.abs(mem_a1[:, idx_a1]) + 1e-8)
-            elif op == OPCODES["SIN"]:
-                mem_d[:, idx_d] = np.sin(mem_a1[:, idx_a1])
-            elif op == OPCODES["COS"]:
-                mem_d[:, idx_d] = np.cos(mem_a1[:, idx_a1])
-            elif op == OPCODES["TAN"]:
-                mem_d[:, idx_d] = np.tan(mem_a1[:, idx_a1])
-            elif op == OPCODES["HEAVISIDE"]:
-                mem_d[:, idx_d] = (mem_a1[:, idx_a1] > 0).astype(np.float32)
+            elif op in (
+                OPCODES["ABS"],
+                OPCODES["EXP"],
+                OPCODES["LOG"],
+                OPCODES["SIN"],
+                OPCODES["COS"],
+                OPCODES["TAN"],
+                OPCODES["HEAVISIDE"],
+            ):
+                if mem_a1 is None:
+                    continue
+                src = mem_a1[:, idx_a1]
+                if op == OPCODES["ABS"]:
+                    result = np.abs(src)
+                elif op == OPCODES["EXP"]:
+                    result = np.exp(np.clip(src, -10, 10))
+                elif op == OPCODES["LOG"]:
+                    result = np.log(np.abs(src) + 1e-8)
+                elif op == OPCODES["SIN"]:
+                    result = np.sin(src)
+                elif op == OPCODES["COS"]:
+                    result = np.cos(src)
+                elif op == OPCODES["TAN"]:
+                    result = np.tan(src)
+                else:  # HEAVISIDE
+                    result = (src > 0).astype(np.float32)
+                assign(dest_view, result)
 
             # --- Constant Loading ---
             elif op == OPCODES["CONST"]:
-                mem_d[:, idx_d] = c1
+                dest_view[...] = c1
             elif op == OPCODES["GAUSSIAN"]:
-                dest = mem_d[:, idx_d]
-                self._rng.standard_normal(dest.shape, dtype=dest.dtype, out=dest)
-                dest *= c2
-                dest += c1
+                dest_mem = dest_view
+                self._rng.standard_normal(dest_mem.shape, dtype=dest_mem.dtype, out=dest_mem)
+                dest_mem *= c2
+                dest_mem += c1
             elif op == OPCODES["UNIFORM"]:
-                dest = mem_d[:, idx_d]
-                self._rng.random(dest.shape, out=dest)
-                dest *= (c2 - c1)
-                dest += c1
+                dest_mem = dest_view
+                self._rng.random(dest_mem.shape, dtype=dest_mem.dtype, out=dest_mem)
+                dest_mem *= (c2 - c1)
+                dest_mem += c1
 
             elif op == OPCODES["COPY"]:
-                if d < ADDR_VECTORS:  # Scalar destination
-                    if a1 < ADDR_VECTORS:  # Scalar source
-                        scalars[:, d] = scalars[:, a1]
-                    elif a1 < ADDR_MATRICES:  # Vector source (take norm)
-                        vectors_norm = np.linalg.norm(
-                            vectors[:, a1 - ADDR_VECTORS], axis=1
-                        )
-                        scalars[:, d] = vectors_norm
-                    else:  # Matrix source (take norm)
-                        matrices_norm = np.linalg.norm(
-                            matrices[:, a1 - ADDR_MATRICES], axis=(1, 2)
-                        )
-                        scalars[:, d] = matrices_norm
+                if mem_a1 is None:
+                    continue
+                dst_kind = addr_type(d)
+                src_kind = addr_type(a1)
+
+                if dst_kind == "s":
+                    if src_kind == "s":
+                        scalars[:, idx_d] = scalars[:, idx_a1]
+                    elif src_kind == "v":
+                        scalars[:, idx_d] = np.linalg.norm(vectors[:, idx_a1], axis=1)
+                    elif src_kind == "m":
+                        scalars[:, idx_d] = np.linalg.norm(matrices[:, idx_a1], axis=(1, 2))
+                    continue
+
+                src_view = mem_a1[:, idx_a1]
+                assign(dest_view, src_view)
 
             # --- Specialized Operations ---
             elif op == OPCODES["CONST_VEC"]:
-                vectors[:, idx_d, int(c1)] = c2
+                if addr_type(d) != "v":
+                    continue
+                elem_idx = int(c1)
+                if elem_idx < 0 or elem_idx >= int(self.vector_dim):
+                    continue
+                vectors[:, idx_d, elem_idx] = c2
 
             elif op == OPCODES["DOT"]:
-                # v_a1 . v_a2 -> s_d
-                mem_d[:, idx_d] = np.einsum(
-                    "bi,bi->b", vectors[:, idx_a1], vectors[:, idx_a2]
-                )
+                if addr_type(a1) != "v" or addr_type(a2) != "v":
+                    continue
+                v1 = vectors[:, idx_a1]
+                v2 = vectors[:, idx_a2]
+                result = np.einsum("bi,bi->b", v1, v2)
+                assign(dest_view, result)
 
             elif op == OPCODES["MATMUL"]:
-                # m_a1 @ v_a2 -> v_d
-                mem_d[:, idx_d] = np.einsum(
-                    "bij,bj->bi", matrices[:, idx_a1], vectors[:, idx_a2]
-                )
+                if addr_type(a1) != "m" or addr_type(a2) != "v":
+                    continue
+                mat = matrices[:, idx_a1]
+                vec = vectors[:, idx_a2]
+                result = np.einsum("bij,bj->bi", mat, vec)
+                assign(dest_view, result)
 
             elif op == OPCODES["OUTER"]:
-                # v_a1 outer v_a2 -> m_d
-                mem_d[:, idx_d] = np.einsum(
-                    "bi,bj->bij", vectors[:, idx_a1], vectors[:, idx_a2]
-                )
+                if addr_type(a1) != "v" or addr_type(a2) != "v":
+                    continue
+                v1 = vectors[:, idx_a1]
+                v2 = vectors[:, idx_a2]
+                result = np.einsum("bi,bj->bij", v1, v2)
+                assign(dest_view, result)
 
             elif op == OPCODES["NORM"]:
-                # norm(v_a1) -> v_d (element-wise norm) or s_d (scalar norm)
-                if d < ADDR_VECTORS:  # scalar destination
-                    mem_d[:, idx_d] = np.linalg.norm(vectors[:, idx_a1], axis=1)
-                else:  # vector destination
-                    mem_d[:, idx_d] = np.linalg.norm(
-                        vectors[:, idx_a1], axis=1, keepdims=True
-                    )
+                if addr_type(a1) != "v":
+                    continue
+                result = np.linalg.norm(vectors[:, idx_a1], axis=1)
+                assign(dest_view, result)
 
             elif op == OPCODES["MEAN"]:
-                if d < ADDR_VECTORS:
-                    mem_d[:, idx_d] = np.mean(vectors[:, idx_a1], axis=1)
-                else:
-                    mem_d[:, idx_d] = np.mean(vectors[:, idx_a1], axis=1, keepdims=True)
+                if addr_type(a1) != "v":
+                    continue
+                result = np.mean(vectors[:, idx_a1], axis=1)
+                assign(dest_view, result)
 
             elif op == OPCODES["STD"]:
-                if d < ADDR_VECTORS:
-                    mem_d[:, idx_d] = np.std(vectors[:, idx_a1], axis=1)
-                else:
-                    mem_d[:, idx_d] = np.std(vectors[:, idx_a1], axis=1, keepdims=True)
+                if addr_type(a1) != "v":
+                    continue
+                result = np.std(vectors[:, idx_a1], axis=1)
+                assign(dest_view, result)
 
     def execute_single(self, x: np.ndarray) -> float:
         """Execute on single sample for compatibility"""

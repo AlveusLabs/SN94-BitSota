@@ -25,6 +25,56 @@ import requests
 import time
 
 
+_CPP_DEFAULT_ENGINE_PARAMS_BY_TASK = {
+    # Mirrors cpp/automl_zero/run_baseline.sh memory sizes and per-phase op budgets.
+    "cifar10_binary": {
+        "scalar_count": 5,
+        "vector_count": 9,
+        "matrix_count": 2,
+        "phase_max_sizes": {"setup": 7, "predict": 11, "learn": 23},
+    },
+    # Mirrors cpp/automl_zero/run_demo.sh memory sizes and fixed phase sizes.
+    "scalar_linear": {
+        "scalar_count": 4,
+        "vector_count": 3,
+        "matrix_count": 1,
+        "phase_max_sizes": {"setup": 10, "predict": 2, "learn": 8},
+    },
+}
+
+
+def _apply_cpp_defaults_to_engine_params(
+    task_type: str,
+    engine_params: Optional[dict],
+    *,
+    explicit_engine_params: Optional[dict] = None,
+) -> Optional[dict]:
+    """
+    Apply C++-aligned defaults for memory sizes + phase op limits.
+
+    Values from `explicit_engine_params` (typically problem_config.engine_params)
+    are treated as user overrides and are not overwritten.
+    """
+
+    base: dict = dict(engine_params) if isinstance(engine_params, dict) else {}
+    explicit: dict = dict(explicit_engine_params) if isinstance(explicit_engine_params, dict) else {}
+    defaults = _CPP_DEFAULT_ENGINE_PARAMS_BY_TASK.get(str(task_type), {})
+    if not defaults:
+        return base or None
+
+    for key in ("scalar_count", "vector_count", "matrix_count"):
+        if key in explicit:
+            continue
+        if key in defaults:
+            base[key] = int(defaults[key])
+
+    default_phase_sizes = defaults.get("phase_max_sizes")
+    if isinstance(default_phase_sizes, dict) and "phase_max_sizes" not in explicit:
+        base["phase_max_sizes"] = dict(default_phase_sizes)
+
+    return base or None
+
+
 class GUILogHandler(logging.Handler):
     def __init__(self, log_signal, stats_signal, task):
         super().__init__()
@@ -34,6 +84,7 @@ class GUILogHandler(logging.Handler):
         number = r"([-+]?(?:\d+\.?\d*|\d*\.?\d+)(?:[eE][-+]?\d+)?)"
         self._re_score_verified = re.compile(rf"\bScore:\s*{number}\s*\(verified\)", re.IGNORECASE)
         self._re_verified_score = re.compile(rf"\bverified_score\b[^0-9\-\+]*{number}", re.IGNORECASE)
+        self._re_regularized_iter = re.compile(r"\biter=(\d+)\b", re.IGNORECASE)
 
     def _maybe_update_best_verified(self, verified_score: float):
         try:
@@ -52,7 +103,29 @@ class GUILogHandler(logging.Handler):
 
     def emit(self, record):
         msg = self.format(record)
-        self.log_signal.emit(msg)
+
+        suppress_log = False
+        if msg.startswith("[regularized-evo]"):
+            m = self._re_regularized_iter.search(msg)
+            if m:
+                try:
+                    iteration = int(m.group(1))
+                except Exception:
+                    iteration = None
+                try:
+                    log_every = max(1, int(getattr(self.task, "checkpoint_generations", 1) or 1))
+                except Exception:
+                    log_every = 1
+                if (
+                    iteration is not None
+                    and log_every > 1
+                    and iteration != 1
+                    and (iteration % log_every) != 0
+                ):
+                    suppress_log = True
+
+        if not suppress_log:
+            self.log_signal.emit(msg)
 
         if (
             "Solution submitted to relay" in msg
@@ -101,10 +174,23 @@ class DirectMiningTask(QRunnable):
         stopping = Signal()
         stats_updated = Signal(dict)
 
-    def __init__(self, client, task_type: str, stop_flag, initial_tasks=0, initial_submissions=0, initial_best_score=None):
+    def __init__(
+        self,
+        client,
+        task_type: str,
+        stop_flag,
+        *,
+        engine_type: str = "baseline",
+        checkpoint_generations: int = 10,
+        initial_tasks=0,
+        initial_submissions=0,
+        initial_best_score=None,
+    ):
         super().__init__()
         self.client = client
         self.task_type = task_type
+        self.engine_type = str(engine_type or "baseline")
+        self.checkpoint_generations = max(1, int(checkpoint_generations))
         self.stop_flag = stop_flag
         self.signals = self.Signals()
         self.setAutoDelete(True)
@@ -133,13 +219,15 @@ class DirectMiningTask(QRunnable):
             tracked.setLevel(logging.INFO)
 
         try:
-            self.signals.log.emit(f"Starting {self.task_type} mining with baseline engine")
+            self.signals.log.emit(
+                f"Starting {self.task_type} mining with engine={self.engine_type} checkpoint={self.checkpoint_generations}"
+            )
 
             if hasattr(self.client, "run_continuous_mining"):
                 result = self.client.run_continuous_mining(
                     task_type=self.task_type,
-                    engine_type="baseline",
-                    checkpoint_generations=10,
+                    engine_type=self.engine_type,
+                    checkpoint_generations=self.checkpoint_generations,
                 )
                 self.signals.log.emit(f"Mining session completed: {result}")
             else:
@@ -262,13 +350,42 @@ class MiningScreen(QWidget):
 
         self.task_type_combo = QComboBox()
         self.task_type_combo.setObjectName("form_input")
-        self.task_type_map = {
-            "CIFAR-10 Binary": "cifar10_binary",
-        }
+        cfg = get_app_config()
+        self.task_type_map = {"CIFAR-10 Binary": "cifar10_binary"}
+        if getattr(cfg, "test_mode", False):
+            self.task_type_map.update(
+                {
+                    "MNIST Binary": "mnist_binary",
+                    "Scalar Linear": "scalar_linear",
+                }
+            )
         self.task_type_combo.addItems(list(self.task_type_map.keys()))
-        self.task_type_combo.setEnabled(False)
+        self.task_type_combo.setEnabled(bool(getattr(cfg, "test_mode", False)))
+        if not getattr(cfg, "test_mode", False):
+            self.task_type_combo.setToolTip("Task selection is available in test mode only.")
         self.task_type_combo.currentTextChanged.connect(lambda: self.update_global_sota())
         config_row.addWidget(self.task_type_combo, 1)
+
+        workers_label = QLabel("Workers")
+        workers_label.setObjectName("form_label")
+        config_row.addWidget(workers_label)
+
+        self.workers_combo = QComboBox()
+        self.workers_combo.setObjectName("form_input")
+        self.workers_combo.setToolTip("Number of independent worker processes to run")
+        worker_options = [1, 2, 4, 8]
+        default_workers = getattr(cfg, "miner_workers", 1)
+        try:
+            default_workers = max(1, int(default_workers))
+        except Exception:
+            default_workers = 1
+        if default_workers not in worker_options:
+            worker_options.append(default_workers)
+        worker_options = sorted(set(worker_options))
+        self.workers_combo.addItems([str(v) for v in worker_options])
+        self.workers_combo.setCurrentText(str(default_workers))
+        self.workers_combo.setEnabled(True)
+        config_row.addWidget(self.workers_combo)
 
         self.save_config_btn = SecondaryButton("Save Configuration", width=200, height=48)
         config_row.addWidget(self.save_config_btn)
@@ -333,18 +450,119 @@ class MiningScreen(QWidget):
 
         task_display = self.task_type_combo.currentText()
         task_type = self.task_type_map.get(task_display, "cifar10_binary")
+        cfg = get_app_config()
+        problem_cfg = getattr(self.main_window, "problem_config", None)
+        explicit_engine_params = getattr(problem_cfg, "engine_params", None) if problem_cfg is not None else None
+
+        # Ensure defaults (memory + phase op limits) match the C++ reference unless
+        # problem_config explicitly overrides them.
+        try:
+            client = self.main_window.client
+            client.engine_params = _apply_cpp_defaults_to_engine_params(
+                task_type,
+                getattr(client, "engine_params", None),
+                explicit_engine_params=explicit_engine_params,
+            ) or {}
+            cache = getattr(client, "_engine_cache", None)
+            if isinstance(cache, dict):
+                cache.clear()
+        except Exception:
+            pass
+
+        workers = 1
+        if hasattr(self, "workers_combo") and self.workers_combo is not None:
+            try:
+                workers = max(1, int(self.workers_combo.currentText()))
+            except Exception:
+                workers = 1
 
         from gui.stop_flag import StopFlag
         stop_flag = StopFlag()
 
-        self.mining_task = DirectMiningTask(
-            client=self.main_window.client,
-            task_type=task_type,
-            stop_flag=stop_flag,
-            initial_tasks=self.tasks_completed,
-            initial_submissions=self.successful_submissions,
-            initial_best_score=self.best_score
-        )
+        if workers > 1:
+            from gui.multiprocess_miner_task import MultiProcessDirectMiningTask
+
+            miner_task_count = getattr(cfg, "miner_task_count", None)
+            validator_task_count = getattr(cfg, "validator_task_count", None)
+            validate_every = getattr(cfg, "miner_validate_every_n_generations", 1000)
+            engine_type = "baseline"
+            checkpoint_generations = 10
+            engine_params = None
+            env_overrides = None
+
+            if problem_cfg is not None:
+                miner_task_count = (
+                    problem_cfg.miner_task_count
+                    if problem_cfg.miner_task_count is not None
+                    else miner_task_count
+                )
+                validator_task_count = (
+                    problem_cfg.validator_task_count
+                    if problem_cfg.validator_task_count is not None
+                    else validator_task_count
+                )
+                validate_every = (
+                    problem_cfg.miner_validate_every_n_generations
+                    if problem_cfg.miner_validate_every_n_generations is not None
+                    else validate_every
+                )
+                if getattr(problem_cfg, "engine_type", None):
+                    engine_type = str(problem_cfg.engine_type)
+                if getattr(problem_cfg, "checkpoint_generations", None):
+                    checkpoint_generations = int(problem_cfg.checkpoint_generations)
+                engine_params = getattr(problem_cfg, "engine_params", None)
+                env_overrides = getattr(problem_cfg, "env", None)
+
+            engine_params = _apply_cpp_defaults_to_engine_params(
+                task_type,
+                engine_params if isinstance(engine_params, dict) else None,
+                explicit_engine_params=explicit_engine_params,
+            )
+
+            worker_config = {
+                "wallet_name": getattr(self.main_window.wallet, "name", None),
+                "wallet_hotkey": getattr(self.main_window.wallet, "hotkey_str", None),
+                "wallet_path": getattr(self.main_window.wallet, "path", None),
+                "relay_endpoint": self.main_window._get_relay_endpoint_from_config(),
+                "miner_task_count": miner_task_count,
+                "validator_task_count": validator_task_count,
+                "validate_every_n_generations": validate_every,
+                "engine_params": engine_params,
+                "env_overrides": env_overrides if isinstance(env_overrides, dict) else None,
+                "task_type": task_type,
+                "engine_type": engine_type,
+                "checkpoint_generations": int(checkpoint_generations),
+                "verbose": True,
+            }
+            seed = getattr(cfg, "miner_seed", None)
+            migration_generations = getattr(cfg, "miner_migration_generations", 0)
+            self.mining_task = MultiProcessDirectMiningTask(
+                worker_config=worker_config,
+                workers=workers,
+                seed=seed,
+                migration_generations=migration_generations,
+                initial_tasks=self.tasks_completed,
+                initial_submissions=self.successful_submissions,
+                initial_best_score=self.best_score,
+            )
+        else:
+            engine_type = "baseline"
+            checkpoint_generations = 10
+            if problem_cfg is not None:
+                if getattr(problem_cfg, "engine_type", None):
+                    engine_type = str(problem_cfg.engine_type)
+                if getattr(problem_cfg, "checkpoint_generations", None):
+                    checkpoint_generations = int(problem_cfg.checkpoint_generations)
+            self.mining_task = DirectMiningTask(
+                client=self.main_window.client,
+                task_type=task_type,
+                stop_flag=stop_flag,
+                engine_type=engine_type,
+                checkpoint_generations=checkpoint_generations,
+                initial_tasks=self.tasks_completed,
+                initial_submissions=self.successful_submissions,
+                initial_best_score=self.best_score,
+            )
 
         self.mining_task.signals.log.connect(self._append_log)
         self.mining_task.signals.error.connect(self._handle_mining_error)

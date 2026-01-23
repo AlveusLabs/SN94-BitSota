@@ -108,7 +108,11 @@ class Task(ABC):
             return np.array([], dtype=np.float32)
 
     def evaluate_algorithm(
-        self, algo_array: AlgorithmArray, epochs: int = 1, **kwargs
+        self,
+        algo_array: AlgorithmArray,
+        epochs: int = 1,
+        rng_seed: Optional[int] = None,
+        **kwargs,
     ) -> float:
         """Evaluate an algorithm on this task using batched predict/learn loops."""
         try:
@@ -120,7 +124,7 @@ class Task(ABC):
             ):
                 raise RuntimeError("Task data must be loaded before evaluation")
 
-            executor = ArrayExecutor(algo_array)
+            executor = ArrayExecutor(algo_array, rng_seed=rng_seed)
             epochs = max(1, int(epochs))
 
             train_len = len(self.X_train)

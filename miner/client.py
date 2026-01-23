@@ -4,6 +4,7 @@ import os
 import time
 import uuid
 import json
+from pathlib import Path
 from typing import Dict, List, Optional, Any, Tuple
 
 import numpy as np
@@ -17,6 +18,8 @@ LOW_FITNESS_VALUE = -float('inf')
 
 # New AlgorithmArray-based imports
 from core.tasks.cifar10 import CIFAR10BinaryTask
+from core.tasks.mnist import MNISTBinaryTask
+from core.tasks.scalar_linear import ScalarLinearRegressionTask
 from core.dsl_parser import DSLParser
 from core.evaluations import verify_solution_quality
 
@@ -25,11 +28,14 @@ from .engines.ga_engine import BaselineEvolutionEngine
 from .engines.archive_engine import ArchiveAwareBaselineEvolution
 from .engines.base_engine import BaseEvolutionEngine, DEFAULT_MINER_TASK_COUNT
 from .metrics_logger import MinerMetricsLogger
+from .state_store import MinerStateStore
 
 DEFAULT_TASK_TYPE = "cifar10_binary"
 
 TASK_REGISTRY = {
     DEFAULT_TASK_TYPE: CIFAR10BinaryTask,
+    "mnist_binary": MNISTBinaryTask,
+    "scalar_linear": ScalarLinearRegressionTask,
 }
 
 
@@ -49,13 +55,19 @@ class DirectClient:
         metrics_log_file: Optional[str] = "miner_metrics.log",
         contract_manager: Optional[Any] = None,
         miner_task_count: Optional[int] = None,
+        validator_task_count: Optional[int] = None,
         fec_cache_size: Optional[int] = None,
         fec_train_examples: Optional[int] = None,
         fec_valid_examples: Optional[int] = None,
         fec_forget_every: Optional[int] = None,
         engine_type: str = "archive",
+        validate_every_n_generations: Optional[int] = None,
+        engine_params: Optional[Dict[str, Any]] = None,
         submit_only_if_improved: Optional[bool] = None,
         max_submission_attempts_per_generation: Optional[int] = None,
+        worker_id: Optional[int] = None,
+        persist_state: Optional[bool] = None,
+        state_dir: Optional[str] = None,
     ):
         self.public_address = public_address
         self.relay_endpoint = relay_endpoint or DEFAULT_RELAY_ENDPOINT
@@ -68,12 +80,19 @@ class DirectClient:
         self.metrics_logger = MinerMetricsLogger(metrics_log_file) if metrics_log_file else None
         self.contract_manager = contract_manager
         self.miner_task_count = max(1, miner_task_count or DEFAULT_MINER_TASK_COUNT)
+        self.validator_task_count = None
+        if validator_task_count is not None:
+            try:
+                self.validator_task_count = max(1, int(validator_task_count))
+            except Exception:
+                self.validator_task_count = None
         self.fec_cache_size = fec_cache_size
         self.fec_train_examples = fec_train_examples
         self.fec_valid_examples = fec_valid_examples
         self.fec_forget_every = fec_forget_every
         self.default_engine_type = engine_type
         self._engine_cache: Dict[Tuple[str, str], BaseEvolutionEngine] = {}
+        self.engine_params: Dict[str, Any] = dict(engine_params) if isinstance(engine_params, dict) else {}
         self._local_best_verified_score: Dict[str, float] = {}
         self._last_local_best_skip_log_key = None
         self._local_best_skip_suppressed = 0
@@ -109,11 +128,19 @@ class DirectClient:
         )
 
         try:
-            self.validate_every_n_generations = max(
+            default_validate_every = max(
                 1, int(os.getenv("MINER_VALIDATE_EVERY_N_GENERATIONS", "1"))
             )
         except Exception:
-            self.validate_every_n_generations = 1
+            default_validate_every = 1
+
+        if validate_every_n_generations is not None:
+            try:
+                self.validate_every_n_generations = max(1, int(validate_every_n_generations))
+            except Exception:
+                self.validate_every_n_generations = int(default_validate_every)
+        else:
+            self.validate_every_n_generations = int(default_validate_every)
         if self.validate_every_n_generations > 1:
             logger.info(
                 "Miner validation throttle enabled (MINER_VALIDATE_EVERY_N_GENERATIONS=%d)",
@@ -136,6 +163,92 @@ class DirectClient:
         self._cached_sota_threshold: Optional[float] = None
         self._cached_sota_timestamp = 0.0
         self._sota_next_fetch_time = 0.0
+
+        if worker_id is None:
+            raw_worker_id = (
+                os.getenv("MINER_WORKER_ID")
+                or os.getenv("BITSOTA_WORKER_ID")
+                or os.getenv("WORKER_ID")
+            )
+            if raw_worker_id:
+                try:
+                    worker_id = int(raw_worker_id)
+                except Exception:
+                    worker_id = 0
+            else:
+                worker_id = 0
+        self.worker_id = int(worker_id)
+
+        if persist_state is None:
+            raw = os.getenv("MINER_PERSIST_STATE", "1").strip().lower()
+            persist_state = raw not in {"0", "false", "no", "off"}
+        self.persist_state = bool(persist_state)
+
+        state_dir_path: Optional[Path] = None
+        if state_dir:
+            try:
+                state_dir_path = Path(state_dir).expanduser().resolve()
+            except Exception:
+                state_dir_path = None
+
+        self._state_store = MinerStateStore(
+            public_address=self.public_address,
+            worker_id=self.worker_id,
+            state_dir=state_dir_path,
+        )
+        if self.persist_state:
+            self._restore_persisted_client_state()
+
+    def _restore_persisted_client_state(self) -> None:
+        payload = self._state_store.load_client_state()
+        if not payload:
+            return
+
+        lbs = payload.get("local_best_verified_score")
+        if isinstance(lbs, dict):
+            restored: Dict[str, float] = {}
+            for key, value in lbs.items():
+                try:
+                    restored[str(key)] = float(value)
+                except Exception:
+                    continue
+            if restored:
+                self._local_best_verified_score.update(restored)
+
+        for field in ("total_submissions", "total_sota_breaks"):
+            if field in payload:
+                try:
+                    setattr(self, field, int(payload[field]))
+                except Exception:
+                    pass
+
+    def _persist_client_state(self) -> None:
+        if not self.persist_state:
+            return
+        try:
+            self._state_store.save_client_state(
+                {
+                    "local_best_verified_score": dict(self._local_best_verified_score),
+                    "total_submissions": int(self.total_submissions),
+                    "total_sota_breaks": int(self.total_sota_breaks),
+                }
+            )
+        except Exception:
+            # Persistence failures must never crash mining.
+            return
+
+    def _persist_all_engine_state(self) -> None:
+        if not self.persist_state:
+            return
+        for (task_type, engine_type), engine in list(self._engine_cache.items()):
+            try:
+                self._state_store.save_engine_state(
+                    task_type=str(task_type),
+                    engine_type=str(engine_type),
+                    engine=engine,
+                )
+            except Exception:
+                continue
 
     def _submission_cooldown_remaining(self) -> float:
         if not self.submission_cooldown_seconds:
@@ -240,9 +353,62 @@ class DirectClient:
         task = task_cls()
         task.load_data()
 
+        engine_kwargs: Dict[str, Any] = {}
+        try:
+            pop_size = self.engine_params.get("pop_size")
+            if pop_size is not None:
+                engine_kwargs["pop_size"] = max(1, int(pop_size))
+        except Exception:
+            pass
+
+        if engine_type == "baseline":
+            try:
+                tournament_size = self.engine_params.get("tournament_size")
+                if tournament_size is not None:
+                    engine_kwargs["tournament_size"] = max(1, int(tournament_size))
+            except Exception:
+                pass
+            try:
+                mutation_prob = self.engine_params.get("mutation_prob")
+                if mutation_prob is not None:
+                    engine_kwargs["mutation_prob"] = float(mutation_prob)
+            except Exception:
+                pass
+
+        if engine_type == "archive":
+            try:
+                archive_size = self.engine_params.get("archive_size")
+                if archive_size is not None:
+                    engine_kwargs["archive_size"] = max(1, int(archive_size))
+            except Exception:
+                pass
+
+        phase_max_sizes = self.engine_params.get("phase_max_sizes")
+        if isinstance(phase_max_sizes, dict):
+            cleaned_phase_sizes: Dict[str, int] = {}
+            for phase, size in phase_max_sizes.items():
+                if not isinstance(phase, str):
+                    continue
+                try:
+                    cleaned_phase_sizes[str(phase)] = max(1, int(size))
+                except Exception:
+                    continue
+            if cleaned_phase_sizes:
+                engine_kwargs["phase_max_sizes"] = cleaned_phase_sizes
+
+        for key_name in ("scalar_count", "vector_count", "matrix_count", "vector_dim", "cifar_seed"):
+            value = self.engine_params.get(key_name)
+            if value is None:
+                continue
+            try:
+                engine_kwargs[key_name] = int(value)
+            except Exception:
+                continue
+
         if engine_type == "archive":
             engine = ArchiveAwareBaselineEvolution(
                 task,
+                **engine_kwargs,
                 verbose=self.verbose,
                 miner_task_count=self.miner_task_count,
                 fec_cache_size=self.fec_cache_size,
@@ -253,6 +419,7 @@ class DirectClient:
         elif engine_type == "baseline":
             engine = BaselineEvolutionEngine(
                 task,
+                **engine_kwargs,
                 verbose=self.verbose,
                 miner_task_count=self.miner_task_count,
                 fec_cache_size=self.fec_cache_size,
@@ -262,6 +429,23 @@ class DirectClient:
             )
         else:
             raise ValueError(f"Unknown engine type: {engine_type}")
+
+        if self.persist_state:
+            try:
+                restored = self._state_store.load_engine_state(
+                    task_type=str(task_type),
+                    engine_type=str(engine_type),
+                    engine=engine,
+                )
+                if restored:
+                    logger.info(
+                        "Resumed miner state (worker_id=%d task_type=%s engine_type=%s)",
+                        int(self.worker_id),
+                        str(task_type),
+                        str(engine_type),
+                    )
+            except Exception:
+                pass
 
         self._engine_cache[key] = engine
         return engine
@@ -289,7 +473,9 @@ class DirectClient:
         if prevalidated is None:
             sota_threshold = self._fetch_sota_threshold()
             is_valid, verified_score = verify_solution_quality(
-                solution_data, sota_threshold
+                solution_data,
+                sota_threshold,
+                task_count=self.validator_task_count,
             )
         else:
             try:
@@ -387,6 +573,7 @@ class DirectClient:
                 self._local_best_verified_score[task_type] = float(verified_score)
 
             self._last_submission_timestamp = time.time()
+            self._persist_client_state()
             return {
                 "status": "submitted",
                 "relay_response": result,
@@ -451,7 +638,11 @@ class DirectClient:
                     "candidate_rank": 1,
                     "metadata": {"log_all_task_scores": True},
                 }
-                is_valid, verified_score = verify_solution_quality(solution_data, sota_threshold)
+                is_valid, verified_score = verify_solution_quality(
+                    solution_data,
+                    sota_threshold,
+                    task_count=self.validator_task_count,
+                )
                 if not is_valid:
                     logger.info(
                         "Best SOTA-breaking candidate failed validation (score=%.6f). Continuing evolution.",
@@ -808,7 +999,11 @@ class DirectClient:
                     "metadata": metadata,
                 }
 
-                is_valid, verified_score = verify_solution_quality(solution_data, sota_threshold)
+                is_valid, verified_score = verify_solution_quality(
+                    solution_data,
+                    sota_threshold,
+                    task_count=self.validator_task_count,
+                )
                 try:
                     verified_score_f = float(verified_score)
                 except Exception:
@@ -1043,6 +1238,10 @@ class DirectClient:
             except Exception as e:
                 logger.error(f"Mining error: {e}", exc_info=True)
                 time.sleep(10)  # Pause on error before retry
+
+        if self.persist_state:
+            self._persist_all_engine_state()
+            self._persist_client_state()
 
         # Final stats
         runtime = time.time() - self.mining_start_time
