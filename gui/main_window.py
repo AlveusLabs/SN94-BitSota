@@ -7,14 +7,17 @@ from PySide6.QtWidgets import (
     QStackedWidget,
     QApplication,
 )
+from PySide6.QtGui import QPalette, QColor
 from typing import Optional
+from ctypes import c_void_p
 import webbrowser
+import platform
 
 from bittensor_network.wallet import Wallet
 from miner.client import BittensorDirectClient
 from gui.theme import BitSOTATheme
 from gui.screens import StartScreen, WalletScreen, MiningScreen, ProfileScreen
-from gui.components import Sidebar, UserGuideModal, InviteCodeModal, ColdkeyAddressModal, ComingSoonModal, UpdateAvailableModal
+from gui.components import Sidebar, TopBar, UserGuideModal, InviteCodeModal, ColdkeyAddressModal, ComingSoonModal, UpdateAvailableModal
 from gui.resource_path import resource_path
 from gui.update_checker import UpdateChecker
 from gui.app_config import get_app_config
@@ -27,6 +30,7 @@ class MiningWindow(QMainWindow):
         self.client: Optional[BittensorDirectClient] = None
         self.coldkey_address: Optional[str] = None
         self.update_checker = UpdateChecker()
+        self._titlebar_set = False
         self._setup_window()
         self._create_ui()
         self._apply_theme()
@@ -43,12 +47,73 @@ class MiningWindow(QMainWindow):
         center_point = screen.center()
         window_geometry.moveCenter(center_point)
         self.move(window_geometry.topLeft())
+    
+    def showEvent(self, event):
+        """Called when window is shown - set title bar color here"""
+        super().showEvent(event)
+        if not self._titlebar_set:
+            # Delay slightly to ensure window is fully initialized
+            QTimer.singleShot(100, self._set_titlebar_color)
+            self._titlebar_set = True
+    
+    def _set_titlebar_color(self):
+        """Set the title bar color to #0C0029"""
+        if platform.system() == "Darwin":  # macOS
+            try:
+                # Use native macOS API to set title bar color
+                from Cocoa import NSColor
+                from PySide6.QtGui import QWindow
+                
+                # Get the native NSWindow
+                window = self.windowHandle()
+                if window:
+                    ns_view = window.winId()
+                    import objc
+                    from Cocoa import NSView
+                    
+                    view = objc.objc_object(c_void_p=ns_view)
+                    ns_window = view.window()
+                    
+                    if ns_window:
+                        # Set title bar color using NSColor
+                        # #0C0029 = RGB(12, 0, 41)
+                        color = NSColor.colorWithRed_green_blue_alpha_(
+                            12.0/255.0,  # R
+                            0.0/255.0,   # G
+                            41.0/255.0,  # B
+                            1.0          # Alpha
+                        )
+                        ns_window.setBackgroundColor_(color)
+                        ns_window.setTitlebarAppearsTransparent_(True)
+                        # Optional: make window content extend to title bar
+                        # ns_window.setStyleMask_(ns_window.styleMask() | 1 << 15)  # NSFullSizeContentViewWindowMask
+                        
+                print("macOS title bar color set to #0C0029")
+            except ImportError:
+                print("PyObjC (Cocoa) not installed. Install with: pip install pyobjc-framework-Cocoa")
+            except Exception as e:
+                print(f"Could not set macOS title bar color: {e}")
+                
+        elif platform.system() == "Windows":
+            # Windows title bar styling
+            try:
+                from ctypes import windll, c_int, byref, sizeof
+                hwnd = int(self.winId())
+                # DWMWA_CAPTION_COLOR = 35
+                # Color in BGR format: #0C0029 -> 0x29000C
+                color_value = c_int(0x0029000C)
+                windll.dwmapi.DwmSetWindowAttribute(
+                    hwnd, 35, byref(color_value), sizeof(color_value)
+                )
+                print("Windows title bar color set to #0C0029")
+            except Exception as e:
+                print(f"Could not set Windows title bar color: {e}")
 
     def _create_ui(self):
         central_widget = QWidget()
         self.setCentralWidget(central_widget)
 
-        main_layout = QHBoxLayout(central_widget)
+        main_layout = QVBoxLayout(central_widget)
         main_layout.setContentsMargins(0, 0, 0, 0)
         main_layout.setSpacing(0)
 
@@ -59,21 +124,21 @@ class MiningWindow(QMainWindow):
         self.start_screen.start_clicked.connect(self._on_start_clicked)
         self.content_stack.addWidget(self.start_screen)
 
+        # Main app container (with top navigation bar)
         app_container = QWidget()
         app_container.setObjectName("app_container")
-        app_layout = QHBoxLayout(app_container)
+        app_layout = QVBoxLayout(app_container)
         app_layout.setContentsMargins(0, 0, 0, 0)
         app_layout.setSpacing(0)
 
-        self.sidebar = Sidebar()
-        self.sidebar.add_tab("setup_wallet", "Setup Wallet", resource_path("gui/images/Wallet.svg"))
-        self.sidebar.add_tab("mining", "Mining", resource_path("gui/images/Mining.svg"))
-        self.sidebar.add_tab("profile", "Profile", resource_path("gui/images/user.svg"))
-        self.sidebar.tab_changed.connect(self._on_tab_changed)
-        self.sidebar.connect_wallet_clicked.connect(self._on_connect_wallet)
-        self.sidebar.user_guide_clicked.connect(self._show_user_guide)
-        app_layout.addWidget(self.sidebar)
+        # Top navigation bar
+        self.topbar = TopBar()
+        self.topbar.tab_changed.connect(self._on_tab_changed)
+        self.topbar.user_guide_clicked.connect(self._show_user_guide)
+        self.topbar.wallet_clicked.connect(self._on_wallet_dropdown_clicked)
+        app_layout.addWidget(self.topbar)
 
+        # Content area
         content_wrapper = QWidget()
         content_wrapper.setObjectName("app_container")
         content_wrapper_layout = QVBoxLayout(content_wrapper)
@@ -93,6 +158,9 @@ class MiningWindow(QMainWindow):
         app_layout.addWidget(content_wrapper, 1)
 
         self.content_stack.addWidget(app_container)
+        
+        # Keep old sidebar reference for compatibility (but not added to layout)
+        self.sidebar = None
 
     def _apply_theme(self):
         self.setStyleSheet(BitSOTATheme.get_main_stylesheet())
@@ -122,11 +190,16 @@ class MiningWindow(QMainWindow):
                 parent=self
             )
             modal.exec()
-            self.sidebar.set_active_tab("mining")
+            self.topbar.set_active_tab("mining")
 
     def _on_connect_wallet(self):
-        self.sidebar.set_active_tab("setup_wallet")
+        self.topbar.set_active_tab("setup_wallet")
         self.screen_stack.setCurrentWidget(self.wallet_screen)
+    
+    def _on_wallet_dropdown_clicked(self):
+        """Handle wallet dropdown click event"""
+        # Can show wallet details or switch wallet modal
+        pass
 
     def _on_wallet_loaded(self, wallet_name: str, hotkey_name: str, use_existing_coldkey: bool, coldkey_address: str):
         from gui.wallet_utils_gui import (
@@ -153,10 +226,10 @@ class MiningWindow(QMainWindow):
             hotkey = self.wallet.get_hotkey()
             address = hotkey.ss58_address
             short_address = f"{address[:6]}...{address[-4:]}" if address else "Unknown"
-            self.sidebar.set_wallet_info(wallet_name, short_address)
+            self.topbar.set_wallet_info(wallet_name, short_address)
         except Exception as e:
             print(f"Error loading hotkey: {e}")
-            self.sidebar.set_wallet_info(wallet_name, "Error loading")
+            self.topbar.set_wallet_info(wallet_name, "Error loading")
             return
 
         if use_existing_coldkey and coldkey_address:
@@ -165,7 +238,7 @@ class MiningWindow(QMainWindow):
             save_wallet_settings(wallet_name, hotkey_name, coldkey_address)
             print(f"Using existing coldkey address: {coldkey_address}")
             short_coldkey = f"{coldkey_address[:6]}...{coldkey_address[-4:]}" if coldkey_address and len(coldkey_address) > 10 else coldkey_address
-            self.sidebar.set_wallet_info(wallet_name, short_coldkey)
+            self.topbar.set_wallet_info(wallet_name, short_coldkey)
 
         self._initialize_client()
         self._update_mining_screen_status()
@@ -217,7 +290,7 @@ class MiningWindow(QMainWindow):
 
         short_address = f"{address[:6]}...{address[-4:]}" if address and len(address) > 10 else address
         if self.wallet:
-            self.sidebar.set_wallet_info(self.wallet.name, short_address)
+            self.topbar.set_wallet_info(self.wallet.name, short_address)
 
     def get_current_sota(self) -> Optional[float]:
         try:
@@ -249,7 +322,7 @@ class MiningWindow(QMainWindow):
             hotkey = self.wallet.get_hotkey()
             address = hotkey.ss58_address
             short_address = f"{address[:6]}...{address[-4:]}" if address else "Unknown"
-            self.sidebar.set_wallet_info(wallet_name, short_address)
+            self.topbar.set_wallet_info(wallet_name, short_address)
 
             if not self.coldkey_address:
                 self._prompt_for_coldkey_address()
@@ -308,13 +381,13 @@ class MiningWindow(QMainWindow):
             else:
                 short_address = f"{address[:6]}...{address[-4:]}" if address else "Unknown"
 
-            self.sidebar.set_wallet_info(last_wallet_name, short_address)
+            self.topbar.set_wallet_info(last_wallet_name, short_address)
 
             self._initialize_client()
             self._update_mining_screen_status()
 
             self.content_stack.setCurrentIndex(1)
-            self.sidebar.set_active_tab("mining")
+            self.topbar.set_active_tab("mining")
             self.screen_stack.setCurrentWidget(self.mining_screen)
 
             print(f"Auto-loaded wallet: {last_wallet_name}/{last_hotkey_name}")

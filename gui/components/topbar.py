@@ -1,0 +1,247 @@
+from PySide6.QtCore import Qt, Signal
+from PySide6.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QPushButton, QLabel
+from PySide6.QtSvgWidgets import QSvgWidget
+from gui.resource_path import resource_path
+
+
+class NavTabButton(QWidget):
+    """Top navigation tab button"""
+    clicked = Signal()
+
+    def __init__(self, text: str, parent=None):
+        super().__init__(parent)
+        self.setObjectName("nav_tab")
+        self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
+        self.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.setFixedHeight(40)  # Fixed height 40px to match design
+        self.is_active = False
+
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(4)  # Spacing between text and indicator
+
+        # Text label
+        self.label = QLabel(text)
+        self.label.setObjectName("nav_tab_label")
+        layout.addWidget(self.label, 0, Qt.AlignmentFlag.AlignCenter)
+
+        # Bottom active indicator - fixed width 24px, height 2px, centered
+        indicator_container = QWidget()
+        indicator_container.setFixedHeight(2)
+        indicator_layout = QHBoxLayout(indicator_container)
+        indicator_layout.setContentsMargins(0, 0, 0, 0)
+        indicator_layout.setSpacing(0)
+        
+        self.indicator = QWidget()
+        self.indicator.setObjectName("nav_tab_indicator")
+        self.indicator.setFixedSize(24, 2)
+        self.indicator.hide()
+        indicator_layout.addWidget(self.indicator, 0, Qt.AlignmentFlag.AlignCenter)
+        
+        layout.addWidget(indicator_container)
+
+    def set_active(self, active: bool):
+        self.is_active = active
+        if active:
+            self.label.setStyleSheet("color: #FFFFFF;")
+            self.indicator.show()
+        else:
+            self.label.setStyleSheet("color: rgba(255, 255, 255, 0.6);")
+            self.indicator.hide()
+
+    def mousePressEvent(self, event):
+        self.clicked.emit()
+        super().mousePressEvent(event)
+
+
+class IconButton(QWidget):
+    """Icon button"""
+    clicked = Signal()
+
+    def __init__(self, icon_path: str, parent=None):
+        super().__init__(parent)
+        self.setObjectName("icon_button")
+        self.setFixedSize(40, 40)
+        self.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
+
+        layout = QHBoxLayout(self)
+        layout.setContentsMargins(8, 8, 8, 8)
+        layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
+
+        self.icon = QSvgWidget(icon_path)
+        self.icon.setFixedSize(24, 24)
+        layout.addWidget(self.icon)
+
+    def mousePressEvent(self, event):
+        self.clicked.emit()
+        super().mousePressEvent(event)
+
+
+class WalletDropdown(QWidget):
+    """Wallet dropdown component"""
+    clicked = Signal()
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setObjectName("wallet_dropdown")
+        self.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
+        self.setFixedHeight(40)
+
+        layout = QHBoxLayout(self)
+        layout.setContentsMargins(8, 0, 0, 0)
+        layout.setSpacing(12)
+
+        # Wallet icon - try loading and set color to cyan
+        self.wallet_icon = QSvgWidget()
+        self.wallet_icon.setFixedSize(24, 24)
+        self._load_wallet_icon_with_color()
+        layout.addWidget(self.wallet_icon)
+
+        # Address and dropdown arrow container
+        address_container = QWidget()
+        address_layout = QHBoxLayout(address_container)
+        address_layout.setContentsMargins(0, 0, 0, 0)
+        address_layout.setSpacing(0)
+
+        self.address_label = QLabel("0x4892...81ae")
+        self.address_label.setObjectName("wallet_address_label")
+        address_layout.addWidget(self.address_label)
+
+        self.dropdown_icon = QSvgWidget(resource_path("gui/images/chevron-down.svg"))
+        self.dropdown_icon.setFixedSize(24, 24)
+        address_layout.addWidget(self.dropdown_icon)
+
+        layout.addWidget(address_container)
+
+    def _load_wallet_icon_with_color(self):
+        """Load wallet icon and set to cyan"""
+        icon_path = resource_path("gui/images/Wallet.svg")
+        try:
+            with open(icon_path, 'r') as f:
+                svg_content = f.read()
+            # Replace color with cyan
+            svg_content = svg_content.replace('#150049', '#8EFBFF')
+            svg_content = svg_content.replace('fill="currentColor"', 'fill="#8EFBFF"')
+            svg_bytes = svg_content.encode('utf-8')
+            self.wallet_icon.load(svg_bytes)
+        except Exception:
+            # If failed, load original file directly
+            self.wallet_icon.load(icon_path)
+
+    def set_wallet_address(self, address: str):
+        """Set wallet address"""
+        if len(address) > 12:
+            # Format as 0x4892...81ae
+            formatted = f"{address[:6]}...{address[-4:]}"
+            self.address_label.setText(formatted)
+        else:
+            self.address_label.setText(address)
+
+    def mousePressEvent(self, event):
+        self.clicked.emit()
+        super().mousePressEvent(event)
+
+
+class TopBar(QWidget):
+    """Top navigation bar"""
+    tab_changed = Signal(str)
+    user_guide_clicked = Signal()
+    wallet_clicked = Signal()
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setObjectName("topbar")
+        self.setFixedHeight(60)
+        self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
+        self.tabs = {}
+        self.current_tab = None
+        self.setup_ui()
+
+    def setup_ui(self):
+        layout = QHBoxLayout(self)
+        layout.setContentsMargins(24, 12, 24, 12)
+        layout.setSpacing(0)
+
+        # Left side: Logo
+        logo_container = QWidget()
+        logo_layout = QHBoxLayout(logo_container)
+        logo_layout.setContentsMargins(8, 0, 8, 0)
+        logo_layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
+
+        self.logo = QSvgWidget(resource_path("gui/images/logo-new.svg"))
+        self.logo.setFixedSize(95, 24)
+        logo_layout.addWidget(self.logo)
+
+        layout.addWidget(logo_container)
+
+        # Add flexible space, push nav bar to center
+        layout.addSpacing(147 - 24 - 8 - 95)  # Calculated left spacing
+
+        # Center: Navigation menu
+        self.nav_container = QHBoxLayout()
+        self.nav_container.setSpacing(32)
+        layout.addLayout(self.nav_container)
+
+        # Add navigation tabs
+        self.add_nav_tab("setup_wallet", "Setup Wallet")
+        self.add_nav_tab("mining", "Mining")
+        self.add_nav_tab("settings", "Settings")
+        self.add_nav_tab("profile", "Profile")
+
+        layout.addStretch()
+
+        # Right side: Icons and wallet
+        right_container = QHBoxLayout()
+        right_container.setSpacing(8)
+
+        # Chat icon (temporarily hidden or use placeholder)
+        # chat_btn = IconButton(resource_path("gui/images/chat.svg"))
+        # right_container.addWidget(chat_btn)
+
+        # Help/User guide icon
+        self.user_guide_btn = IconButton(resource_path("gui/images/Info Circle.svg"))
+        self.user_guide_btn.clicked.connect(self.user_guide_clicked.emit)
+        right_container.addWidget(self.user_guide_btn)
+
+        # Wallet dropdown
+        self.wallet_dropdown = WalletDropdown()
+        self.wallet_dropdown.clicked.connect(self.wallet_clicked.emit)
+        self.wallet_dropdown.hide()  # Hidden by default, shown when wallet exists
+        right_container.addWidget(self.wallet_dropdown)
+
+        layout.addLayout(right_container)
+
+    def add_nav_tab(self, tab_id: str, label: str):
+        """Add navigation tab"""
+        tab_btn = NavTabButton(label)
+        tab_btn.clicked.connect(lambda: self._on_tab_clicked(tab_id))
+        self.tabs[tab_id] = tab_btn
+        self.nav_container.addWidget(tab_btn)
+
+        if not self.current_tab:
+            self.set_active_tab(tab_id)
+
+    def _on_tab_clicked(self, tab_id: str):
+        """Handle tab click"""
+        self.set_active_tab(tab_id)
+        self.tab_changed.emit(tab_id)
+
+    def set_active_tab(self, tab_id: str):
+        """Set active tab"""
+        if tab_id not in self.tabs:
+            return
+
+        self.current_tab = tab_id
+        for tid, tab in self.tabs.items():
+            tab.set_active(tid == tab_id)
+
+    def set_wallet_info(self, wallet_name: str, wallet_address: str):
+        """Set wallet info and show"""
+        self.wallet_dropdown.set_wallet_address(wallet_address)
+        self.wallet_dropdown.show()
+
+    def hide_wallet_info(self):
+        """Hide wallet info"""
+        self.wallet_dropdown.hide()

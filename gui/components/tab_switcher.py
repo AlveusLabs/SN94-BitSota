@@ -12,27 +12,34 @@ class TabSwitcher(QWidget):
         self.setup_ui()
 
     def setup_ui(self):
+        self.setObjectName("tab_switcher_container")
+        self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
+        self.setFixedHeight(40)
+        
+        from PySide6.QtWidgets import QSizePolicy
+        self.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
+        
         self.layout = QHBoxLayout(self)
-        self.layout.setContentsMargins(0, 0, 0, 0)
-        self.layout.setSpacing(8)
-        self.layout.addStretch()
+        self.layout.setContentsMargins(4, 4, 4, 4)
+        self.layout.setSpacing(0)
 
     def add_tab(self, tab_id: str, label: str):
-        btn = QPushButton(f"/ {label}")
+        btn = QPushButton(label)
         btn.setObjectName("tab_switcher_inactive")
         btn.clicked.connect(lambda: self._on_tab_clicked(tab_id))
         btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        btn.setSizePolicy(btn.sizePolicy().horizontalPolicy(), btn.sizePolicy().verticalPolicy())
-        btn.adjustSize()
+        
+        from PySide6.QtWidgets import QSizePolicy
+        btn.setSizePolicy(QSizePolicy.Policy.Minimum, QSizePolicy.Policy.Fixed)
 
         self.tabs[tab_id] = btn
         self.layout.addWidget(btn)
 
-        if len(self.tabs) == 2:
-            self.layout.addStretch()
-
         if self.current_tab is None:
             self.set_active_tab(tab_id)
+        
+        # Adjust container size to fit content
+        self.adjustSize()
 
     def _on_tab_clicked(self, tab_id: str):
         self.set_active_tab(tab_id)

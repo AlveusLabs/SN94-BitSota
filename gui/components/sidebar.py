@@ -24,7 +24,7 @@ class TabButton(QWidget):
             self.icon_widget = QSvgWidget()
             self.icon_widget.setFixedSize(16, 16)
             layout.addWidget(self.icon_widget)
-            self._load_icon_with_color("#150049")
+            self._load_icon_with_color("rgba(255, 255, 255, 0.6)")
 
         self.label = QLabel(text)
         self.label.setStyleSheet("background: transparent; border: none; padding: 0;")
@@ -57,9 +57,9 @@ class TabButton(QWidget):
         else:
             self.setObjectName("sidebar_tab")
             if self.icon_widget:
-                self._load_icon_with_color("#150049")
+                self._load_icon_with_color("rgba(255, 255, 255, 0.6)")
             if hasattr(self, 'label'):
-                self.label.setStyleSheet("background: transparent; border: none; padding: 0; color: rgba(21, 0, 73, 0.60);")
+                self.label.setStyleSheet("background: transparent; border: none; padding: 0; color: rgba(255, 255, 255, 0.6);")
 
         self.style().unpolish(self)
         self.style().polish(self)
@@ -145,7 +145,7 @@ class Sidebar(QWidget):
 
         user_guide_separator = QWidget()
         user_guide_separator.setFixedHeight(1)
-        user_guide_separator.setStyleSheet("background-color: rgba(21, 0, 73, 0.12);")
+        user_guide_separator.setStyleSheet("background-color: rgba(255, 255, 255, 0.12);")
         content_layout.addWidget(user_guide_separator)
 
         self.user_guide_btn = TabButton("User Guide", resource_path("gui/images/Info Circle.svg"))
@@ -154,7 +154,7 @@ class Sidebar(QWidget):
 
         follow_separator = QWidget()
         follow_separator.setFixedHeight(1)
-        follow_separator.setStyleSheet("background-color: rgba(21, 0, 73, 0.12);")
+        follow_separator.setStyleSheet("background-color: rgba(255, 255, 255, 0.12);")
         content_layout.addWidget(follow_separator)
 
         follow_section = QWidget()

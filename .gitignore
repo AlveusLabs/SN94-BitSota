@@ -10,3 +10,5 @@ dist_new/
 venv/
 *.pyc
 .venv/
+
+.cursor/

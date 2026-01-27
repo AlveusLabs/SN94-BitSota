@@ -183,22 +183,7 @@ class MiningScreen(QWidget):
     def setup_ui(self):
         main_layout = QVBoxLayout(self)
         main_layout.setContentsMargins(0, 0, 0, 0)
-        main_layout.setSpacing(24)
-
-        from gui.components.tab_switcher import TabSwitcher
-
-        self.tab_switcher = TabSwitcher()
-        self.tab_switcher.add_tab("direct", "Direct Mining")
-        self.tab_switcher.add_tab("pool", "Pool Mining")
-        self.tab_switcher.tab_changed.connect(self._on_mining_tab_changed)
-        main_layout.addWidget(self.tab_switcher)
-
-        self.description = QLabel(
-            "Connect straight to Bittensor validators, ideal for users who want complete control over their mining operations."
-        )
-        self.description.setObjectName("mining_description")
-        self.description.setWordWrap(True)
-        main_layout.addWidget(self.description)
+        main_layout.setSpacing(0)
 
         self.content_stack = QWidget()
         self.content_stack_layout = QVBoxLayout(self.content_stack)
@@ -208,14 +193,48 @@ class MiningScreen(QWidget):
         direct_layout = QVBoxLayout(self.direct_mining_widget)
         direct_layout.setContentsMargins(0, 0, 0, 0)
 
+        # White container contains all content
         content_box = QWidget()
         content_box.setObjectName("content_box")
+        content_box.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
         content_layout = QVBoxLayout(content_box)
-        content_layout.setContentsMargins(24, 32, 24, 32)
-        content_layout.setSpacing(24)
+        content_layout.setContentsMargins(32, 32, 32, 32)
+        content_layout.setSpacing(0)
+
+        # Tab switcher - centered display
+        from gui.components.tab_switcher import TabSwitcher
+        
+        tab_container = QWidget()
+        tab_container_layout = QHBoxLayout(tab_container)
+        tab_container_layout.setContentsMargins(0, 0, 0, 0)
+        tab_container_layout.addStretch()
+        
+        self.tab_switcher = TabSwitcher()
+        self.tab_switcher.add_tab("direct", "Direct Mining")
+        self.tab_switcher.add_tab("pool", "Pool Mining")
+        self.tab_switcher.tab_changed.connect(self._on_mining_tab_changed)
+        tab_container_layout.addWidget(self.tab_switcher)
+        
+        tab_container_layout.addStretch()
+        content_layout.addWidget(tab_container)
+        
+        content_layout.addSpacing(12)
+
+        # Description text - centered display
+        self.description = QLabel(
+            "Connect straight to Bittensor validators, ideal for users who want complete control over their mining operations."
+        )
+        self.description.setObjectName("mining_description")
+        self.description.setWordWrap(True)
+        self.description.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        content_layout.addWidget(self.description)
+        
+        content_layout.addSpacing(24)
 
         config_section = self._create_config_section()
         content_layout.addWidget(config_section)
+        
+        content_layout.addSpacing(24)
 
         stats_status_layout = QHBoxLayout()
         stats_status_layout.setSpacing(24)
@@ -227,6 +246,8 @@ class MiningScreen(QWidget):
         stats_status_layout.addWidget(mining_status, 1)
 
         content_layout.addLayout(stats_status_layout)
+        
+        content_layout.addSpacing(24)
 
         logs_section = self._create_logs_section()
         content_layout.addWidget(logs_section)
@@ -250,32 +271,48 @@ class MiningScreen(QWidget):
         layout.setSpacing(20)
 
         title = QLabel("Mining Configuration")
-        title.setObjectName("section_title")
+        title.setObjectName("config_section_title")
         layout.addWidget(title)
+
+        # Task Type and buttons in the same row
+        config_row = QHBoxLayout()
+        config_row.setSpacing(24)
+
+        # Task Type area
+        task_container = QWidget()
+        task_layout = QVBoxLayout(task_container)
+        task_layout.setContentsMargins(0, 0, 0, 0)
+        task_layout.setSpacing(8)
 
         task_label = QLabel("Task Type")
         task_label.setObjectName("form_label")
-        layout.addWidget(task_label)
-
-        config_row = QHBoxLayout()
-        config_row.setSpacing(16)
+        task_layout.addWidget(task_label)
 
         self.task_type_combo = QComboBox()
         self.task_type_combo.setObjectName("form_input")
+        self.task_type_combo.setFixedHeight(48)
         self.task_type_map = {
-            "CIFAR-10 Binary": "cifar10_binary",
+            "mnist_binary": "mnist_binary",
         }
         self.task_type_combo.addItems(list(self.task_type_map.keys()))
         self.task_type_combo.setEnabled(False)
         self.task_type_combo.currentTextChanged.connect(lambda: self.update_global_sota())
-        config_row.addWidget(self.task_type_combo, 1)
+        task_layout.addWidget(self.task_type_combo)
+
+        config_row.addWidget(task_container, 1)
+
+        # Button container - right aligned
+        button_container = QHBoxLayout()
+        button_container.setSpacing(16)
 
         self.save_config_btn = SecondaryButton("Save Configuration", width=200, height=48)
-        config_row.addWidget(self.save_config_btn)
+        button_container.addWidget(self.save_config_btn)
 
         self.start_mining_btn = PrimaryButton("Start Mining", width=200, height=48, icon_path=resource_path("gui/images/play.svg"))
         self.start_mining_btn.clicked.connect(self._toggle_mining)
-        config_row.addWidget(self.start_mining_btn)
+        button_container.addWidget(self.start_mining_btn)
+
+        config_row.addLayout(button_container)
 
         layout.addLayout(config_row)
 
@@ -548,40 +585,72 @@ class MiningScreen(QWidget):
         layout.setSpacing(16)
 
         title = QLabel("Miner Stats")
-        title.setObjectName("section_title")
+        title.setObjectName("config_section_title")
         layout.addWidget(title)
 
-        stats_grid = QGridLayout()
-        stats_grid.setSpacing(12)
+        stats_container = QVBoxLayout()
+        stats_container.setSpacing(12)
 
-        label = QLabel("Tasks Completed")
-        label.setObjectName("stat_label")
-        stats_grid.addWidget(label, 0, 0)
-        self.tasks_completed_label = QLabel("0")
-        self.tasks_completed_label.setObjectName("stat_value")
-        self.tasks_completed_label.setAlignment(Qt.AlignmentFlag.AlignRight)
-        stats_grid.addWidget(self.tasks_completed_label, 0, 1)
+        # Total Score
+        row = self._create_stat_row("Total Score", "182.8")
+        self.total_score_label = row[1]
+        stats_container.addLayout(row[0])
+        
+        stats_container.addWidget(self._create_divider())
 
-        label = QLabel("Successful Submissions")
-        label.setObjectName("stat_label")
-        stats_grid.addWidget(label, 1, 0)
-        self.successful_submissions_label = QLabel("0")
-        self.successful_submissions_label.setObjectName("stat_value")
-        self.successful_submissions_label.setAlignment(Qt.AlignmentFlag.AlignRight)
-        stats_grid.addWidget(self.successful_submissions_label, 1, 1)
+        # Evaluation Tasks Completed
+        row = self._create_stat_row("Evaluation Tasks Completed", "0")
+        self.eval_tasks_label = row[1]
+        stats_container.addLayout(row[0])
 
-        label = QLabel("Best Local Score")
-        label.setObjectName("stat_label")
-        stats_grid.addWidget(label, 2, 0)
-        self.best_score_label = QLabel("-")
-        self.best_score_label.setObjectName("stat_value")
-        self.best_score_label.setAlignment(Qt.AlignmentFlag.AlignRight)
-        stats_grid.addWidget(self.best_score_label, 2, 1)
+        # Evaluation Score
+        row = self._create_stat_row("Score", "-")
+        self.eval_score_label = row[1]
+        stats_container.addLayout(row[0])
 
-        layout.addLayout(stats_grid)
-        layout.addStretch()
+        # Evolution Tasks Completed
+        row = self._create_stat_row("Evolution Tasks Completed", "0")
+        self.evo_tasks_label = row[1]
+        stats_container.addLayout(row[0])
+
+        # Evolution Score
+        row = self._create_stat_row("Score", "-")
+        self.evo_score_label = row[1]
+        stats_container.addLayout(row[0])
+
+        # Keep old label references for compatibility
+        self.tasks_completed_label = self.eval_tasks_label
+        self.successful_submissions_label = self.evo_tasks_label
+        self.best_score_label = self.eval_score_label
+
+        layout.addLayout(stats_container)
 
         return stats
+    
+    def _create_stat_row(self, label_text: str, value_text: str):
+        """Create statistics row"""
+        row_layout = QHBoxLayout()
+        row_layout.setSpacing(0)
+        
+        label = QLabel(label_text)
+        label.setObjectName("stat_label")
+        row_layout.addWidget(label)
+        
+        row_layout.addStretch()
+        
+        value = QLabel(value_text)
+        value.setObjectName("stat_value")
+        value.setAlignment(Qt.AlignmentFlag.AlignRight)
+        row_layout.addWidget(value)
+        
+        return (row_layout, value)
+    
+    def _create_divider(self) -> QWidget:
+        """Create divider"""
+        divider = QWidget()
+        divider.setObjectName("stat_divider")
+        divider.setFixedHeight(1)
+        return divider
 
     def _create_mining_status(self) -> QWidget:
         status = QWidget()
@@ -591,57 +660,116 @@ class MiningScreen(QWidget):
         layout.setSpacing(16)
 
         title = QLabel("Mining Status")
-        title.setObjectName("section_title")
+        title.setObjectName("config_section_title")
         layout.addWidget(title)
 
-        status_grid = QGridLayout()
-        status_grid.setSpacing(12)
+        status_container = QVBoxLayout()
+        status_container.setSpacing(12)
 
-        label = QLabel("Global SOTA")
-        label.setObjectName("stat_label")
-        status_grid.addWidget(label, 0, 0)
-        self.global_sota_label = QLabel("-")
-        self.global_sota_label.setObjectName("stat_value")
-        self.global_sota_label.setAlignment(Qt.AlignmentFlag.AlignRight)
-        status_grid.addWidget(self.global_sota_label, 0, 1)
+        # SOTA
+        row = self._create_stat_row("SOTA", "-")
+        self.global_sota_label = row[1]
+        status_container.addLayout(row[0])
+        
+        status_container.addWidget(self._create_divider())
 
-        label = QLabel("Wallet")
-        label.setObjectName("stat_label")
-        status_grid.addWidget(label, 1, 0)
-        self.wallet_status_label = QLabel("Not Connected")
-        self.wallet_status_label.setObjectName("stat_value")
-        self.wallet_status_label.setAlignment(Qt.AlignmentFlag.AlignRight)
-        status_grid.addWidget(self.wallet_status_label, 1, 1)
+        # Wallet
+        row = self._create_stat_row("Wallet", "Not Connected")
+        self.wallet_status_label = row[1]
+        status_container.addLayout(row[0])
 
-        label = QLabel("Connection")
-        label.setObjectName("stat_label")
-        status_grid.addWidget(label, 2, 0)
+        # Status (with status indicator)
+        status_row = QHBoxLayout()
+        status_row.setSpacing(0)
+        
+        status_label = QLabel("Status")
+        status_label.setObjectName("stat_label")
+        status_row.addWidget(status_label)
+        status_row.addStretch()
+        
+        # Status indicator container
+        self.status_indicator_container = QWidget()
+        status_indicator_layout = QHBoxLayout(self.status_indicator_container)
+        status_indicator_layout.setContentsMargins(4, 2, 4, 2)
+        status_indicator_layout.setSpacing(4)
+        
+        self.status_dot = QWidget()
+        self.status_dot.setObjectName("status_dot_idle")
+        self.status_dot.setFixedSize(6, 6)
+        status_indicator_layout.addWidget(self.status_dot)
+        
+        self.mining_status_label = QLabel("Idle")
+        self.mining_status_label.setObjectName("status_text_idle")
+        status_indicator_layout.addWidget(self.mining_status_label)
+        
+        status_row.addWidget(self.status_indicator_container)
+        status_container.addLayout(status_row)
+
+        # Connection (with status indicator)
+        connection_row = QHBoxLayout()
+        connection_row.setSpacing(0)
+        
+        connection_label = QLabel("Connection")
+        connection_label.setObjectName("stat_label")
+        connection_row.addWidget(connection_label)
+        connection_row.addStretch()
+        
+        # Connection status indicator container
+        self.connection_indicator_container = QWidget()
+        connection_indicator_layout = QHBoxLayout(self.connection_indicator_container)
+        connection_indicator_layout.setContentsMargins(4, 2, 4, 2)
+        connection_indicator_layout.setSpacing(4)
+        
+        self.connection_dot = QWidget()
+        self.connection_dot.setObjectName("status_dot_disconnected")
+        self.connection_dot.setFixedSize(6, 6)
+        connection_indicator_layout.addWidget(self.connection_dot)
+        
         self.connection_status_label = QLabel("Disconnected")
-        self.connection_status_label.setObjectName("stat_value")
-        self.connection_status_label.setAlignment(Qt.AlignmentFlag.AlignRight)
-        status_grid.addWidget(self.connection_status_label, 2, 1)
+        self.connection_status_label.setObjectName("status_text_disconnected")
+        connection_indicator_layout.addWidget(self.connection_status_label)
+        
+        connection_row.addWidget(self.connection_indicator_container)
+        status_container.addLayout(connection_row)
 
-        layout.addLayout(status_grid)
-        layout.addStretch()
+        # Tasks
+        row = self._create_stat_row("Tasks", "0")
+        self.tasks_label = row[1]
+        status_container.addLayout(row[0])
+
+        # Runtime
+        row = self._create_stat_row("Runtime", "0h 0m 0s")
+        self.runtime_label = row[1]
+        status_container.addLayout(row[0])
+
+        # Submissions
+        row = self._create_stat_row("Submissions", "0")
+        self.submissions_label = row[1]
+        status_container.addLayout(row[0])
+
+        layout.addLayout(status_container)
 
         return status
 
     def _create_logs_section(self) -> QWidget:
         section = QWidget()
+        section.setObjectName("logs_box")
+        section.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
         layout = QVBoxLayout(section)
-        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setContentsMargins(20, 20, 20, 20)
         layout.setSpacing(16)
 
         header_layout = QHBoxLayout()
         header_layout.setSpacing(8)
 
         title = QLabel("Mining Logs")
-        title.setObjectName("section_title")
+        title.setObjectName("logs_title")
         header_layout.addWidget(title)
         header_layout.addStretch()
 
         self.clear_logs_btn = QPushButton("Clear Logs")
         self.clear_logs_btn.setObjectName("clear_logs_button")
+        self.clear_logs_btn.setFixedHeight(32)
         self.clear_logs_btn.clicked.connect(self._clear_logs)
         header_layout.addWidget(self.clear_logs_btn)
 
@@ -650,7 +778,7 @@ class MiningScreen(QWidget):
         self.logs_text = QTextEdit()
         self.logs_text.setObjectName("logs_text")
         self.logs_text.setReadOnly(True)
-        self.logs_text.setMinimumHeight(200)
+        self.logs_text.setFixedHeight(140)
         layout.addWidget(self.logs_text)
 
         return section
@@ -667,12 +795,30 @@ class MiningScreen(QWidget):
             self.pool_mining_widget.update_wallet_status(wallet_name)
 
     def update_connection_status(self, connected: bool):
-        status_text = "Connected" if connected else "Disconnected"
-        self.connection_status_label.setText(status_text)
         if connected:
-            self.connection_status_label.setStyleSheet("color: #51cf66;")
+            self.connection_status_label.setText("Connected")
+            self.connection_status_label.setObjectName("status_text_connected")
+            self.connection_dot.setObjectName("status_dot_connected")
+            self.mining_status_label.setText("Running")
+            self.mining_status_label.setObjectName("status_text_running")
+            self.status_dot.setObjectName("status_dot_running")
         else:
-            self.connection_status_label.setStyleSheet("color: #74c0fc;")
+            self.connection_status_label.setText("Disconnected")
+            self.connection_status_label.setObjectName("status_text_disconnected")
+            self.connection_dot.setObjectName("status_dot_disconnected")
+            self.mining_status_label.setText("Idle")
+            self.mining_status_label.setObjectName("status_text_idle")
+            self.status_dot.setObjectName("status_dot_idle")
+        
+        # Refresh styles
+        self.connection_status_label.style().unpolish(self.connection_status_label)
+        self.connection_status_label.style().polish(self.connection_status_label)
+        self.connection_dot.style().unpolish(self.connection_dot)
+        self.connection_dot.style().polish(self.connection_dot)
+        self.mining_status_label.style().unpolish(self.mining_status_label)
+        self.mining_status_label.style().polish(self.mining_status_label)
+        self.status_dot.style().unpolish(self.status_dot)
+        self.status_dot.style().polish(self.status_dot)
 
     def update_global_sota(self):
         if not self.main_window:

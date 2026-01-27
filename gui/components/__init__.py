@@ -2,6 +2,7 @@
 
 from .button import PrimaryButton, SecondaryButton
 from .sidebar import Sidebar
+from .topbar import TopBar
 from .tab_switcher import TabSwitcher
 from .modal import ConfirmationModal
 from .user_guide_modal import UserGuideModal
@@ -10,4 +11,4 @@ from .coldkey_address_modal import ColdkeyAddressModal
 from .coming_soon_modal import ComingSoonModal
 from .update_modal import UpdateAvailableModal
 
-__all__ = ["PrimaryButton", "SecondaryButton", "Sidebar", "TabSwitcher", "ConfirmationModal", "UserGuideModal", "InviteCodeModal", "ColdkeyAddressModal", "ComingSoonModal", "UpdateAvailableModal"]
+__all__ = ["PrimaryButton", "SecondaryButton", "Sidebar", "TopBar", "TabSwitcher", "ConfirmationModal", "UserGuideModal", "InviteCodeModal", "ColdkeyAddressModal", "ComingSoonModal", "UpdateAvailableModal"]
