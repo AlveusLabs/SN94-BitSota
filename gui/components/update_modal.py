@@ -14,6 +14,8 @@ class UpdateAvailableModal(QDialog):
         self.setObjectName("modal_dialog")
         self.setModal(True)
         self.setFixedSize(600, 400)
+        # Remove system title bar
+        self.setWindowFlags(Qt.WindowType.FramelessWindowHint | Qt.WindowType.Dialog)
         self.setup_ui()
 
     def setup_ui(self):

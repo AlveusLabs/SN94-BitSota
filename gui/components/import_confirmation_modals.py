@@ -13,6 +13,8 @@ class ErrorModal(QDialog):
         self.setObjectName("modal_dialog")
         self.setModal(True)
         self.setFixedSize(600, 300)
+        # Remove system title bar
+        self.setWindowFlags(Qt.WindowType.FramelessWindowHint | Qt.WindowType.Dialog)
         self.setup_ui(title, message)
 
     def setup_ui(self, title: str, message: str):
@@ -63,6 +65,8 @@ class TermsAcceptanceModal(QDialog):
         self.setObjectName("modal_dialog")
         self.setModal(True)
         self.setFixedSize(600, 500)
+        # Remove system title bar
+        self.setWindowFlags(Qt.WindowType.FramelessWindowHint | Qt.WindowType.Dialog)
         self.terms_checkbox = None
         self.info_checkbox = None
         self.confirm_button = None
@@ -214,6 +218,8 @@ class WalletImportedSuccessModal(QDialog):
         self.setObjectName("modal_dialog")
         self.setModal(True)
         self.setFixedSize(600, 400)
+        # Remove system title bar
+        self.setWindowFlags(Qt.WindowType.FramelessWindowHint | Qt.WindowType.Dialog)
         self.setup_ui()
 
     def setup_ui(self):

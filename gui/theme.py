@@ -91,16 +91,32 @@ class BitSOTATheme:
         }}
 
         QWidget#wallet_dropdown:hover {{
-            background-color: rgba(255, 255, 255, 0.05);
+            background-color: rgba(255, 255, 255, 0.16);
         }}
 
-        QLabel#wallet_address_label {{
+        QLabel#wallet_name_label {{
             color: #FFFFFF;
             font-family: "PingFang SC", "Microsoft YaHei", "Geist", -apple-system, BlinkMacSystemFont, sans-serif;
             font-size: 16px;
             font-weight: 500;
             line-height: 14px;
-            min-width: 104px;
+        }}
+
+        QWidget#wallet_not_connected_button {{
+            background-color: transparent;
+            border-radius: 4px;
+        }}
+
+        QWidget#wallet_not_connected_button:hover {{
+            background-color: rgba(255, 255, 255, 0.05);
+        }}
+
+        QLabel#wallet_not_connected_label {{
+            color: rgba(255, 255, 255, 0.8);
+            font-family: "PingFang SC", "Microsoft YaHei", "Geist", -apple-system, BlinkMacSystemFont, sans-serif;
+            font-size: 14px;
+            font-weight: 600;
+            line-height: 1.2;
         }}
 
         /* Keep sidebar styles for compatibility */

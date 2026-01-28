@@ -79,7 +79,7 @@ class IconButton(QWidget):
 
 
 class WalletDropdown(QWidget):
-    """Wallet dropdown component"""
+    """Wallet dropdown component - shows wallet name when connected"""
     clicked = Signal()
 
     def __init__(self, parent=None):
@@ -90,54 +90,52 @@ class WalletDropdown(QWidget):
         self.setFixedHeight(40)
 
         layout = QHBoxLayout(self)
-        layout.setContentsMargins(8, 0, 0, 0)
-        layout.setSpacing(12)
+        layout.setContentsMargins(8, 0, 8, 0)  # 8px left, 8px right
+        layout.setSpacing(6)  # 12px gap between elements
 
-        # Wallet icon - try loading and set color to cyan
-        self.wallet_icon = QSvgWidget()
+        # Bitsota logo icon (left side)
+        self.wallet_icon = QSvgWidget(resource_path("gui/images/logo/bitsota-logo.svg"))
         self.wallet_icon.setFixedSize(24, 24)
-        self._load_wallet_icon_with_color()
         layout.addWidget(self.wallet_icon)
 
-        # Address and dropdown arrow container
-        address_container = QWidget()
-        address_layout = QHBoxLayout(address_container)
-        address_layout.setContentsMargins(0, 0, 0, 0)
-        address_layout.setSpacing(0)
+        # Wallet name label
+        self.wallet_label = QLabel("Wallet1")
+        self.wallet_label.setObjectName("wallet_name_label")
+        layout.addWidget(self.wallet_label)
 
-        self.address_label = QLabel("0x4892...81ae")
-        self.address_label.setObjectName("wallet_address_label")
-        address_layout.addWidget(self.address_label)
-
+        # Chevron dropdown icon (right side)
         self.dropdown_icon = QSvgWidget(resource_path("gui/images/chevron-down.svg"))
         self.dropdown_icon.setFixedSize(24, 24)
-        address_layout.addWidget(self.dropdown_icon)
+        layout.addWidget(self.dropdown_icon)
 
-        layout.addWidget(address_container)
+    def set_wallet_name(self, name: str):
+        """Set wallet name"""
+        self.wallet_label.setText(name)
 
-    def _load_wallet_icon_with_color(self):
-        """Load wallet icon and set to cyan"""
-        icon_path = resource_path("gui/images/Wallet.svg")
-        try:
-            with open(icon_path, 'r') as f:
-                svg_content = f.read()
-            # Replace color with cyan
-            svg_content = svg_content.replace('#150049', '#8EFBFF')
-            svg_content = svg_content.replace('fill="currentColor"', 'fill="#8EFBFF"')
-            svg_bytes = svg_content.encode('utf-8')
-            self.wallet_icon.load(svg_bytes)
-        except Exception:
-            # If failed, load original file directly
-            self.wallet_icon.load(icon_path)
+    def mousePressEvent(self, event):
+        self.clicked.emit()
+        super().mousePressEvent(event)
 
-    def set_wallet_address(self, address: str):
-        """Set wallet address"""
-        if len(address) > 12:
-            # Format as 0x4892...81ae
-            formatted = f"{address[:6]}...{address[-4:]}"
-            self.address_label.setText(formatted)
-        else:
-            self.address_label.setText(address)
+
+class WalletNotConnectedButton(QWidget):
+    """Wallet not connected button"""
+    clicked = Signal()
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setObjectName("wallet_not_connected_button")
+        self.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
+        self.setFixedHeight(40)
+
+        layout = QHBoxLayout(self)
+        layout.setContentsMargins(24, 10, 24, 10)  # 24px horizontal, 10px vertical
+        layout.setSpacing(0)
+        layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
+
+        self.label = QLabel("Wallet Not Connected")
+        self.label.setObjectName("wallet_not_connected_label")
+        layout.addWidget(self.label)
 
     def mousePressEvent(self, event):
         self.clicked.emit()
@@ -196,20 +194,26 @@ class TopBar(QWidget):
         right_container = QHBoxLayout()
         right_container.setSpacing(8)
 
-        # Chat icon (temporarily hidden or use placeholder)
-        # chat_btn = IconButton(resource_path("gui/images/chat.svg"))
-        # right_container.addWidget(chat_btn)
+        # Chat icon
+        chat_btn = IconButton(resource_path("gui/images/logo/chat.svg"))
+        right_container.addWidget(chat_btn)
 
         # Help/User guide icon
-        self.user_guide_btn = IconButton(resource_path("gui/images/Info Circle.svg"))
+        self.user_guide_btn = IconButton(resource_path("gui/images/logo/guide-info.svg"))
         self.user_guide_btn.clicked.connect(self.user_guide_clicked.emit)
         right_container.addWidget(self.user_guide_btn)
 
-        # Wallet dropdown
+        # Wallet dropdown (shown when wallet is connected)
         self.wallet_dropdown = WalletDropdown()
         self.wallet_dropdown.clicked.connect(self.wallet_clicked.emit)
-        self.wallet_dropdown.hide()  # Hidden by default, shown when wallet exists
+        self.wallet_dropdown.hide()  # Hidden by default
         right_container.addWidget(self.wallet_dropdown)
+
+        # Wallet not connected button (shown when wallet is not connected)
+        self.wallet_not_connected_btn = WalletNotConnectedButton()
+        self.wallet_not_connected_btn.clicked.connect(self.wallet_clicked.emit)
+        self.wallet_not_connected_btn.show()  # Shown by default
+        right_container.addWidget(self.wallet_not_connected_btn)
 
         layout.addLayout(right_container)
 
@@ -237,11 +241,13 @@ class TopBar(QWidget):
         for tid, tab in self.tabs.items():
             tab.set_active(tid == tab_id)
 
-    def set_wallet_info(self, wallet_name: str, wallet_address: str):
-        """Set wallet info and show"""
-        self.wallet_dropdown.set_wallet_address(wallet_address)
+    def set_wallet_info(self, wallet_name: str, wallet_address: str = None):
+        """Set wallet info and show connected state"""
+        self.wallet_dropdown.set_wallet_name(wallet_name)
         self.wallet_dropdown.show()
+        self.wallet_not_connected_btn.hide()
 
     def hide_wallet_info(self):
-        """Hide wallet info"""
+        """Hide wallet info and show not connected state"""
         self.wallet_dropdown.hide()
+        self.wallet_not_connected_btn.show()

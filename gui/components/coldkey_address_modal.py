@@ -15,6 +15,8 @@ class ColdkeyAddressModal(QDialog):
         self.setObjectName("modal_dialog")
         self.setModal(True)
         self.setFixedSize(600, 400)
+        # Remove system title bar
+        self.setWindowFlags(Qt.WindowType.FramelessWindowHint | Qt.WindowType.Dialog)
         self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
         self.setup_ui()
 

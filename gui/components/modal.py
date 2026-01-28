@@ -13,6 +13,8 @@ class ConfirmationModal(QDialog):
         self.setObjectName("modal_dialog")
         self.setModal(True)
         self.setFixedSize(600, 300)
+        # Remove system title bar
+        self.setWindowFlags(Qt.WindowType.FramelessWindowHint | Qt.WindowType.Dialog)
         self.setup_ui(title, message)
 
     def setup_ui(self, title: str, message: str):
