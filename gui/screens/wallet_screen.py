@@ -6,6 +6,7 @@ from PySide6.QtWidgets import (
 from PySide6.QtSvgWidgets import QSvgWidget
 from PySide6.QtGui import QKeyEvent, QEnterEvent
 from gui.resource_path import resource_path
+from gui.components import show_modal_with_overlay
 
 
 class WalletOptionContainer(QWidget):
@@ -56,6 +57,7 @@ class WalletOptionContainer(QWidget):
 
         self.button = QPushButton(button_text)
         self.button.setObjectName("primary_button")
+        self.button.setCursor(Qt.CursorShape.PointingHandCursor)
         self.button.setFixedSize(207, 48)
         self.button.clicked.connect(self.clicked.emit)
 
@@ -138,12 +140,14 @@ class ImportHotkeyScreen(QWidget):
 
         import_btn = QPushButton("Import")
         import_btn.setObjectName("primary_button")
+        import_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         import_btn.setFixedSize(207, 48)
         import_btn.clicked.connect(self._on_import)
         buttons_layout.addWidget(import_btn)
 
         cancel_btn = QPushButton("Cancel")
         cancel_btn.setObjectName("secondary_button")
+        cancel_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         cancel_btn.setFixedSize(207, 48)
         cancel_btn.clicked.connect(self.cancelled.emit)
         buttons_layout.addWidget(cancel_btn)
@@ -186,7 +190,7 @@ class ImportHotkeyScreen(QWidget):
                 "Please enter a hotkey name.",
                 parent=self
             )
-            error_modal.exec()
+            show_modal_with_overlay(error_modal, self)
             return
 
         if not all(mnemonic_words):
@@ -195,7 +199,7 @@ class ImportHotkeyScreen(QWidget):
                 "Please fill in all 12 mnemonic words.",
                 parent=self
             )
-            error_modal.exec()
+            show_modal_with_overlay(error_modal, self)
             return
 
         if len(mnemonic_words) != 12:
@@ -204,7 +208,7 @@ class ImportHotkeyScreen(QWidget):
                 f"Expected 12 words, but got {len(mnemonic_words)}.",
                 parent=self
             )
-            error_modal.exec()
+            show_modal_with_overlay(error_modal, self)
             return
 
         if coldkey_address:
@@ -215,7 +219,7 @@ class ImportHotkeyScreen(QWidget):
                     error_message,
                     parent=self
                 )
-                error_modal.exec()
+                show_modal_with_overlay(error_modal, self)
                 return
 
         try:
@@ -227,12 +231,12 @@ class ImportHotkeyScreen(QWidget):
                 f"The mnemonic phrase is invalid. Please check your words and try again.\n\nError: {str(e)}",
                 parent=self
             )
-            error_modal.exec()
+            show_modal_with_overlay(error_modal, self)
             return
 
         terms_modal = TermsAcceptanceModal(parent=self)
         terms_modal.confirmed.connect(lambda: self.imported.emit(hotkey_name, mnemonic, coldkey_address))
-        terms_modal.exec()
+        show_modal_with_overlay(terms_modal, self)
 
     def clear_form(self):
         self.hotkey_name_input.clear()
@@ -305,7 +309,7 @@ class WalletScreen(QWidget):
 
         modal = WalletSelectionModal(parent=self)
         modal.wallet_selected.connect(self._on_wallet_selected)
-        modal.exec()
+        show_modal_with_overlay(modal, self)
 
     def _on_wallet_selected(self, wallet_name: str, hotkey_name: str, use_existing_coldkey: bool, coldkey_address: str):
         self.wallet_loaded.emit(wallet_name, hotkey_name, use_existing_coldkey, coldkey_address)
@@ -319,7 +323,7 @@ class WalletScreen(QWidget):
         success_modal = WalletImportedSuccessModal(parent=self)
         success_modal.start_mining.connect(lambda: self._finalize_import(hotkey_name, mnemonic, coldkey_address))
         success_modal.rejected.connect(lambda: self._finalize_import(hotkey_name, mnemonic, coldkey_address))
-        success_modal.exec()
+        show_modal_with_overlay(success_modal, self)
 
     def _finalize_import(self, hotkey_name: str, mnemonic: str, coldkey_address: str):
         self.hotkey_imported.emit(hotkey_name, mnemonic, coldkey_address)

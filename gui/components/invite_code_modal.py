@@ -78,7 +78,7 @@ class InviteCodeModal(QDialog):
         self.setModal(True)
         self.setFixedSize(440, 480)
         # Remove system title bar
-        self.setWindowFlags(Qt.WindowType.FramelessWindowHint | Qt.WindowType.Dialog)
+        self.setWindowFlags(Qt.WindowType.FramelessWindowHint)
         self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
         self.relay_url = relay_url
         self.wallet = wallet
@@ -185,6 +185,7 @@ class InviteCodeModal(QDialog):
 
         self.unlock_btn = QPushButton("Unlock Now")
         self.unlock_btn.setObjectName("primary_button")
+        self.unlock_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self.unlock_btn.setFixedHeight(48)
         self.unlock_btn.setEnabled(False)
         self.unlock_btn.clicked.connect(self._on_unlock_clicked)
@@ -276,6 +277,7 @@ class InviteCodeModal(QDialog):
 
         retry_btn = QPushButton("Try Again")
         retry_btn.setObjectName("primary_button")
+        retry_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         retry_btn.setFixedHeight(48)
         retry_btn.clicked.connect(self._reset_to_entering_state)
         self.content_layout.addWidget(retry_btn)
@@ -313,6 +315,7 @@ class InviteCodeModal(QDialog):
 
         start_mining_btn = QPushButton("Start Mining")
         start_mining_btn.setObjectName("primary_button")
+        start_mining_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         start_mining_btn.setFixedHeight(48)
         start_mining_btn.clicked.connect(self._on_start_mining)
         self.content_layout.addWidget(start_mining_btn)

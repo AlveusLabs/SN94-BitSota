@@ -14,7 +14,7 @@ class ComingSoonModal(QDialog):
         self.setModal(True)
         self.setFixedSize(600, 400)
         # Remove system title bar
-        self.setWindowFlags(Qt.WindowType.FramelessWindowHint | Qt.WindowType.Dialog)
+        self.setWindowFlags(Qt.WindowType.FramelessWindowHint)
         self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
         self.setup_ui(screen_name, description)
 
@@ -91,6 +91,7 @@ class ComingSoonModal(QDialog):
 
         ok_btn = QPushButton("Got it")
         ok_btn.setObjectName("primary_button")
+        ok_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         ok_btn.setFixedHeight(48)
         ok_btn.clicked.connect(self.accept)
         layout.addWidget(ok_btn)

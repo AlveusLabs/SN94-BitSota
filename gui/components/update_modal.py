@@ -15,7 +15,7 @@ class UpdateAvailableModal(QDialog):
         self.setModal(True)
         self.setFixedSize(600, 400)
         # Remove system title bar
-        self.setWindowFlags(Qt.WindowType.FramelessWindowHint | Qt.WindowType.Dialog)
+        self.setWindowFlags(Qt.WindowType.FramelessWindowHint)
         self.setup_ui()
 
     def setup_ui(self):
@@ -75,18 +75,21 @@ class UpdateAvailableModal(QDialog):
 
         skip_btn = QPushButton("Skip This Version")
         skip_btn.setObjectName("secondary_button")
+        skip_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         skip_btn.setFixedHeight(48)
         skip_btn.clicked.connect(self._on_skip)
         buttons_layout.addWidget(skip_btn, 1)
 
         later_btn = QPushButton("Remind Me Later")
         later_btn.setObjectName("secondary_button")
+        later_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         later_btn.setFixedHeight(48)
         later_btn.clicked.connect(self.reject)
         buttons_layout.addWidget(later_btn, 1)
 
         download_btn = QPushButton("Download Update")
         download_btn.setObjectName("primary_button")
+        download_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         download_btn.setFixedHeight(48)
         download_btn.clicked.connect(self._on_download)
         buttons_layout.addWidget(download_btn, 1)

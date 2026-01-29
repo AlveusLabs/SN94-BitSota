@@ -14,7 +14,7 @@ class ConfirmationModal(QDialog):
         self.setModal(True)
         self.setFixedSize(600, 300)
         # Remove system title bar
-        self.setWindowFlags(Qt.WindowType.FramelessWindowHint | Qt.WindowType.Dialog)
+        self.setWindowFlags(Qt.WindowType.FramelessWindowHint)
         self.setup_ui(title, message)
 
     def setup_ui(self, title: str, message: str):
@@ -54,12 +54,14 @@ class ConfirmationModal(QDialog):
 
         yes_btn = QPushButton("Yes")
         yes_btn.setObjectName("secondary_button")
+        yes_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         yes_btn.setFixedHeight(48)
         yes_btn.clicked.connect(self._on_yes)
         buttons_layout.addWidget(yes_btn, 1)
 
         no_btn = QPushButton("No")
         no_btn.setObjectName("primary_button")
+        no_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         no_btn.setFixedHeight(48)
         no_btn.clicked.connect(self.reject)
         buttons_layout.addWidget(no_btn, 1)

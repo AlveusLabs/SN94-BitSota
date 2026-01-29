@@ -292,7 +292,7 @@ class MiningScreen(QWidget):
         self.task_type_combo.setObjectName("form_input")
         self.task_type_combo.setFixedHeight(48)
         self.task_type_map = {
-            "mnist_binary": "mnist_binary",
+            "CIFAR-10 Binary Classification": "cifar10_binary",
         }
         self.task_type_combo.addItems(list(self.task_type_map.keys()))
         self.task_type_combo.setEnabled(False)
@@ -481,7 +481,10 @@ class MiningScreen(QWidget):
             parent=self
         )
         invite_modal.code_verified.connect(self._on_invite_code_verified)
-        invite_modal.exec()
+        if self.main_window:
+            self.main_window.show_modal_with_overlay(invite_modal)
+        else:
+            invite_modal.exec()
 
     def _on_invite_code_verified(self):
         self._append_log("Invite code verified successfully!")
@@ -557,7 +560,10 @@ class MiningScreen(QWidget):
                 "The Pool Mining screen is coming soon! This screen will allow you to join mining pools for simplified setup and shared resources. Pool mining is ideal for miners who want a streamlined experience with automated task distribution and reward payouts.",
                 parent=self
             )
-            modal.exec()
+            if self.main_window:
+                self.main_window.show_modal_with_overlay(modal)
+            else:
+                modal.exec()
             self.tab_switcher.set_active_tab("direct")
         else:
             self._switch_to_direct()

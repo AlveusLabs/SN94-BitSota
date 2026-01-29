@@ -115,7 +115,7 @@ class UserGuideModal(QDialog):
         self.setModal(True)
         self.setFixedSize(560, 675)
         # Remove system title bar (red/yellow/green buttons on macOS)
-        self.setWindowFlags(Qt.WindowType.FramelessWindowHint | Qt.WindowType.Dialog)
+        self.setWindowFlags(Qt.WindowType.FramelessWindowHint)
         self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
         self.setup_ui()
 
@@ -146,6 +146,8 @@ class UserGuideModal(QDialog):
 
         scroll_area = QScrollArea()
         scroll_area.setWidgetResizable(True)
+        scroll_area.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        scroll_area.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         scroll_area.setStyleSheet("QScrollArea { border: none; background-color: transparent; }")
 
         scroll_content = QWidget()
@@ -405,6 +407,7 @@ class UserGuideModal(QDialog):
 
         proceed_btn = QPushButton("Proceed")
         proceed_btn.setObjectName("primary_button")
+        proceed_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         proceed_btn.setFixedHeight(48)
         proceed_btn.clicked.connect(self._on_proceed)
         layout.addWidget(proceed_btn)

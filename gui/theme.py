@@ -30,6 +30,7 @@ class BitSOTATheme:
     # Border Colors
     BORDER_12 = "rgba(21, 0, 73, 0.12)"
     BORDER_8 = "rgba(21, 0, 73, 0.08)"
+    BORDER_4 = "#A199B6"
     
     # Legacy compatibility
     TAB_INACTIVE_BG = "rgba(109, 96, 142, 0.16)"
@@ -368,8 +369,8 @@ class BitSOTATheme:
 
         QDialog#modal_dialog {{
             background-color: {BitSOTATheme.CONTENT_BOX_BG};
-            border: 2px solid {BitSOTATheme.BORDER_8};
-            border-radius: 12px;
+            border: none;
+            border-radius: 4px;
         }}
 
         QLabel#modal_title {{
@@ -436,6 +437,15 @@ class BitSOTATheme:
         }}
 
         QWidget#app_container {{
+            background-color: #F6F5F8;
+        }}
+        
+        QWidget#content_wrapper {{
+            border-radius: 4px;
+            background-color: #0C0029;
+        }}
+        
+        QStackedWidget#screen_stack {{
             background-color: #F6F5F8;
         }}
 

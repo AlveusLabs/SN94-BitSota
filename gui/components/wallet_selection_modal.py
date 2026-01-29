@@ -8,6 +8,8 @@ import sys
 import os
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", ".."))
+
+from gui.components.overlay import show_modal_with_overlay
 from gui.wallet_utils_gui import discover_wallets
 from gui.resource_path import resource_path
 
@@ -65,7 +67,7 @@ class WalletSelectionModal(QDialog):
         self.setModal(True)
         self.setFixedSize(800, 650)
         # Remove system title bar
-        self.setWindowFlags(Qt.WindowType.FramelessWindowHint | Qt.WindowType.Dialog)
+        self.setWindowFlags(Qt.WindowType.FramelessWindowHint)
         self.selected_item = None
         self.wallet_items = []
         self.selected_wallet_source = None
@@ -130,12 +132,14 @@ class WalletSelectionModal(QDialog):
 
         select_btn = QPushButton("Select")
         select_btn.setObjectName("primary_button")
+        select_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         select_btn.setFixedHeight(48)
         select_btn.clicked.connect(self._on_select)
         buttons_layout.addWidget(select_btn, 1)
 
         cancel_btn = QPushButton("Cancel")
         cancel_btn.setObjectName("secondary_button")
+        cancel_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         cancel_btn.setFixedHeight(48)
         cancel_btn.clicked.connect(self.reject)
         buttons_layout.addWidget(cancel_btn, 1)
@@ -205,7 +209,7 @@ class WalletSelectionModal(QDialog):
                 "This wallet does not have an associated coldkey address. Please provide a coldkey address on the next screen.",
                 parent=self
             )
-            error_modal.exec()
+            show_modal_with_overlay(error_modal, self)
             self.use_coldkey_checkbox.setChecked(False)
 
     def _on_select(self):

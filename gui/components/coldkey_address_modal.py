@@ -5,6 +5,7 @@ from PySide6.QtWidgets import (
 )
 from PySide6.QtSvgWidgets import QSvgWidget
 from gui.resource_path import resource_path
+from gui.components.overlay import show_modal_with_overlay
 
 
 class ColdkeyAddressModal(QDialog):
@@ -69,12 +70,14 @@ class ColdkeyAddressModal(QDialog):
 
         submit_btn = QPushButton("Submit")
         submit_btn.setObjectName("primary_button")
+        submit_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         submit_btn.setFixedSize(207, 48)
         submit_btn.clicked.connect(self._on_submit)
         button_layout.addWidget(submit_btn)
 
         skip_btn = QPushButton("Skip for Now")
         skip_btn.setObjectName("secondary_button")
+        skip_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         skip_btn.setFixedSize(207, 48)
         skip_btn.clicked.connect(self.reject)
         button_layout.addWidget(skip_btn)
@@ -93,7 +96,7 @@ class ColdkeyAddressModal(QDialog):
                 "Please enter a coldkey address.",
                 parent=self
             )
-            error_modal.exec()
+            show_modal_with_overlay(error_modal, self)
             return
 
         from gui.wallet_utils_gui import validate_coldkey_address
@@ -106,7 +109,7 @@ class ColdkeyAddressModal(QDialog):
                 error_message,
                 parent=self
             )
-            error_modal.exec()
+            show_modal_with_overlay(error_modal, self)
             return
 
         self.address_submitted.emit(address)

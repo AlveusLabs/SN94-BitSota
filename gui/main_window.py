@@ -1,115 +1,58 @@
-from PySide6.QtCore import Qt, QTimer
+from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
     QMainWindow,
     QWidget,
     QVBoxLayout,
-    QHBoxLayout,
     QStackedWidget,
-    QApplication,
 )
-from PySide6.QtGui import QPalette, QColor
-from typing import Optional
-from ctypes import c_void_p
-import webbrowser
-import platform
 
-from bittensor_network.wallet import Wallet
-from miner.client import BittensorDirectClient
 from gui.theme import BitSOTATheme
 from gui.screens import StartScreen, WalletScreen, MiningScreen, ProfileScreen
-from gui.components import Sidebar, TopBar, UserGuideModal, InviteCodeModal, ColdkeyAddressModal, ComingSoonModal, UpdateAvailableModal
-from gui.resource_path import resource_path
-from gui.update_checker import UpdateChecker
-from gui.app_config import get_app_config
-
+from gui.components import TopBar, ModalOverlay
+from gui.managers import (
+    WalletManager,
+    ClientManager,
+    NavigationManager,
+    ModalManager,
+    UpdateManager,
+    WindowStyleManager,
+)
 
 class MiningWindow(QMainWindow):
+    """主窗口 - 协调各个管理器和屏幕"""
+
     def __init__(self):
         super().__init__()
-        self.wallet: Optional[Wallet] = None
-        self.client: Optional[BittensorDirectClient] = None
-        self.coldkey_address: Optional[str] = None
-        self.update_checker = UpdateChecker()
-        self._titlebar_set = False
-        self._setup_window()
+        
+        # 初始化窗口样式管理器
+        self.style_manager = WindowStyleManager(self)
+        self.style_manager.setup_window()
+        
+        # 创建 UI
         self._create_ui()
+        
+        # 应用主题
         self._apply_theme()
-        self._try_auto_load_wallet()
-        self._setup_update_checker()
+        
+        # 初始化管理器
+        self._initialize_managers()
+        
+        # 连接信号
+        self._connect_signals()
+        
+        # 尝试自动加载钱包
+        self.wallet_manager.auto_load_wallet()
+        
+        # 设置更新检查
+        self.update_manager.setup()
 
-    def _setup_window(self):
-        self.setWindowTitle("BitSota")
-        self.setMinimumSize(1200, 800)
-        self.resize(1400, 900)
-
-        screen = QApplication.primaryScreen().geometry()
-        window_geometry = self.frameGeometry()
-        center_point = screen.center()
-        window_geometry.moveCenter(center_point)
-        self.move(window_geometry.topLeft())
-    
     def showEvent(self, event):
-        """Called when window is shown - set title bar color here"""
+        """窗口显示事件 - 用于设置标题栏颜色"""
         super().showEvent(event)
-        if not self._titlebar_set:
-            # Delay slightly to ensure window is fully initialized
-            QTimer.singleShot(100, self._set_titlebar_color)
-            self._titlebar_set = True
-    
-    def _set_titlebar_color(self):
-        """Set the title bar color to #0C0029"""
-        if platform.system() == "Darwin":  # macOS
-            try:
-                # Use native macOS API to set title bar color
-                from Cocoa import NSColor
-                from PySide6.QtGui import QWindow
-                
-                # Get the native NSWindow
-                window = self.windowHandle()
-                if window:
-                    ns_view = window.winId()
-                    import objc
-                    from Cocoa import NSView
-                    
-                    view = objc.objc_object(c_void_p=ns_view)
-                    ns_window = view.window()
-                    
-                    if ns_window:
-                        # Set title bar color using NSColor
-                        # #0C0029 = RGB(12, 0, 41)
-                        color = NSColor.colorWithRed_green_blue_alpha_(
-                            12.0/255.0,  # R
-                            0.0/255.0,   # G
-                            41.0/255.0,  # B
-                            1.0          # Alpha
-                        )
-                        ns_window.setBackgroundColor_(color)
-                        ns_window.setTitlebarAppearsTransparent_(True)
-                        # Optional: make window content extend to title bar
-                        # ns_window.setStyleMask_(ns_window.styleMask() | 1 << 15)  # NSFullSizeContentViewWindowMask
-                        
-                print("macOS title bar color set to #0C0029")
-            except ImportError:
-                print("PyObjC (Cocoa) not installed. Install with: pip install pyobjc-framework-Cocoa")
-            except Exception as e:
-                print(f"Could not set macOS title bar color: {e}")
-                
-        elif platform.system() == "Windows":
-            # Windows title bar styling
-            try:
-                from ctypes import windll, c_int, byref, sizeof
-                hwnd = int(self.winId())
-                # DWMWA_CAPTION_COLOR = 35
-                # Color in BGR format: #0C0029 -> 0x29000C
-                color_value = c_int(0x0029000C)
-                windll.dwmapi.DwmSetWindowAttribute(
-                    hwnd, 35, byref(color_value), sizeof(color_value)
-                )
-                print("Windows title bar color set to #0C0029")
-            except Exception as e:
-                print(f"Could not set Windows title bar color: {e}")
+        self.style_manager.handle_show_event(event)
 
     def _create_ui(self):
+        """创建 UI 组件"""
         central_widget = QWidget()
         self.setCentralWidget(central_widget)
 
@@ -117,320 +60,250 @@ class MiningWindow(QMainWindow):
         main_layout.setContentsMargins(0, 0, 0, 0)
         main_layout.setSpacing(0)
 
+        # 内容堆栈（启动屏幕 + 主应用）
         self.content_stack = QStackedWidget()
         main_layout.addWidget(self.content_stack)
 
+        # 启动屏幕
         self.start_screen = StartScreen()
-        self.start_screen.start_clicked.connect(self._on_start_clicked)
         self.content_stack.addWidget(self.start_screen)
 
-        # Main app container (with top navigation bar)
-        app_container = QWidget()
-        app_container.setObjectName("app_container")
-        app_layout = QVBoxLayout(app_container)
+        # 主应用容器
+        self.app_container = QWidget()
+        self.app_container.setObjectName("app_container")
+        app_layout = QVBoxLayout(self.app_container)
         app_layout.setContentsMargins(0, 0, 0, 0)
         app_layout.setSpacing(0)
 
-        # Top navigation bar
+        # 顶部导航栏
         self.topbar = TopBar()
-        self.topbar.tab_changed.connect(self._on_tab_changed)
-        self.topbar.user_guide_clicked.connect(self._show_user_guide)
-        self.topbar.wallet_clicked.connect(self._on_wallet_dropdown_clicked)
         app_layout.addWidget(self.topbar)
 
-        # Content area
-        content_wrapper = QWidget()
-        content_wrapper.setObjectName("app_container")
-        content_wrapper_layout = QVBoxLayout(content_wrapper)
+        # 内容区域包装器（带内边距）
+        self.content_wrapper = QWidget()
+        self.content_wrapper.setObjectName("content_wrapper")
+        self.content_wrapper.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
+        content_wrapper_layout = QVBoxLayout(self.content_wrapper)
         content_wrapper_layout.setContentsMargins(24, 24, 24, 24)
 
+        # 屏幕堆栈
         self.screen_stack = QStackedWidget()
+        self.screen_stack.setObjectName("screen_stack")
+        self.screen_stack.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
+        
         self.wallet_screen = WalletScreen()
-        self.wallet_screen.wallet_loaded.connect(self._on_wallet_loaded)
-        self.wallet_screen.hotkey_imported.connect(self._on_hotkey_imported)
         self.mining_screen = MiningScreen(main_window=self)
         self.profile_screen = ProfileScreen()
+        
         self.screen_stack.addWidget(self.wallet_screen)
         self.screen_stack.addWidget(self.mining_screen)
         self.screen_stack.addWidget(self.profile_screen)
-        content_wrapper_layout.addWidget(self.screen_stack)
-
-        app_layout.addWidget(content_wrapper, 1)
-
-        self.content_stack.addWidget(app_container)
         
-        # Keep old sidebar reference for compatibility (but not added to layout)
+        content_wrapper_layout.addWidget(self.screen_stack)
+        app_layout.addWidget(self.content_wrapper, 1)
+
+        self.content_stack.addWidget(self.app_container)
+
+        # 创建模态覆盖层
+        self.modal_overlay = ModalOverlay(central_widget)
+        self.modal_overlay.hide()
+
+        # 保留旧的 sidebar 引用以保持兼容性（但不添加到布局）
         self.sidebar = None
 
     def _apply_theme(self):
+        """应用主题样式"""
         self.setStyleSheet(BitSOTATheme.get_main_stylesheet())
         fonts = BitSOTATheme.get_font_system()
         self.setFont(fonts["primary"])
 
+    def _initialize_managers(self):
+        """初始化所有管理器"""
+        # 钱包管理器
+        self.wallet_manager = WalletManager(self)
+        
+        # 客户端管理器
+        self.client_manager = ClientManager(self)
+        
+        # 导航管理器
+        self.navigation_manager = NavigationManager(
+            self.content_stack,
+            self.screen_stack,
+            self.topbar,
+            self
+        )
+        self.navigation_manager.set_screens(
+            self.wallet_screen,
+            self.mining_screen,
+            self.profile_screen
+        )
+        
+        # 模态框管理器
+        self.modal_manager = ModalManager(
+            self,
+            self.modal_overlay,
+            self.content_stack,
+            self.screen_stack,
+            self.app_container,
+            self
+        )
+        
+        # 更新管理器
+        self.update_manager = UpdateManager(self, self)
+
+    def _connect_signals(self):
+        """连接信号和槽"""
+        # 启动屏幕
+        self.start_screen.start_clicked.connect(self._on_start_clicked)
+        
+        # 顶部导航栏
+        self.topbar.tab_changed.connect(self.navigation_manager.handle_tab_change)
+        self.topbar.user_guide_clicked.connect(self.modal_manager.show_user_guide)
+        self.topbar.wallet_clicked.connect(self._on_wallet_dropdown_clicked)
+        
+        # 钱包屏幕
+        self.wallet_screen.wallet_loaded.connect(self._on_wallet_loaded)
+        self.wallet_screen.hotkey_imported.connect(self._on_hotkey_imported)
+        
+        # 内容堆栈变化
+        self.content_stack.currentChanged.connect(self._on_stack_changed)
+        
+        # 钱包管理器
+        self.wallet_manager.wallet_loaded.connect(self._on_wallet_manager_loaded)
+        self.wallet_manager.hotkey_imported.connect(self._on_wallet_manager_imported)
+        self.wallet_manager.wallet_status_updated.connect(self._update_mining_screen_status)
+        
+        # 模态框管理器
+        self.modal_manager.user_guide_completed.connect(self.navigation_manager.show_main_app)
+        self.modal_manager.coldkey_address_submitted.connect(self.wallet_manager.save_coldkey_address)
+        
+        # 导航管理器
+        self.navigation_manager.show_coming_soon.connect(self.modal_manager.show_coming_soon)
+
+    def resizeEvent(self, event):
+        """窗口大小调整事件"""
+        super().resizeEvent(event)
+        self.modal_manager.handle_resize_event()
+
+    def _on_stack_changed(self, index):
+        """内容堆栈变化事件"""
+        self.modal_manager.handle_stack_change()
+
     def _on_start_clicked(self):
-        self._show_user_guide()
+        """启动按钮点击"""
+        self.modal_manager.show_user_guide()
 
-    def _show_user_guide(self):
-        guide_modal = UserGuideModal(parent=self)
-        guide_modal.proceed_clicked.connect(self._on_user_guide_proceed)
-        guide_modal.exec()
-
-    def _on_user_guide_proceed(self):
-        self.content_stack.setCurrentIndex(1)
-
-    def _on_tab_changed(self, tab_id: str):
-        if tab_id == "setup_wallet":
-            self.screen_stack.setCurrentWidget(self.wallet_screen)
-        elif tab_id == "mining":
-            self.screen_stack.setCurrentWidget(self.mining_screen)
-        elif tab_id == "profile":
-            modal = ComingSoonModal(
-                "Profile Screen",
-                "The Profile screen is coming soon! This screen will show your mining history, rewards, and balances from both Direct Mining and Pool Mining. You'll be able to view detailed statistics and claim your rewards.",
-                parent=self
-            )
-            modal.exec()
-            self.topbar.set_active_tab("mining")
-
-    def _on_connect_wallet(self):
-        self.topbar.set_active_tab("setup_wallet")
-        self.screen_stack.setCurrentWidget(self.wallet_screen)
-    
     def _on_wallet_dropdown_clicked(self):
-        """Handle wallet dropdown click event"""
-        # Can show wallet details or switch wallet modal
+        """钱包下拉菜单点击"""
+        # 可以在这里显示钱包详情或切换钱包模态框
         pass
 
-    def _on_wallet_loaded(self, wallet_name: str, hotkey_name: str, use_existing_coldkey: bool, coldkey_address: str):
-        from gui.wallet_utils_gui import (
-            get_wallet_dir, get_bittensor_wallet_dir, discover_wallets,
-            get_coldkey_address, save_coldkey_address, save_wallet_settings
+    def _on_wallet_loaded(
+        self,
+        wallet_name: str,
+        hotkey_name: str,
+        use_existing_coldkey: bool,
+        coldkey_address: str
+    ):
+        """处理从钱包屏幕加载的钱包"""
+        success, error = self.wallet_manager.load_wallet(
+            wallet_name,
+            hotkey_name,
+            use_existing_coldkey,
+            coldkey_address
         )
-
-        wallet_dir = None
-        wallets = discover_wallets()
-        for w_name, hotkeys, source in wallets:
-            if w_name == wallet_name and hotkey_name in hotkeys:
-                if source == "bittensor":
-                    wallet_dir = str(get_bittensor_wallet_dir())
-                else:
-                    wallet_dir = str(get_wallet_dir())
-                break
-
-        if not wallet_dir:
-            wallet_dir = str(get_wallet_dir())
-
-        self.wallet = Wallet(name=wallet_name, hotkey=hotkey_name, path=wallet_dir)
-
-        try:
-            hotkey = self.wallet.get_hotkey()
-            address = hotkey.ss58_address
-            short_address = f"{address[:6]}...{address[-4:]}" if address else "Unknown"
-            self.topbar.set_wallet_info(wallet_name, short_address)
-        except Exception as e:
-            print(f"Error loading hotkey: {e}")
-            self.topbar.set_wallet_info(wallet_name, "Error loading")
+        
+        if not success:
+            self.modal_manager.show_error("Wallet Load Error", error)
             return
-
-        if use_existing_coldkey and coldkey_address:
-            self.coldkey_address = coldkey_address
-            save_coldkey_address(coldkey_address)
-            save_wallet_settings(wallet_name, hotkey_name, coldkey_address)
-            print(f"Using existing coldkey address: {coldkey_address}")
-            short_coldkey = f"{coldkey_address[:6]}...{coldkey_address[-4:]}" if coldkey_address and len(coldkey_address) > 10 else coldkey_address
-            self.topbar.set_wallet_info(wallet_name, short_coldkey)
-
-        self._initialize_client()
-        self._update_mining_screen_status()
-
-        if not use_existing_coldkey or not coldkey_address:
-            self._prompt_for_coldkey_address()
-
-    def _initialize_client(self):
-        if not self.wallet:
-            return
-
-        self.contract_manager = None
-
-        try:
-            relay_endpoint = self._get_relay_endpoint_from_config()
-            cfg = get_app_config()
-            self.client = BittensorDirectClient(
-                wallet=self.wallet,
-                relay_endpoint=relay_endpoint,
-                verbose=True,
-                contract_manager=self.contract_manager,
-                miner_task_count=cfg.miner_task_count,
-            )
-            print(f"Direct client created successfully with relay: {relay_endpoint}")
-        except Exception as e:
-            print(f"Failed to create direct client: {e}")
-            self.client = None
-
-    @staticmethod
-    def _get_relay_endpoint_from_config() -> str:
-        return get_app_config().relay_endpoint
-
-    def _update_mining_screen_status(self):
-        if self.wallet and hasattr(self.mining_screen, 'update_wallet_status'):
-            self.mining_screen.update_wallet_status(self.wallet.name)
-            self.mining_screen.update_global_sota()
-
-    def _prompt_for_coldkey_address(self):
-        coldkey_modal = ColdkeyAddressModal(parent=self)
-        coldkey_modal.address_submitted.connect(self._on_coldkey_address_submitted)
-        coldkey_modal.exec()
-
-    def _on_coldkey_address_submitted(self, address: str):
-        from gui.wallet_utils_gui import save_coldkey_address
-
-        self.coldkey_address = address
-        save_coldkey_address(address)
-        print(f"Coldkey address saved: {address}")
-
-        short_address = f"{address[:6]}...{address[-4:]}" if address and len(address) > 10 else address
-        if self.wallet:
-            self.topbar.set_wallet_info(self.wallet.name, short_address)
-
-    def get_current_sota(self) -> Optional[float]:
-        try:
-            relay_endpoint = self._get_relay_endpoint_from_config()
-            import requests
-            response = requests.get(f"{relay_endpoint}/sota_threshold", timeout=10)
-            response.raise_for_status()
-            result = response.json()
-            return result.get("sota_threshold")
-        except Exception as e:
-            print(f"Failed to fetch SOTA from relay: {e}")
-            return None
+        
+        # 初始化客户端
+        wallet = self.wallet_manager.get_wallet()
+        if wallet:
+            self.client_manager.initialize_client(wallet)
+        
+        # 检查是否需要提示输入 coldkey
+        if self.wallet_manager.needs_coldkey_prompt(use_existing_coldkey, coldkey_address):
+            self.modal_manager.show_coldkey_prompt()
 
     def _on_hotkey_imported(self, hotkey_name: str, mnemonic: str, coldkey_address: str):
-        from gui.wallet_utils_gui import get_wallet_dir, save_wallet_settings
-        from gui.components.import_confirmation_modals import ErrorModal
-        import uuid
-
-        wallet_name = f"imported_{str(uuid.uuid4())[:8]}"
-        wallet_dir = str(get_wallet_dir())
-
-        try:
-            self.wallet = Wallet(name=wallet_name, hotkey=hotkey_name, path=wallet_dir)
-            self.wallet.import_hotkey_from_mnemonic(mnemonic, overwrite=True)
-
-            self.coldkey_address = coldkey_address if coldkey_address else None
-            save_wallet_settings(wallet_name, hotkey_name, coldkey_address)
-
-            hotkey = self.wallet.get_hotkey()
-            address = hotkey.ss58_address
-            short_address = f"{address[:6]}...{address[-4:]}" if address else "Unknown"
-            self.topbar.set_wallet_info(wallet_name, short_address)
-
-            if not self.coldkey_address:
-                self._prompt_for_coldkey_address()
-
-            self._initialize_client()
-            self._update_mining_screen_status()
-        except Exception as e:
-            error_modal = ErrorModal(
-                "Import Failed",
-                f"Failed to import hotkey. Please try again.\n\nError: {str(e)}",
-                parent=self
-            )
-            error_modal.exec()
-            print(f"Error importing hotkey: {e}")
-
-    def _try_auto_load_wallet(self):
-        from gui.wallet_utils_gui import (
-            get_last_wallet, get_wallet_dir, get_bittensor_wallet_dir,
-            discover_wallets, get_coldkey_address
+        """处理从钱包屏幕导入的热钥"""
+        success, error = self.wallet_manager.import_hotkey(
+            hotkey_name,
+            mnemonic,
+            coldkey_address
         )
-
-        last_wallet_name, last_hotkey_name = get_last_wallet()
-
-        if not last_wallet_name or not last_hotkey_name:
+        
+        if not success:
+            self.modal_manager.show_error("Import Failed", error)
             return
+        
+        # 初始化客户端
+        wallet = self.wallet_manager.get_wallet()
+        if wallet:
+            self.client_manager.initialize_client(wallet)
+        
+        # 检查是否需要提示输入 coldkey
+        if not coldkey_address:
+            self.modal_manager.show_coldkey_prompt()
 
-        wallets = discover_wallets()
-        wallet_dir = None
-        wallet_found = False
+    def _on_wallet_manager_loaded(self, wallet, wallet_name: str, display_address: str):
+        """钱包管理器加载钱包后的处理"""
+        # 更新顶部栏
+        self.topbar.set_wallet_info(wallet_name, display_address)
+        
+        # 初始化客户端
+        if wallet:
+            self.client_manager.initialize_client(wallet)
+        
+        # 如果是自动加载，导航到挖矿屏幕
+        # 通过检查当前是否在启动屏幕来判断
+        if self.content_stack.currentIndex() == 0:
+            self.navigation_manager.auto_navigate_to_mining()
 
-        for w_name, hotkeys, source in wallets:
-            if w_name == last_wallet_name and last_hotkey_name in hotkeys:
-                wallet_found = True
-                if source == "bittensor":
-                    wallet_dir = str(get_bittensor_wallet_dir())
-                else:
-                    wallet_dir = str(get_wallet_dir())
-                break
+    def _on_wallet_manager_imported(self, wallet, wallet_name: str, display_address: str):
+        """钱包管理器导入热钥后的处理"""
+        # 更新顶部栏
+        self.topbar.set_wallet_info(wallet_name, display_address)
+        
+        # 初始化客户端
+        if wallet:
+            self.client_manager.initialize_client(wallet)
 
-        if not wallet_found:
-            print(f"Last wallet {last_wallet_name}/{last_hotkey_name} not found")
-            return
+    def _update_mining_screen_status(self, wallet_name: str):
+        """更新挖矿屏幕状态"""
+        if hasattr(self.mining_screen, 'update_wallet_status'):
+            self.mining_screen.update_wallet_status(wallet_name)
+            self.mining_screen.update_global_sota()
 
-        if not wallet_dir:
-            wallet_dir = str(get_wallet_dir())
+    def get_current_sota(self):
+        """获取当前 SOTA 阈值（保留用于向后兼容）"""
+        return self.client_manager.fetch_current_sota()
 
-        try:
-            self.wallet = Wallet(name=last_wallet_name, hotkey=last_hotkey_name, path=wallet_dir)
-            hotkey = self.wallet.get_hotkey()
-            address = hotkey.ss58_address
+    def _get_relay_endpoint_from_config(self):
+        """获取 relay endpoint（保留用于向后兼容）"""
+        return self.client_manager.get_relay_endpoint()
 
-            self.coldkey_address = get_coldkey_address()
+    def _prompt_for_coldkey_address(self):
+        """提示输入 coldkey 地址（保留用于向后兼容）"""
+        self.modal_manager.show_coldkey_prompt()
 
-            if self.coldkey_address:
-                short_address = f"{self.coldkey_address[:6]}...{self.coldkey_address[-4:]}" if self.coldkey_address and len(self.coldkey_address) > 10 else self.coldkey_address
-            else:
-                short_address = f"{address[:6]}...{address[-4:]}" if address else "Unknown"
+    # 保留这些属性以保持向后兼容性
+    @property
+    def wallet(self):
+        """获取当前钱包"""
+        return self.wallet_manager.get_wallet()
 
-            self.topbar.set_wallet_info(last_wallet_name, short_address)
+    @property
+    def client(self):
+        """获取当前客户端"""
+        return self.client_manager.get_client()
 
-            self._initialize_client()
-            self._update_mining_screen_status()
-
-            self.content_stack.setCurrentIndex(1)
-            self.topbar.set_active_tab("mining")
-            self.screen_stack.setCurrentWidget(self.mining_screen)
-
-            print(f"Auto-loaded wallet: {last_wallet_name}/{last_hotkey_name}")
-        except Exception as e:
-            print(f"Failed to auto-load wallet: {e}")
-
-    def _setup_update_checker(self):
-        QTimer.singleShot(2000, self._check_for_updates_on_startup)
-
-        self.update_check_timer = QTimer()
-        self.update_check_timer.timeout.connect(self._check_for_updates)
-        self.update_check_timer.start(24 * 60 * 60 * 1000)
-
-    def _check_for_updates_on_startup(self):
-        print("[Main] Checking for updates on startup...")
-        update_info = self.update_checker.check_for_updates(force=True)
-        if update_info:
-            print(f"[Main] Update found: {update_info}")
-            self._show_update_modal(update_info)
-        else:
-            print("[Main] No updates available")
-
-    def _check_for_updates(self):
-        print("[Main] Periodic update check...")
-        update_info = self.update_checker.check_for_updates()
-        if update_info:
-            print(f"[Main] Update found: {update_info}")
-            self._show_update_modal(update_info)
-
-    def _show_update_modal(self, update_info: dict):
-        modal = UpdateAvailableModal(update_info, parent=self)
-        modal.download_clicked.connect(lambda: self._download_update(update_info))
-        modal.skip_clicked.connect(lambda: self._skip_update(update_info))
-        modal.exec()
-
-    def _download_update(self, update_info: dict):
-        download_url = self.update_checker.get_download_url(update_info)
-        if download_url:
-            webbrowser.open(download_url)
-            print(f"Opening download URL: {download_url}")
-        else:
-            print("No download URL available for this platform")
-
-    def _skip_update(self, update_info: dict):
-        self.update_checker.skip_version(update_info['new_version_code'])
-        print(f"Skipped version {update_info['new_version']}")
+    @property
+    def coldkey_address(self):
+        """获取 coldkey 地址"""
+        return self.wallet_manager.get_coldkey_address()
+    
+    def show_modal_with_overlay(self, modal):
+        """显示带覆盖层的模态框（保留用于向后兼容）"""
+        return self.modal_manager.show_modal(modal)
