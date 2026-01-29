@@ -1,4 +1,4 @@
-"""客户端管理器 - 负责 BittensorDirectClient 初始化和 SOTA 获取"""
+"""Client Manager - handles BittensorDirectClient initialization and SOTA fetching"""
 
 from typing import Optional
 from PySide6.QtCore import QObject, Signal
@@ -9,9 +9,9 @@ from gui.app_config import get_app_config
 
 
 class ClientManager(QObject):
-    """管理 Bittensor 客户端的初始化和配置"""
+    """Manages Bittensor client initialization and configuration"""
 
-    # 信号
+    # Signals
     client_initialized = Signal(object)  # client
     sota_fetched = Signal(float)  # sota_threshold
 
@@ -22,13 +22,13 @@ class ClientManager(QObject):
 
     def initialize_client(self, wallet: Wallet) -> bool:
         """
-        初始化 Bittensor 客户端
+        Initialize Bittensor client
         
         Args:
-            wallet: 钱包对象
+            wallet: Wallet object
             
         Returns:
-            是否成功初始化
+            Whether successfully initialized
         """
         if not wallet:
             print("Cannot initialize client: wallet is None")
@@ -46,7 +46,7 @@ class ClientManager(QObject):
             )
             print(f"Direct client created successfully with relay: {relay_endpoint}")
             
-            # 发送信号
+            # Emit signal
             self.client_initialized.emit(self.client)
             return True
         except Exception as e:
@@ -57,7 +57,7 @@ class ClientManager(QObject):
     @staticmethod
     def get_relay_endpoint() -> str:
         """
-        从配置获取 relay endpoint
+        Get relay endpoint from configuration
         
         Returns:
             relay endpoint URL
@@ -66,10 +66,10 @@ class ClientManager(QObject):
 
     def fetch_current_sota(self) -> Optional[float]:
         """
-        从 relay 获取当前 SOTA 阈值
+        Fetch current SOTA threshold from relay
         
         Returns:
-            SOTA 阈值，如果获取失败则返回 None
+            SOTA threshold, or None if fetch fails
         """
         try:
             relay_endpoint = self.get_relay_endpoint()
@@ -80,7 +80,7 @@ class ClientManager(QObject):
             sota_threshold = result.get("sota_threshold")
             
             if sota_threshold is not None:
-                # 发送信号
+                # Emit signal
                 self.sota_fetched.emit(sota_threshold)
             
             return sota_threshold
@@ -89,9 +89,9 @@ class ClientManager(QObject):
             return None
 
     def get_client(self) -> Optional[BittensorDirectClient]:
-        """获取当前客户端对象"""
+        """Get current client object"""
         return self.client
 
     def is_initialized(self) -> bool:
-        """检查客户端是否已初始化"""
+        """Check if client is initialized"""
         return self.client is not None

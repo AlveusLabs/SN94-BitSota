@@ -5,7 +5,7 @@ from PySide6.QtWidgets import (
 )
 from PySide6.QtSvgWidgets import QSvgWidget
 from gui.resource_path import resource_path
-from gui.components.overlay import show_modal_with_overlay
+from gui.components.common.overlay import show_modal_with_overlay
 
 
 class ColdkeyAddressModal(QDialog):
@@ -90,7 +90,7 @@ class ColdkeyAddressModal(QDialog):
         address = self.address_input.text().strip()
 
         if not address:
-            from gui.components.import_confirmation_modals import ErrorModal
+            from gui.components.modals.import_confirmation import ErrorModal
             error_modal = ErrorModal(
                 "Empty Address",
                 "Please enter a coldkey address.",
@@ -103,7 +103,7 @@ class ColdkeyAddressModal(QDialog):
         is_valid, error_message = validate_coldkey_address(address)
 
         if not is_valid:
-            from gui.components.import_confirmation_modals import ErrorModal
+            from gui.components.modals.import_confirmation import ErrorModal
             error_modal = ErrorModal(
                 "Invalid Address",
                 error_message,

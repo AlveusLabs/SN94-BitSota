@@ -6,7 +6,6 @@ from PySide6.QtWidgets import (
 from PySide6.QtSvgWidgets import QSvgWidget
 from PySide6.QtGui import QKeyEvent, QEnterEvent
 from gui.resource_path import resource_path
-from gui.components import show_modal_with_overlay
 
 
 class WalletOptionContainer(QWidget):
@@ -75,6 +74,7 @@ class ImportHotkeyScreen(QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.mnemonic_boxes = []
+        self._pending_import_data = None
         self.setup_ui()
 
     def setup_ui(self):
@@ -181,62 +181,57 @@ class ImportHotkeyScreen(QWidget):
         mnemonic = " ".join(mnemonic_words)
         coldkey_address = self.coldkey_input.text().strip()
 
-        from gui.components.import_confirmation_modals import ErrorModal, TermsAcceptanceModal
         from gui.wallet_utils_gui import validate_coldkey_address
 
+        # Get modal_manager from main window
+        main_window = self.window()
+        if not hasattr(main_window, 'modal_manager'):
+            # Fallback if modal_manager not available
+            return
+
         if not hotkey_name:
-            error_modal = ErrorModal(
+            main_window.modal_manager.show_error(
                 "Invalid Hotkey Name",
-                "Please enter a hotkey name.",
-                parent=self
+                "Please enter a hotkey name."
             )
-            show_modal_with_overlay(error_modal, self)
             return
 
         if not all(mnemonic_words):
-            error_modal = ErrorModal(
+            main_window.modal_manager.show_error(
                 "Incomplete Mnemonic",
-                "Please fill in all 12 mnemonic words.",
-                parent=self
+                "Please fill in all 12 mnemonic words."
             )
-            show_modal_with_overlay(error_modal, self)
             return
 
         if len(mnemonic_words) != 12:
-            error_modal = ErrorModal(
+            main_window.modal_manager.show_error(
                 "Invalid Mnemonic",
-                f"Expected 12 words, but got {len(mnemonic_words)}.",
-                parent=self
+                f"Expected 12 words, but got {len(mnemonic_words)}."
             )
-            show_modal_with_overlay(error_modal, self)
             return
 
         if coldkey_address:
             is_valid, error_message = validate_coldkey_address(coldkey_address)
             if not is_valid:
-                error_modal = ErrorModal(
+                main_window.modal_manager.show_error(
                     "Invalid Coldkey Address",
-                    error_message,
-                    parent=self
+                    error_message
                 )
-                show_modal_with_overlay(error_modal, self)
                 return
 
         try:
             from substrateinterface import Keypair
             Keypair.create_from_mnemonic(mnemonic)
         except Exception as e:
-            error_modal = ErrorModal(
+            main_window.modal_manager.show_error(
                 "Invalid Mnemonic",
-                f"The mnemonic phrase is invalid. Please check your words and try again.\n\nError: {str(e)}",
-                parent=self
+                f"The mnemonic phrase is invalid. Please check your words and try again.\n\nError: {str(e)}"
             )
-            show_modal_with_overlay(error_modal, self)
             return
 
-        terms_modal = TermsAcceptanceModal(parent=self)
-        terms_modal.confirmed.connect(lambda: self.imported.emit(hotkey_name, mnemonic, coldkey_address))
-        show_modal_with_overlay(terms_modal, self)
+        # Store the import data to be used when terms are accepted
+        self._pending_import_data = (hotkey_name, mnemonic, coldkey_address)
+        main_window.modal_manager.show_terms_acceptance()
 
     def clear_form(self):
         self.hotkey_name_input.clear()
@@ -251,6 +246,7 @@ class WalletScreen(QWidget):
 
     def __init__(self, parent=None):
         super().__init__(parent)
+        self._pending_finalize_data = None
         self.setup_ui()
 
     def setup_ui(self):
@@ -305,11 +301,10 @@ class WalletScreen(QWidget):
         return screen
 
     def _on_load_wallet(self):
-        from gui.components.wallet_selection_modal import WalletSelectionModal
-
-        modal = WalletSelectionModal(parent=self)
-        modal.wallet_selected.connect(self._on_wallet_selected)
-        show_modal_with_overlay(modal, self)
+        # Get modal_manager from main window
+        main_window = self.window()
+        if hasattr(main_window, 'modal_manager'):
+            main_window.modal_manager.show_wallet_selection()
 
     def _on_wallet_selected(self, wallet_name: str, hotkey_name: str, use_existing_coldkey: bool, coldkey_address: str):
         self.wallet_loaded.emit(wallet_name, hotkey_name, use_existing_coldkey, coldkey_address)
@@ -318,12 +313,13 @@ class WalletScreen(QWidget):
         self.stacked_widget.setCurrentWidget(self.import_screen)
 
     def _on_hotkey_imported(self, hotkey_name: str, mnemonic: str, coldkey_address: str):
-        from gui.components.import_confirmation_modals import WalletImportedSuccessModal
-
-        success_modal = WalletImportedSuccessModal(parent=self)
-        success_modal.start_mining.connect(lambda: self._finalize_import(hotkey_name, mnemonic, coldkey_address))
-        success_modal.rejected.connect(lambda: self._finalize_import(hotkey_name, mnemonic, coldkey_address))
-        show_modal_with_overlay(success_modal, self)
+        # Store import data for finalization after success modal
+        self._pending_finalize_data = (hotkey_name, mnemonic, coldkey_address)
+        
+        # Get modal_manager from main window
+        main_window = self.window()
+        if hasattr(main_window, 'modal_manager'):
+            main_window.modal_manager.show_wallet_import_success()
 
     def _finalize_import(self, hotkey_name: str, mnemonic: str, coldkey_address: str):
         self.hotkey_imported.emit(hotkey_name, mnemonic, coldkey_address)

@@ -15,10 +15,8 @@ import logging
 import re
 
 from gui.components import PrimaryButton, SecondaryButton
-from gui.components.modal import ConfirmationModal
-from gui.components.invite_code_modal import InviteCodeModal
+from gui.components.modals.base import ConfirmationModal
 from gui.app_config import get_app_config
-from gui.components.coming_soon_modal import ComingSoonModal
 from gui.screens.pool_mining_screen import PoolMiningScreen
 from gui.resource_path import resource_path
 import requests
@@ -202,7 +200,7 @@ class MiningScreen(QWidget):
         content_layout.setSpacing(0)
 
         # Tab switcher - centered display
-        from gui.components.tab_switcher import TabSwitcher
+        from gui.components.common.tab_switcher import TabSwitcher
         
         tab_container = QWidget()
         tab_container_layout = QHBoxLayout(tab_container)
@@ -474,17 +472,11 @@ class MiningScreen(QWidget):
     def _show_invite_code_modal(self):
         relay_url = self.main_window._get_relay_endpoint_from_config()
         coldkey_address = self.main_window.coldkey_address if hasattr(self.main_window, 'coldkey_address') else None
-        invite_modal = InviteCodeModal(
+        self.main_window.modal_manager.show_invite_code(
             relay_url=relay_url,
             wallet=self.main_window.wallet,
-            coldkey_address=coldkey_address,
-            parent=self
+            coldkey_address=coldkey_address
         )
-        invite_modal.code_verified.connect(self._on_invite_code_verified)
-        if self.main_window:
-            self.main_window.show_modal_with_overlay(invite_modal)
-        else:
-            invite_modal.exec()
 
     def _on_invite_code_verified(self):
         self._append_log("Invite code verified successfully!")
@@ -555,15 +547,10 @@ class MiningScreen(QWidget):
 
     def _on_mining_tab_changed(self, tab_id: str):
         if tab_id == "pool":
-            modal = ComingSoonModal(
+            self.main_window.modal_manager.show_coming_soon(
                 "Pool Mining Screen",
-                "The Pool Mining screen is coming soon! This screen will allow you to join mining pools for simplified setup and shared resources. Pool mining is ideal for miners who want a streamlined experience with automated task distribution and reward payouts.",
-                parent=self
+                "The Pool Mining screen is coming soon! This screen will allow you to join mining pools for simplified setup and shared resources. Pool mining is ideal for miners who want a streamlined experience with automated task distribution and reward payouts."
             )
-            if self.main_window:
-                self.main_window.show_modal_with_overlay(modal)
-            else:
-                modal.exec()
             self.tab_switcher.set_active_tab("direct")
         else:
             self._switch_to_direct()

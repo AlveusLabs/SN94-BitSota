@@ -7,6 +7,16 @@ def show_modal_with_overlay(dialog, widget=None):
     """
     Show dialog with overlay
     
+    .. deprecated::
+        This function is deprecated and will be removed in a future version.
+        Use modal_manager methods instead:
+        - main_window.modal_manager.show_error(title, message)
+        - main_window.modal_manager.show_coming_soon(title, message)
+        - main_window.modal_manager.show_wallet_selection()
+        - main_window.modal_manager.show_invite_code(relay_url, wallet, coldkey_address)
+        - main_window.modal_manager.show_terms_acceptance()
+        - main_window.modal_manager.show_wallet_import_success()
+    
     Args:
         dialog: The dialog to display
         widget: The widget calling the dialog (used to find the main window)
@@ -14,6 +24,13 @@ def show_modal_with_overlay(dialog, widget=None):
     Returns:
         Dialog result (QDialog.Accepted or QDialog.Rejected)
     """
+    import warnings
+    warnings.warn(
+        "show_modal_with_overlay() is deprecated. Use modal_manager methods instead.",
+        DeprecationWarning,
+        stacklevel=2
+    )
+    
     # Find main window
     main_window = None
     if widget:

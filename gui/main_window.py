@@ -8,7 +8,8 @@ from PySide6.QtWidgets import (
 
 from gui.theme import BitSOTATheme
 from gui.screens import StartScreen, WalletScreen, MiningScreen, ProfileScreen
-from gui.components import TopBar, ModalOverlay
+from gui.components.navigation.topbar import TopBar
+from gui.components.common.overlay import ModalOverlay
 from gui.managers import (
     WalletManager,
     ClientManager,
@@ -19,40 +20,40 @@ from gui.managers import (
 )
 
 class MiningWindow(QMainWindow):
-    """主窗口 - 协调各个管理器和屏幕"""
+    """Main window - coordinates managers and screens"""
 
     def __init__(self):
         super().__init__()
         
-        # 初始化窗口样式管理器
+        # Initialize window style manager
         self.style_manager = WindowStyleManager(self)
         self.style_manager.setup_window()
         
-        # 创建 UI
+        # Create UI
         self._create_ui()
         
-        # 应用主题
+        # Apply theme
         self._apply_theme()
         
-        # 初始化管理器
+        # Initialize managers
         self._initialize_managers()
         
-        # 连接信号
+        # Connect signals
         self._connect_signals()
         
-        # 尝试自动加载钱包
+        # Try to auto-load wallet
         self.wallet_manager.auto_load_wallet()
         
-        # 设置更新检查
+        # Setup update checker
         self.update_manager.setup()
 
     def showEvent(self, event):
-        """窗口显示事件 - 用于设置标题栏颜色"""
+        """Window show event - used for setting titlebar color"""
         super().showEvent(event)
         self.style_manager.handle_show_event(event)
 
     def _create_ui(self):
-        """创建 UI 组件"""
+        """Create UI components"""
         central_widget = QWidget()
         self.setCentralWidget(central_widget)
 
@@ -60,33 +61,33 @@ class MiningWindow(QMainWindow):
         main_layout.setContentsMargins(0, 0, 0, 0)
         main_layout.setSpacing(0)
 
-        # 内容堆栈（启动屏幕 + 主应用）
+        # Content stack (start screen + main app)
         self.content_stack = QStackedWidget()
         main_layout.addWidget(self.content_stack)
 
-        # 启动屏幕
+        # Start screen
         self.start_screen = StartScreen()
         self.content_stack.addWidget(self.start_screen)
 
-        # 主应用容器
+        # Main app container
         self.app_container = QWidget()
         self.app_container.setObjectName("app_container")
         app_layout = QVBoxLayout(self.app_container)
         app_layout.setContentsMargins(0, 0, 0, 0)
         app_layout.setSpacing(0)
 
-        # 顶部导航栏
+        # Top navigation bar
         self.topbar = TopBar()
         app_layout.addWidget(self.topbar)
 
-        # 内容区域包装器（带内边距）
+        # Content area wrapper (with padding)
         self.content_wrapper = QWidget()
         self.content_wrapper.setObjectName("content_wrapper")
         self.content_wrapper.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
         content_wrapper_layout = QVBoxLayout(self.content_wrapper)
         content_wrapper_layout.setContentsMargins(24, 24, 24, 24)
 
-        # 屏幕堆栈
+        # Screen stack
         self.screen_stack = QStackedWidget()
         self.screen_stack.setObjectName("screen_stack")
         self.screen_stack.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
@@ -104,28 +105,28 @@ class MiningWindow(QMainWindow):
 
         self.content_stack.addWidget(self.app_container)
 
-        # 创建模态覆盖层
+        # Create modal overlay
         self.modal_overlay = ModalOverlay(central_widget)
         self.modal_overlay.hide()
 
-        # 保留旧的 sidebar 引用以保持兼容性（但不添加到布局）
+        # Keep old sidebar reference for compatibility (but not added to layout)
         self.sidebar = None
 
     def _apply_theme(self):
-        """应用主题样式"""
+        """Apply theme styles"""
         self.setStyleSheet(BitSOTATheme.get_main_stylesheet())
         fonts = BitSOTATheme.get_font_system()
         self.setFont(fonts["primary"])
 
     def _initialize_managers(self):
-        """初始化所有管理器"""
-        # 钱包管理器
+        """Initialize all managers"""
+        # Wallet manager
         self.wallet_manager = WalletManager(self)
         
-        # 客户端管理器
+        # Client manager
         self.client_manager = ClientManager(self)
         
-        # 导航管理器
+        # Navigation manager
         self.navigation_manager = NavigationManager(
             self.content_stack,
             self.screen_stack,
@@ -138,7 +139,7 @@ class MiningWindow(QMainWindow):
             self.profile_screen
         )
         
-        # 模态框管理器
+        # Modal manager
         self.modal_manager = ModalManager(
             self,
             self.modal_overlay,
@@ -148,54 +149,58 @@ class MiningWindow(QMainWindow):
             self
         )
         
-        # 更新管理器
+        # Update manager
         self.update_manager = UpdateManager(self, self)
 
     def _connect_signals(self):
-        """连接信号和槽"""
-        # 启动屏幕
+        """Connect signals and slots"""
+        # Start screen
         self.start_screen.start_clicked.connect(self._on_start_clicked)
         
-        # 顶部导航栏
+        # Top navigation bar
         self.topbar.tab_changed.connect(self.navigation_manager.handle_tab_change)
         self.topbar.user_guide_clicked.connect(self.modal_manager.show_user_guide)
         self.topbar.wallet_clicked.connect(self._on_wallet_dropdown_clicked)
         
-        # 钱包屏幕
+        # Wallet screen
         self.wallet_screen.wallet_loaded.connect(self._on_wallet_loaded)
         self.wallet_screen.hotkey_imported.connect(self._on_hotkey_imported)
         
-        # 内容堆栈变化
+        # Content stack change
         self.content_stack.currentChanged.connect(self._on_stack_changed)
         
-        # 钱包管理器
+        # Wallet manager
         self.wallet_manager.wallet_loaded.connect(self._on_wallet_manager_loaded)
         self.wallet_manager.hotkey_imported.connect(self._on_wallet_manager_imported)
         self.wallet_manager.wallet_status_updated.connect(self._update_mining_screen_status)
         
-        # 模态框管理器
+        # Modal manager
         self.modal_manager.user_guide_completed.connect(self.navigation_manager.show_main_app)
         self.modal_manager.coldkey_address_submitted.connect(self.wallet_manager.save_coldkey_address)
+        self.modal_manager.invite_code_verified.connect(self._on_invite_code_verified)
+        self.modal_manager.wallet_selected.connect(self._on_wallet_selected_from_modal)
+        self.modal_manager.terms_accepted.connect(self._on_terms_accepted)
+        self.modal_manager.wallet_import_success_confirmed.connect(self._on_wallet_import_success_confirmed)
         
-        # 导航管理器
+        # Navigation manager
         self.navigation_manager.show_coming_soon.connect(self.modal_manager.show_coming_soon)
 
     def resizeEvent(self, event):
-        """窗口大小调整事件"""
+        """Window resize event"""
         super().resizeEvent(event)
         self.modal_manager.handle_resize_event()
 
     def _on_stack_changed(self, index):
-        """内容堆栈变化事件"""
+        """Content stack change event"""
         self.modal_manager.handle_stack_change()
 
     def _on_start_clicked(self):
-        """启动按钮点击"""
+        """Start button click"""
         self.modal_manager.show_user_guide()
 
     def _on_wallet_dropdown_clicked(self):
-        """钱包下拉菜单点击"""
-        # 可以在这里显示钱包详情或切换钱包模态框
+        """Wallet dropdown click"""
+        # Can show wallet details or switch wallet modal here
         pass
 
     def _on_wallet_loaded(
@@ -205,7 +210,7 @@ class MiningWindow(QMainWindow):
         use_existing_coldkey: bool,
         coldkey_address: str
     ):
-        """处理从钱包屏幕加载的钱包"""
+        """Handle wallet loaded from wallet screen"""
         success, error = self.wallet_manager.load_wallet(
             wallet_name,
             hotkey_name,
@@ -217,17 +222,17 @@ class MiningWindow(QMainWindow):
             self.modal_manager.show_error("Wallet Load Error", error)
             return
         
-        # 初始化客户端
+        # Initialize client
         wallet = self.wallet_manager.get_wallet()
         if wallet:
             self.client_manager.initialize_client(wallet)
         
-        # 检查是否需要提示输入 coldkey
+        # Check if coldkey prompt is needed
         if self.wallet_manager.needs_coldkey_prompt(use_existing_coldkey, coldkey_address):
             self.modal_manager.show_coldkey_prompt()
 
     def _on_hotkey_imported(self, hotkey_name: str, mnemonic: str, coldkey_address: str):
-        """处理从钱包屏幕导入的热钥"""
+        """Handle hotkey imported from wallet screen"""
         success, error = self.wallet_manager.import_hotkey(
             hotkey_name,
             mnemonic,
@@ -238,72 +243,99 @@ class MiningWindow(QMainWindow):
             self.modal_manager.show_error("Import Failed", error)
             return
         
-        # 初始化客户端
+        # Initialize client
         wallet = self.wallet_manager.get_wallet()
         if wallet:
             self.client_manager.initialize_client(wallet)
         
-        # 检查是否需要提示输入 coldkey
+        # Check if coldkey prompt is needed
         if not coldkey_address:
             self.modal_manager.show_coldkey_prompt()
 
     def _on_wallet_manager_loaded(self, wallet, wallet_name: str, display_address: str):
-        """钱包管理器加载钱包后的处理"""
-        # 更新顶部栏
+        """Handle wallet loaded by wallet manager"""
+        # Update topbar
         self.topbar.set_wallet_info(wallet_name, display_address)
         
-        # 初始化客户端
+        # Initialize client
         if wallet:
             self.client_manager.initialize_client(wallet)
         
-        # 如果是自动加载，导航到挖矿屏幕
-        # 通过检查当前是否在启动屏幕来判断
+        # If auto-loaded, navigate to mining screen
+        # Check by whether currently on start screen
         if self.content_stack.currentIndex() == 0:
             self.navigation_manager.auto_navigate_to_mining()
 
     def _on_wallet_manager_imported(self, wallet, wallet_name: str, display_address: str):
-        """钱包管理器导入热钥后的处理"""
-        # 更新顶部栏
+        """Handle hotkey imported by wallet manager"""
+        # Update topbar
         self.topbar.set_wallet_info(wallet_name, display_address)
         
-        # 初始化客户端
+        # Initialize client
         if wallet:
             self.client_manager.initialize_client(wallet)
 
     def _update_mining_screen_status(self, wallet_name: str):
-        """更新挖矿屏幕状态"""
+        """Update mining screen status"""
         if hasattr(self.mining_screen, 'update_wallet_status'):
             self.mining_screen.update_wallet_status(wallet_name)
             self.mining_screen.update_global_sota()
 
+    def _on_invite_code_verified(self):
+        """Handle invite code verification from modal_manager"""
+        # Route to mining screen
+        if hasattr(self.mining_screen, '_on_invite_code_verified'):
+            self.mining_screen._on_invite_code_verified()
+
+    def _on_wallet_selected_from_modal(self, wallet_name: str, hotkey_name: str, use_existing_coldkey: bool, coldkey_address: str):
+        """Handle wallet selection from modal_manager"""
+        # Route to wallet screen's signal
+        self.wallet_screen.wallet_loaded.emit(wallet_name, hotkey_name, use_existing_coldkey, coldkey_address)
+
+    def _on_terms_accepted(self):
+        """Handle terms acceptance from modal_manager"""
+        # Get pending import data from import screen
+        if hasattr(self.wallet_screen.import_screen, '_pending_import_data') and self.wallet_screen.import_screen._pending_import_data:
+            hotkey_name, mnemonic, coldkey_address = self.wallet_screen.import_screen._pending_import_data
+            self.wallet_screen.import_screen.imported.emit(hotkey_name, mnemonic, coldkey_address)
+            self.wallet_screen.import_screen._pending_import_data = None
+
+    def _on_wallet_import_success_confirmed(self):
+        """Handle wallet import success confirmation from modal_manager"""
+        # Finalize import process
+        if hasattr(self.wallet_screen, '_pending_finalize_data') and self.wallet_screen._pending_finalize_data:
+            hotkey_name, mnemonic, coldkey_address = self.wallet_screen._pending_finalize_data
+            self.wallet_screen._finalize_import(hotkey_name, mnemonic, coldkey_address)
+            self.wallet_screen._pending_finalize_data = None
+
     def get_current_sota(self):
-        """获取当前 SOTA 阈值（保留用于向后兼容）"""
+        """Get current SOTA threshold (kept for backward compatibility)"""
         return self.client_manager.fetch_current_sota()
 
     def _get_relay_endpoint_from_config(self):
-        """获取 relay endpoint（保留用于向后兼容）"""
+        """Get relay endpoint (kept for backward compatibility)"""
         return self.client_manager.get_relay_endpoint()
 
     def _prompt_for_coldkey_address(self):
-        """提示输入 coldkey 地址（保留用于向后兼容）"""
+        """Prompt for coldkey address (kept for backward compatibility)"""
         self.modal_manager.show_coldkey_prompt()
 
-    # 保留这些属性以保持向后兼容性
+    # Keep these properties for backward compatibility
     @property
     def wallet(self):
-        """获取当前钱包"""
+        """Get current wallet"""
         return self.wallet_manager.get_wallet()
 
     @property
     def client(self):
-        """获取当前客户端"""
+        """Get current client"""
         return self.client_manager.get_client()
 
     @property
     def coldkey_address(self):
-        """获取 coldkey 地址"""
+        """Get coldkey address"""
         return self.wallet_manager.get_coldkey_address()
     
     def show_modal_with_overlay(self, modal):
-        """显示带覆盖层的模态框（保留用于向后兼容）"""
+        """Show modal with overlay (kept for backward compatibility)"""
         return self.modal_manager.show_modal(modal)

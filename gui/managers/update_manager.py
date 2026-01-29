@@ -1,25 +1,25 @@
-"""更新管理器 - 负责检查更新和显示更新通知"""
+"""Update Manager - handles update checking and notifications"""
 
 import webbrowser
 from PySide6.QtCore import QObject, Signal, QTimer
 
 from gui.update_checker import UpdateChecker
-from gui.components import UpdateAvailableModal
+from gui.components.modals.update import UpdateAvailableModal
 
 
 class UpdateManager(QObject):
-    """管理应用程序更新检查和通知"""
+    """Manages application update checking and notifications"""
 
-    # 信号
+    # Signals
     update_available = Signal(dict)  # update_info
 
     def __init__(self, main_window, parent=None):
         """
-        初始化更新管理器
+        Initialize update manager
         
         Args:
-            main_window: 主窗口对象
-            parent: 父对象
+            main_window: Main window object
+            parent: Parent object
         """
         super().__init__(parent)
         self.main_window = main_window
@@ -27,17 +27,17 @@ class UpdateManager(QObject):
         self.update_check_timer = None
 
     def setup(self):
-        """设置更新检查器和定时器"""
-        # 启动后 2 秒检查更新
+        """Setup update checker and timer"""
+        # Check for updates 2 seconds after startup
         QTimer.singleShot(2000, self.check_on_startup)
 
-        # 每 24 小时定期检查更新
+        # Check for updates periodically every 24 hours
         self.update_check_timer = QTimer()
         self.update_check_timer.timeout.connect(self.check_periodic)
         self.update_check_timer.start(24 * 60 * 60 * 1000)  # 24 hours in ms
 
     def check_on_startup(self):
-        """启动时检查更新"""
+        """Check for updates on startup"""
         print("[UpdateManager] Checking for updates on startup...")
         update_info = self.update_checker.check_for_updates(force=True)
         if update_info:
@@ -48,7 +48,7 @@ class UpdateManager(QObject):
             print("[UpdateManager] No updates available")
 
     def check_periodic(self):
-        """定期检查更新"""
+        """Periodic update check"""
         print("[UpdateManager] Periodic update check...")
         update_info = self.update_checker.check_for_updates()
         if update_info:
@@ -58,20 +58,20 @@ class UpdateManager(QObject):
 
     def show_update_modal(self, update_info: dict):
         """
-        显示更新可用模态框
+        Show update available modal
         
         Args:
-            update_info: 更新信息字典
+            update_info: Update info dictionary
         """
-        # 获取 modal_manager（如果存在）
-        # 否则直接显示模态框
+        # Get modal_manager (if exists)
+        # Otherwise show modal directly
         if hasattr(self.main_window, 'modal_manager'):
             modal = UpdateAvailableModal(update_info, parent=self.main_window)
             modal.download_clicked.connect(lambda: self.download_update(update_info))
             modal.skip_clicked.connect(lambda: self.skip_version(update_info))
             self.main_window.modal_manager.show_modal(modal)
         else:
-            # 回退到直接显示
+            # Fallback to direct display
             modal = UpdateAvailableModal(update_info, parent=self.main_window)
             modal.download_clicked.connect(lambda: self.download_update(update_info))
             modal.skip_clicked.connect(lambda: self.skip_version(update_info))
@@ -79,10 +79,10 @@ class UpdateManager(QObject):
 
     def download_update(self, update_info: dict):
         """
-        打开下载链接
+        Open download link
         
         Args:
-            update_info: 更新信息字典
+            update_info: Update info dictionary
         """
         download_url = self.update_checker.get_download_url(update_info)
         if download_url:
@@ -93,10 +93,10 @@ class UpdateManager(QObject):
 
     def skip_version(self, update_info: dict):
         """
-        跳过此版本
+        Skip this version
         
         Args:
-            update_info: 更新信息字典
+            update_info: Update info dictionary
         """
         self.update_checker.skip_version(update_info['new_version_code'])
         print(f"Skipped version {update_info['new_version']}")

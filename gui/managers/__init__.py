@@ -1,6 +1,6 @@
-"""GUI Managers - 管理器模块
+"""GUI Managers module
 
-负责将主窗口的各种职责拆分成独立的管理器类。
+Splits various responsibilities of the main window into independent manager classes.
 """
 
 from .wallet_manager import WalletManager

@@ -1,14 +1,54 @@
-"""GUI components package."""
+"""GUI components package - reorganized into categorized structure
 
-from .button import PrimaryButton, SecondaryButton
-from .topbar import TopBar
-from .tab_switcher import TabSwitcher
-from .modal import ConfirmationModal
-from .user_guide_modal import UserGuideModal
-from .invite_code_modal import InviteCodeModal
-from .coldkey_address_modal import ColdkeyAddressModal
-from .coming_soon_modal import ComingSoonModal
-from .update_modal import UpdateAvailableModal
-from .overlay import ModalOverlay, show_modal_with_overlay
+Components are now categorized into sub-packages:
+- common: Common UI components (buttons, overlay, tab switcher)
+- modals: All modal dialog components
+- navigation: Navigation components (topbar, etc.)
 
-__all__ = ["PrimaryButton", "SecondaryButton", "Sidebar", "TopBar", "TabSwitcher", "ConfirmationModal", "UserGuideModal", "InviteCodeModal", "ColdkeyAddressModal", "ComingSoonModal", "UpdateAvailableModal", "ModalOverlay", "show_modal_with_overlay"]
+For backward compatibility, all components can still be imported from here.
+"""
+
+# Import common components from sub-packages
+from .common.button import PrimaryButton, SecondaryButton
+from .common.overlay import ModalOverlay, show_modal_with_overlay
+from .common.tab_switcher import TabSwitcher
+
+# Import navigation components from sub-packages
+from .navigation.topbar import TopBar
+
+# Import modal components from sub-packages
+from .modals.base import ConfirmationModal
+from .modals.coldkey_address import ColdkeyAddressModal
+from .modals.coming_soon import ComingSoonModal
+from .modals.import_confirmation import (
+    ErrorModal,
+    TermsAcceptanceModal,
+    WalletImportedSuccessModal,
+)
+from .modals.invite_code import InviteCodeModal
+from .modals.update import UpdateAvailableModal
+from .modals.user_guide import UserGuideModal
+from .modals.wallet_selection import WalletSelectionModal
+
+# Export all components (maintain backward compatibility)
+__all__ = [
+    # Common components
+    "PrimaryButton",
+    "SecondaryButton",
+    "ModalOverlay",
+    "show_modal_with_overlay",
+    "TabSwitcher",
+    # Navigation components
+    "TopBar",
+    # Modal components
+    "ConfirmationModal",
+    "ColdkeyAddressModal",
+    "ComingSoonModal",
+    "ErrorModal",
+    "TermsAcceptanceModal",
+    "WalletImportedSuccessModal",
+    "InviteCodeModal",
+    "UpdateAvailableModal",
+    "UserGuideModal",
+    "WalletSelectionModal",
+]

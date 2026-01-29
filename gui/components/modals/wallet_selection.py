@@ -9,7 +9,7 @@ import os
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", ".."))
 
-from gui.components.overlay import show_modal_with_overlay
+from gui.components.common.overlay import show_modal_with_overlay
 from gui.wallet_utils_gui import discover_wallets
 from gui.resource_path import resource_path
 
@@ -203,7 +203,7 @@ class WalletSelectionModal(QDialog):
 
     def _on_checkbox_state_changed(self, state):
         if state == Qt.CheckState.Checked.value and not self.current_coldkey_address:
-            from gui.components.import_confirmation_modals import ErrorModal
+            from gui.components.modals.import_confirmation import ErrorModal
             error_modal = ErrorModal(
                 "No Coldkey Found",
                 "This wallet does not have an associated coldkey address. Please provide a coldkey address on the next screen.",

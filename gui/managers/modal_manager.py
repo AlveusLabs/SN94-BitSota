@@ -1,23 +1,31 @@
-"""模态框管理器 - 负责模态框显示和覆盖层管理"""
+"""Modal Manager - handles modal display and overlay management"""
 
 from PySide6.QtCore import QObject, Signal, QTimer
 from PySide6.QtWidgets import QStackedWidget, QWidget
 
-from gui.components import (
-    UserGuideModal,
-    ColdkeyAddressModal,
-    ComingSoonModal,
-    ModalOverlay,
+from gui.components.modals.user_guide import UserGuideModal
+from gui.components.modals.coldkey_address import ColdkeyAddressModal
+from gui.components.modals.coming_soon import ComingSoonModal
+from gui.components.common.overlay import ModalOverlay
+from gui.components.modals.import_confirmation import (
+    ErrorModal,
+    TermsAcceptanceModal,
+    WalletImportedSuccessModal
 )
-from gui.components.import_confirmation_modals import ErrorModal
+from gui.components.modals.invite_code import InviteCodeModal
+from gui.components.modals.wallet_selection import WalletSelectionModal
 
 
 class ModalManager(QObject):
-    """管理模态框的显示和覆盖层"""
+    """Manages modal dialogs and overlay"""
 
-    # 信号
+    # Signals
     user_guide_completed = Signal()
     coldkey_address_submitted = Signal(str)  # address
+    invite_code_verified = Signal()
+    wallet_selected = Signal(str, str, bool, str)  # wallet_name, hotkey_name, use_existing_coldkey, coldkey_address
+    terms_accepted = Signal()
+    wallet_import_success_confirmed = Signal()
 
     def __init__(
         self,
@@ -29,15 +37,15 @@ class ModalManager(QObject):
         parent=None
     ):
         """
-        初始化模态框管理器
+        Initialize modal manager
         
         Args:
-            main_window: 主窗口对象
-            modal_overlay: 模态覆盖层组件
-            content_stack: 内容堆栈
-            screen_stack: 屏幕堆栈
-            app_container: 应用容器
-            parent: 父对象
+            main_window: Main window object
+            modal_overlay: Modal overlay component
+            content_stack: Content stack
+            screen_stack: Screen stack
+            app_container: App container
+            parent: Parent object
         """
         super().__init__(parent)
         self.main_window = main_window
@@ -48,35 +56,35 @@ class ModalManager(QObject):
 
     def show_modal(self, modal):
         """
-        显示模态框并管理覆盖层
+        Show modal dialog and manage overlay
         
         Args:
-            modal: 要显示的模态框对象
+            modal: Modal object to display
             
         Returns:
-            模态框的返回值
+            Return value of the modal
         """
-        # 更新覆盖层几何以匹配 screen_stack
+        # Update overlay geometry to match screen_stack
         self.update_overlay_geometry()
         self.modal_overlay.raise_()
         self.modal_overlay.show()
 
-        # 显示对话框
+        # Show dialog
         result = modal.exec()
 
-        # 对话框关闭后隐藏覆盖层
+        # Hide overlay after dialog is closed
         self.modal_overlay.hide()
 
         return result
 
     def update_overlay_geometry(self):
-        """更新覆盖层位置和大小以匹配内容区域"""
-        # 仅在 app_container 可见时更新
+        """Update overlay position and size to match content area"""
+        # Only update when app_container is visible
         if self.content_stack.currentWidget() == self.app_container:
-            # 获取 screen_stack 相对于中央 widget 的位置
+            # Get screen_stack position relative to central widget
             central_widget = self.main_window.centralWidget()
             pos = self.screen_stack.mapTo(central_widget, self.screen_stack.rect().topLeft())
-            # 设置覆盖层几何以匹配 screen_stack
+            # Set overlay geometry to match screen_stack
             self.modal_overlay.setGeometry(
                 pos.x(),
                 pos.y(),
@@ -85,52 +93,105 @@ class ModalManager(QObject):
             )
 
     def handle_resize_event(self):
-        """处理窗口大小调整事件"""
+        """Handle window resize event"""
         self.update_overlay_geometry()
 
     def handle_stack_change(self):
-        """处理堆栈变化事件"""
-        # 使用 QTimer 确保布局完成后再更新
+        """Handle stack change event"""
+        # Use QTimer to ensure layout is complete before updating
         QTimer.singleShot(0, self.update_overlay_geometry)
 
     def show_user_guide(self):
-        """显示用户指南模态框"""
+        """Show user guide modal"""
         guide_modal = UserGuideModal(parent=self.main_window)
         guide_modal.proceed_clicked.connect(self._on_user_guide_proceed)
         self.show_modal(guide_modal)
 
     def _on_user_guide_proceed(self):
-        """用户指南完成后的处理"""
+        """Handle user guide completion"""
         self.user_guide_completed.emit()
 
     def show_coldkey_prompt(self):
-        """显示 coldkey 地址输入提示"""
+        """Show coldkey address input prompt"""
         coldkey_modal = ColdkeyAddressModal(parent=self.main_window)
         coldkey_modal.address_submitted.connect(self._on_coldkey_submitted)
         self.show_modal(coldkey_modal)
 
     def _on_coldkey_submitted(self, address: str):
-        """Coldkey 地址提交后的处理"""
+        """Handle coldkey address submission"""
         self.coldkey_address_submitted.emit(address)
 
     def show_coming_soon(self, title: str, message: str):
         """
-        显示"即将推出"模态框
+        Show 'coming soon' modal
         
         Args:
-            title: 标题
-            message: 消息内容
+            title: Title
+            message: Message content
         """
         modal = ComingSoonModal(title, message, parent=self.main_window)
         self.show_modal(modal)
 
     def show_error(self, title: str, message: str):
         """
-        显示错误模态框
+        Show error modal
         
         Args:
-            title: 错误标题
-            message: 错误消息
+            title: Error title
+            message: Error message
         """
         error_modal = ErrorModal(title, message, parent=self.main_window)
         self.show_modal(error_modal)
+
+    def show_invite_code(self, relay_url: str, wallet, coldkey_address: str = None):
+        """
+        Show invite code modal
+        
+        Args:
+            relay_url: Relay URL
+            wallet: Wallet object
+            coldkey_address: Optional coldkey address
+        """
+        invite_modal = InviteCodeModal(
+            relay_url=relay_url,
+            wallet=wallet,
+            coldkey_address=coldkey_address,
+            parent=self.main_window
+        )
+        invite_modal.code_verified.connect(self._on_invite_code_verified)
+        self.show_modal(invite_modal)
+
+    def _on_invite_code_verified(self):
+        """Handle invite code verification"""
+        self.invite_code_verified.emit()
+
+    def show_wallet_selection(self):
+        """Show wallet selection modal"""
+        wallet_modal = WalletSelectionModal(parent=self.main_window)
+        wallet_modal.wallet_selected.connect(self._on_wallet_selected)
+        self.show_modal(wallet_modal)
+
+    def _on_wallet_selected(self, wallet_name: str, hotkey_name: str, use_existing_coldkey: bool, coldkey_address: str):
+        """Handle wallet selection"""
+        self.wallet_selected.emit(wallet_name, hotkey_name, use_existing_coldkey, coldkey_address)
+
+    def show_terms_acceptance(self):
+        """Show terms acceptance modal"""
+        terms_modal = TermsAcceptanceModal(parent=self.main_window)
+        terms_modal.confirmed.connect(self._on_terms_accepted)
+        self.show_modal(terms_modal)
+
+    def _on_terms_accepted(self):
+        """Handle terms acceptance"""
+        self.terms_accepted.emit()
+
+    def show_wallet_import_success(self):
+        """Show wallet imported successfully modal"""
+        success_modal = WalletImportedSuccessModal(parent=self.main_window)
+        success_modal.start_mining.connect(self._on_wallet_import_success_confirmed)
+        success_modal.rejected.connect(self._on_wallet_import_success_confirmed)
+        self.show_modal(success_modal)
+
+    def _on_wallet_import_success_confirmed(self):
+        """Handle wallet import success confirmation"""
+        self.wallet_import_success_confirmed.emit()

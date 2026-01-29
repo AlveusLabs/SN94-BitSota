@@ -1,4 +1,4 @@
-"""钱包管理器 - 负责钱包加载、导入和 coldkey 管理"""
+"""Wallet Manager - handles wallet loading, import and coldkey management"""
 
 import uuid
 from typing import Optional
@@ -17,9 +17,9 @@ from gui.wallet_utils_gui import (
 
 
 class WalletManager(QObject):
-    """管理钱包的加载、导入和 coldkey 地址"""
+    """Manages wallet loading, import and coldkey address"""
 
-    # 信号
+    # Signals
     wallet_loaded = Signal(object, str, str)  # wallet, wallet_name, display_address
     hotkey_imported = Signal(object, str, str)  # wallet, wallet_name, display_address
     coldkey_submitted = Signal(str)  # coldkey_address
@@ -38,18 +38,18 @@ class WalletManager(QObject):
         coldkey_address: str
     ) -> tuple[bool, Optional[str]]:
         """
-        加载钱包
+        Load wallet
         
         Args:
-            wallet_name: 钱包名称
-            hotkey_name: 热钥名称
-            use_existing_coldkey: 是否使用现有 coldkey
-            coldkey_address: Coldkey 地址
+            wallet_name: Wallet name
+            hotkey_name: Hotkey name
+            use_existing_coldkey: Whether to use existing coldkey
+            coldkey_address: Coldkey address
             
         Returns:
             (success, error_message)
         """
-        # 查找钱包目录
+        # Find wallet directory
         wallet_dir = None
         wallets = discover_wallets()
         for w_name, hotkeys, source in wallets:
@@ -63,10 +63,10 @@ class WalletManager(QObject):
         if not wallet_dir:
             wallet_dir = str(get_wallet_dir())
 
-        # 创建钱包对象
+        # Create wallet object
         self.wallet = Wallet(name=wallet_name, hotkey=hotkey_name, path=wallet_dir)
 
-        # 获取热钥地址
+        # Get hotkey address
         try:
             hotkey = self.wallet.get_hotkey()
             address = hotkey.ss58_address
@@ -75,7 +75,7 @@ class WalletManager(QObject):
             print(f"Error loading hotkey: {e}")
             return False, f"Error loading hotkey: {e}"
 
-        # 处理 coldkey 地址
+        # Handle coldkey address
         if use_existing_coldkey and coldkey_address:
             self.coldkey_address = coldkey_address
             save_coldkey_address(coldkey_address)
@@ -90,7 +90,7 @@ class WalletManager(QObject):
         else:
             display_address = short_address
 
-        # 发送信号
+        # Emit signals
         self.wallet_loaded.emit(self.wallet, wallet_name, display_address)
         self.wallet_status_updated.emit(wallet_name)
 
@@ -103,12 +103,12 @@ class WalletManager(QObject):
         coldkey_address: str
     ) -> tuple[bool, Optional[str]]:
         """
-        导入热钥
+        Import hotkey
         
         Args:
-            hotkey_name: 热钥名称
-            mnemonic: 助记词
-            coldkey_address: Coldkey 地址
+            hotkey_name: Hotkey name
+            mnemonic: Mnemonic phrase
+            coldkey_address: Coldkey address
             
         Returns:
             (success, error_message)
@@ -117,20 +117,20 @@ class WalletManager(QObject):
         wallet_dir = str(get_wallet_dir())
 
         try:
-            # 创建钱包并导入热钥
+            # Create wallet and import hotkey
             self.wallet = Wallet(name=wallet_name, hotkey=hotkey_name, path=wallet_dir)
             self.wallet.import_hotkey_from_mnemonic(mnemonic, overwrite=True)
 
-            # 保存 coldkey 地址
+            # Save coldkey address
             self.coldkey_address = coldkey_address if coldkey_address else None
             save_wallet_settings(wallet_name, hotkey_name, coldkey_address)
 
-            # 获取热钥地址
+            # Get hotkey address
             hotkey = self.wallet.get_hotkey()
             address = hotkey.ss58_address
             short_address = f"{address[:6]}...{address[-4:]}" if address else "Unknown"
 
-            # 发送信号
+            # Emit signals
             self.hotkey_imported.emit(self.wallet, wallet_name, short_address)
             self.wallet_status_updated.emit(wallet_name)
 
@@ -142,10 +142,10 @@ class WalletManager(QObject):
 
     def auto_load_wallet(self) -> bool:
         """
-        尝试自动加载上次使用的钱包
+        Try to auto-load the last used wallet
         
         Returns:
-            是否成功加载
+            Whether successfully loaded
         """
         last_wallet_name, last_hotkey_name = get_last_wallet()
 
@@ -156,7 +156,7 @@ class WalletManager(QObject):
         wallet_dir = None
         wallet_found = False
 
-        # 查找钱包
+        # Find wallet
         for w_name, hotkeys, source in wallets:
             if w_name == last_wallet_name and last_hotkey_name in hotkeys:
                 wallet_found = True
@@ -174,15 +174,15 @@ class WalletManager(QObject):
             wallet_dir = str(get_wallet_dir())
 
         try:
-            # 加载钱包
+            # Load wallet
             self.wallet = Wallet(name=last_wallet_name, hotkey=last_hotkey_name, path=wallet_dir)
             hotkey = self.wallet.get_hotkey()
             address = hotkey.ss58_address
 
-            # 加载 coldkey 地址
+            # Load coldkey address
             self.coldkey_address = get_coldkey_address()
 
-            # 确定显示地址
+            # Determine display address
             if self.coldkey_address:
                 short_address = (
                     f"{self.coldkey_address[:6]}...{self.coldkey_address[-4:]}"
@@ -192,7 +192,7 @@ class WalletManager(QObject):
             else:
                 short_address = f"{address[:6]}...{address[-4:]}" if address else "Unknown"
 
-            # 发送信号
+            # Emit signals
             self.wallet_loaded.emit(self.wallet, last_wallet_name, short_address)
             self.wallet_status_updated.emit(last_wallet_name)
 
@@ -204,19 +204,19 @@ class WalletManager(QObject):
 
     def save_coldkey_address(self, address: str):
         """
-        保存 coldkey 地址
+        Save coldkey address
         
         Args:
-            address: Coldkey 地址
+            address: Coldkey address
         """
         self.coldkey_address = address
         save_coldkey_address(address)
         print(f"Coldkey address saved: {address}")
 
-        # 发送信号
+        # Emit signals
         self.coldkey_submitted.emit(address)
 
-        # 更新钱包显示
+        # Update wallet display
         short_address = (
             f"{address[:6]}...{address[-4:]}"
             if address and len(address) > 10
@@ -226,22 +226,22 @@ class WalletManager(QObject):
             self.wallet_loaded.emit(self.wallet, self.wallet.name, short_address)
 
     def get_wallet(self) -> Optional[Wallet]:
-        """获取当前钱包对象"""
+        """Get current wallet object"""
         return self.wallet
 
     def get_coldkey_address(self) -> Optional[str]:
-        """获取 coldkey 地址"""
+        """Get coldkey address"""
         return self.coldkey_address
 
     def needs_coldkey_prompt(self, use_existing_coldkey: bool, coldkey_address: str) -> bool:
         """
-        判断是否需要提示输入 coldkey 地址
+        Check if coldkey address prompt is needed
         
         Args:
-            use_existing_coldkey: 是否使用现有 coldkey
-            coldkey_address: Coldkey 地址
+            use_existing_coldkey: Whether using existing coldkey
+            coldkey_address: Coldkey address
             
         Returns:
-            是否需要提示
+            Whether prompt is needed
         """
         return not use_existing_coldkey or not coldkey_address

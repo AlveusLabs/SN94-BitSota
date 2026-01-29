@@ -1,13 +1,13 @@
-"""导航管理器 - 负责屏幕切换和导航路由"""
+"""Navigation Manager - handles screen switching and navigation routing"""
 
 from PySide6.QtCore import QObject, Signal, QTimer
 from PySide6.QtWidgets import QStackedWidget
 
 
 class NavigationManager(QObject):
-    """管理应用程序的屏幕导航和标签切换"""
+    """Manages application screen navigation and tab switching"""
 
-    # 信号
+    # Signals
     screen_changed = Signal(str)  # screen_name
     show_coming_soon = Signal(str, str)  # title, message
     tab_changed = Signal(str)  # tab_id
@@ -20,109 +20,109 @@ class NavigationManager(QObject):
         parent=None
     ):
         """
-        初始化导航管理器
+        Initialize navigation manager
         
         Args:
-            content_stack: 主内容堆栈（包含启动屏幕和应用容器）
-            screen_stack: 屏幕堆栈（包含钱包、挖矿、配置屏幕等）
-            topbar: 顶部导航栏
-            parent: 父对象
+            content_stack: Main content stack (contains start screen and app container)
+            screen_stack: Screen stack (contains wallet, mining, profile screens, etc.)
+            topbar: Top navigation bar
+            parent: Parent object
         """
         super().__init__(parent)
         self.content_stack = content_stack
         self.screen_stack = screen_stack
         self.topbar = topbar
         
-        # 屏幕引用
+        # Screen references
         self.wallet_screen = None
         self.mining_screen = None
         self.profile_screen = None
 
     def set_screens(self, wallet_screen, mining_screen, profile_screen):
         """
-        设置屏幕引用
+        Set screen references
         
         Args:
-            wallet_screen: 钱包屏幕
-            mining_screen: 挖矿屏幕
-            profile_screen: 配置屏幕
+            wallet_screen: Wallet screen
+            mining_screen: Mining screen
+            profile_screen: Profile screen
         """
         self.wallet_screen = wallet_screen
         self.mining_screen = mining_screen
         self.profile_screen = profile_screen
 
     def handle_start_click(self):
-        """处理启动屏幕的开始按钮点击"""
-        # 启动屏幕点击后显示用户指南
-        # 实际的用户指南显示由 ModalManager 处理
+        """Handle start button click on start screen"""
+        # Show user guide after start screen click
+        # Actual user guide display is handled by ModalManager
         pass
 
     def show_main_app(self):
-        """显示主应用界面（从启动屏幕切换到主应用）"""
+        """Show main app interface (switch from start screen to main app)"""
         self.content_stack.setCurrentIndex(1)
         self.screen_changed.emit("main_app")
 
     def handle_tab_change(self, tab_id: str):
         """
-        处理导航标签切换
+        Handle navigation tab switching
         
         Args:
-            tab_id: 标签ID（setup_wallet, mining, settings, profile）
+            tab_id: Tab ID (setup_wallet, mining, settings, profile)
         """
         if tab_id == "setup_wallet":
             self.navigate_to_wallet()
         elif tab_id == "mining":
             self.navigate_to_mining()
         elif tab_id == "profile":
-            # Profile 功能尚未实现，显示即将推出提示
+            # Profile feature not yet implemented, show coming soon prompt
             self.show_coming_soon.emit(
                 "Profile Screen",
                 "The Profile screen is coming soon! This screen will show your mining "
                 "history, rewards, and balances from both Direct Mining and Pool Mining. "
                 "You'll be able to view detailed statistics and claim your rewards."
             )
-            # 切换回挖矿标签
+            # Switch back to mining tab
             self.topbar.set_active_tab("mining")
         elif tab_id == "settings":
-            # Settings 功能可以在这里实现
+            # Settings feature can be implemented here
             pass
 
     def navigate_to_wallet(self):
-        """导航到钱包屏幕"""
+        """Navigate to wallet screen"""
         if self.wallet_screen:
             self.screen_stack.setCurrentWidget(self.wallet_screen)
             self.screen_changed.emit("wallet")
 
     def navigate_to_mining(self):
-        """导航到挖矿屏幕"""
+        """Navigate to mining screen"""
         if self.mining_screen:
             self.screen_stack.setCurrentWidget(self.mining_screen)
             self.screen_changed.emit("mining")
 
     def navigate_to_profile(self):
-        """导航到配置屏幕"""
+        """Navigate to profile screen"""
         if self.profile_screen:
             self.screen_stack.setCurrentWidget(self.profile_screen)
             self.screen_changed.emit("profile")
 
     def handle_wallet_connect(self):
-        """处理连接钱包请求"""
+        """Handle wallet connection request"""
         self.topbar.set_active_tab("setup_wallet")
         self.navigate_to_wallet()
 
     def handle_stack_change(self, index: int):
         """
-        处理内容堆栈变化
+        Handle content stack change
         
         Args:
-            index: 堆栈索引
+            index: Stack index
         """
-        # 当堆栈页面改变时，可以执行额外的操作
-        # 例如更新覆盖层几何等
+        # Additional operations can be performed when stack page changes
+        # For example, update overlay geometry, etc.
         pass
 
     def auto_navigate_to_mining(self):
-        """自动导航到挖矿屏幕（用于钱包自动加载后）"""
+        """Auto-navigate to mining screen (used after wallet auto-load)"""
         self.show_main_app()
         self.topbar.set_active_tab("mining")
         self.navigate_to_mining()

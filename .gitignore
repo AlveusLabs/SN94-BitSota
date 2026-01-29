@@ -12,3 +12,4 @@ venv/
 .venv/
 
 .cursor/
+miner_metrics.log
