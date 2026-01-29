@@ -67,7 +67,7 @@ class WalletSelectionModal(QDialog):
         self.setModal(True)
         self.setFixedSize(800, 650)
         # Remove system title bar
-        self.setWindowFlags(Qt.WindowType.FramelessWindowHint)
+        self.setWindowFlags(Qt.WindowType.FramelessWindowHint | Qt.WindowType.Dialog)
         self.selected_item = None
         self.wallet_items = []
         self.selected_wallet_source = None

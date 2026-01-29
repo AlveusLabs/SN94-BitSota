@@ -115,7 +115,7 @@ class UserGuideModal(QDialog):
         self.setModal(True)
         self.setFixedSize(560, 675)
         # Remove system title bar (red/yellow/green buttons on macOS)
-        self.setWindowFlags(Qt.WindowType.FramelessWindowHint)
+        self.setWindowFlags(Qt.WindowType.FramelessWindowHint | Qt.WindowType.Dialog)
         self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
         self.setup_ui()
 

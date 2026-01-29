@@ -78,7 +78,7 @@ class InviteCodeModal(QDialog):
         self.setModal(True)
         self.setFixedSize(440, 480)
         # Remove system title bar
-        self.setWindowFlags(Qt.WindowType.FramelessWindowHint)
+        self.setWindowFlags(Qt.WindowType.FramelessWindowHint | Qt.WindowType.Dialog)
         self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
         self.relay_url = relay_url
         self.wallet = wallet
