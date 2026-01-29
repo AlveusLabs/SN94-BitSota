@@ -13,7 +13,7 @@ class NavTabButton(QWidget):
         self.setObjectName("nav_tab")
         self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
         self.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.setFixedHeight(40)  # Fixed height 40px to match design
+        self.setFixedHeight(24)  # Fixed height 24px to match design
         self.is_active = False
 
         layout = QVBoxLayout(self)
@@ -151,7 +151,7 @@ class TopBar(QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setObjectName("topbar")
-        self.setFixedHeight(60)
+        self.setFixedHeight(48)
         self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
         self.tabs = {}
         self.current_tab = None
@@ -180,6 +180,7 @@ class TopBar(QWidget):
         # Center: Navigation menu
         self.nav_container = QHBoxLayout()
         self.nav_container.setSpacing(32)
+        self.nav_container.setContentsMargins(0, 6, 0, 0)
         layout.addLayout(self.nav_container)
 
         # Add navigation tabs

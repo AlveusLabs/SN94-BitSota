@@ -441,12 +441,13 @@ class BitSOTATheme:
         }}
         
         QWidget#content_wrapper {{
-            border-radius: 4px;
-            background-color: #0C0029;
+            background-color: {BitSOTATheme.BLACK100};
         }}
         
         QStackedWidget#screen_stack {{
             background-color: #F6F5F8;
+            padding: 32px;
+            border-radius: 4px;
         }}
 
         QPushButton#primary_button {{

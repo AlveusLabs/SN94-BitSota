@@ -196,7 +196,6 @@ class MiningScreen(QWidget):
         content_box.setObjectName("content_box")
         content_box.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
         content_layout = QVBoxLayout(content_box)
-        content_layout.setContentsMargins(32, 32, 32, 32)
         content_layout.setSpacing(0)
 
         # Tab switcher - centered display

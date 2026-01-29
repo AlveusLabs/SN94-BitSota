@@ -269,7 +269,6 @@ class WalletScreen(QWidget):
     def _create_initial_screen(self):
         screen = QWidget()
         layout = QVBoxLayout(screen)
-        layout.setContentsMargins(40, 40, 40, 40)
         layout.setSpacing(24)
 
         layout.addStretch(1)

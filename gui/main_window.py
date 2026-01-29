@@ -85,7 +85,7 @@ class MiningWindow(QMainWindow):
         self.content_wrapper.setObjectName("content_wrapper")
         self.content_wrapper.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
         content_wrapper_layout = QVBoxLayout(self.content_wrapper)
-        content_wrapper_layout.setContentsMargins(24, 24, 24, 24)
+        content_wrapper_layout.setContentsMargins(24, 16, 24, 24)
 
         # Screen stack
         self.screen_stack = QStackedWidget()
@@ -264,7 +264,7 @@ class MiningWindow(QMainWindow):
         # If auto-loaded, navigate to mining screen
         # Check by whether currently on start screen
         if self.content_stack.currentIndex() == 0:
-            self.navigation_manager.auto_navigate_to_mining()
+            self.navigation_manager.auto_navigate_to_profile() # TODO: Change to mining screen
 
     def _on_wallet_manager_imported(self, wallet, wallet_name: str, display_address: str):
         """Handle hotkey imported by wallet manager"""

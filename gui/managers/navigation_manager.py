@@ -75,14 +75,15 @@ class NavigationManager(QObject):
             self.navigate_to_mining()
         elif tab_id == "profile":
             # Profile feature not yet implemented, show coming soon prompt
-            self.show_coming_soon.emit(
-                "Profile Screen",
-                "The Profile screen is coming soon! This screen will show your mining "
-                "history, rewards, and balances from both Direct Mining and Pool Mining. "
-                "You'll be able to view detailed statistics and claim your rewards."
-            )
+            # self.show_coming_soon.emit(
+            #     "Profile Screen",
+            #     "The Profile screen is coming soon! This screen will show your mining "
+            #     "history, rewards, and balances from both Direct Mining and Pool Mining. "
+            #     "You'll be able to view detailed statistics and claim your rewards."
+            # )
             # Switch back to mining tab
-            self.topbar.set_active_tab("mining")
+            # self.topbar.set_active_tab("mining")
+            self.navigate_to_profile()
         elif tab_id == "settings":
             # Settings feature can be implemented here
             pass
@@ -126,3 +127,9 @@ class NavigationManager(QObject):
         self.show_main_app()
         self.topbar.set_active_tab("mining")
         self.navigate_to_mining()
+
+    def auto_navigate_to_profile(self):
+        """Auto-navigate to profile screen (used after wallet auto-load)"""
+        self.show_main_app()
+        self.topbar.set_active_tab("profile")
+        self.navigate_to_profile()
