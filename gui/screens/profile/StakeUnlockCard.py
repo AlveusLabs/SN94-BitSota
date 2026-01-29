@@ -1,13 +1,12 @@
-from PySide6.QtCore import Qt, Signal
+from PySide6.QtCore import Qt, Signal, QSize
 from PySide6.QtWidgets import (
     QWidget,
     QVBoxLayout,
     QHBoxLayout,
     QLabel,
+    QPushButton,
 )
 from PySide6.QtSvgWidgets import QSvgWidget
-
-from gui.components import PrimaryButton
 from gui.resource_path import resource_path
 from .StatsCard import StatsCard
 from .ChartWidget import ChartWidget
@@ -56,6 +55,17 @@ QLabel#axis_label {
     font-size: 12px;
     color: rgba(12, 0, 41, 0.8);
 }
+QPushButton#stake_btn {
+    background-color: #150049;
+    color: #71DADE;
+    border: none;
+    border-radius: 4px;
+    font-size: 14px;
+    font-weight: 600;
+}
+QPushButton#stake_btn:hover {
+    background-color: #6A1B9A;
+}
 """
 
 
@@ -88,6 +98,14 @@ class StakeUnlockCard(StatsCard):
         layout.setContentsMargins(24, 24, 24, 24)
         layout.setSpacing(0)
         
+        # ========== Top Section (Header + Stats, max height 150px) ==========
+        top_section = QWidget()
+        top_section.setMaximumHeight(115)
+
+        top_layout = QVBoxLayout(top_section)
+        top_layout.setContentsMargins(0, 0, 0, 0)
+        top_layout.setSpacing(0)
+        
         # ========== Header Area ==========
         header = QWidget()
         header_layout = QHBoxLayout(header)
@@ -105,8 +123,8 @@ class StakeUnlockCard(StatsCard):
         header_layout.addWidget(title_label)
         header_layout.addStretch()
         
-        layout.addWidget(header)
-        # layout.addSpacing(24)
+        top_layout.addWidget(header)
+        top_layout.addSpacing(24)
         
         # ========== Stats Value Row ==========
         stats_row = QWidget()
@@ -129,11 +147,16 @@ class StakeUnlockCard(StatsCard):
         stats_layout.addStretch()
         
         # Stake button
-        self.stake_btn = PrimaryButton("Stake", width=100, height=40)
+        self.stake_btn = QPushButton("Stake")
+        self.stake_btn.setObjectName("stake_btn")
+        self.stake_btn.setFixedSize(QSize(87, 40))
+        self.stake_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self.stake_btn.clicked.connect(self.stake_clicked.emit)
         stats_layout.addWidget(self.stake_btn)
         
-        layout.addWidget(stats_row)
+        top_layout.addWidget(stats_row)
+        
+        layout.addWidget(top_section)
         layout.addSpacing(18)
         
         # ========== Total Pool Stake ==========

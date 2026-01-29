@@ -1,13 +1,12 @@
-from PySide6.QtCore import Qt, Signal
+from PySide6.QtCore import Qt, Signal, QSize
 from PySide6.QtWidgets import (
     QWidget,
     QVBoxLayout,
     QHBoxLayout,
     QLabel,
+    QPushButton,
 )
 from PySide6.QtSvgWidgets import QSvgWidget
-
-from gui.components import PrimaryButton
 from gui.resource_path import resource_path
 from .StatsCard import StatsCard
 from .SegmentedProgressBar import SegmentedProgressBar
@@ -55,6 +54,17 @@ QWidget#legend_dot_purple {
 QWidget#legend_dot_cyan {
     background-color: #71DADE;
     border-radius: 4px;
+}
+QPushButton#claim_btn {
+    background-color: #150049;
+    color: #71DADE;
+    border: none;
+    border-radius: 4px;
+    font-size: 14px;
+    font-weight: 600;
+}
+QPushButton#claim_btn:hover {
+    background-color: #6A1B9A;
 }
 """
 
@@ -185,7 +195,10 @@ class ClaimableRewardCard(StatsCard):
         value_layout.addStretch()
         
         # ========== Claim Button ==========
-        self.claim_btn = PrimaryButton("Claim", width=100, height=40)
+        self.claim_btn = QPushButton("Claim")
+        self.claim_btn.setObjectName("claim_btn")
+        self.claim_btn.setFixedSize(QSize(87, 40))
+        self.claim_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self.claim_btn.clicked.connect(self.claim_clicked.emit)
         value_layout.addWidget(self.claim_btn)
         
