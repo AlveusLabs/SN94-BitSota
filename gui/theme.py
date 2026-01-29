@@ -445,7 +445,7 @@ class BitSOTATheme:
         }}
         
         QStackedWidget#screen_stack {{
-            background-color: #F6F5F8;
+            background-color: {BitSOTATheme.CONTENT_BOX_BG};
             padding: 32px;
             border-radius: 4px;
         }}
