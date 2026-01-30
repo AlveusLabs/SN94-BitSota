@@ -1,18 +1,74 @@
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QLabel,
-    QPushButton, QScrollArea, QWidget
+    QScrollArea, QWidget
 )
 from PySide6.QtSvgWidgets import QSvgWidget
 from gui.resource_path import resource_path
+from gui.theme import BitSOTATheme
+from gui.components.common.button import PrimaryButton
 
 
 class AccordionItem(QWidget):
+    """Accordion item component for collapsible content sections."""
+    
+    @staticmethod
+    def get_stylesheet():
+        """Get the stylesheet for AccordionItem component."""
+        return f"""
+            AccordionItem {{
+                background-color: transparent;
+            }}
+            
+            QWidget {{
+                background-color: transparent;
+            }}
+            
+            QLabel#accordion_title {{
+                background: transparent;
+                color: {BitSOTATheme.COLOR1};
+                font-family: "Geist", -apple-system, BlinkMacSystemFont, sans-serif;
+                font-size: 14px;
+                font-weight: 500;
+            }}
+            
+            QLabel#accordion_item_title {{
+                background-color: transparent;
+                color: {BitSOTATheme.COLOR1};
+                font-family: "Geist", -apple-system, BlinkMacSystemFont, sans-serif;
+                font-size: 14px;
+                font-weight: 500;
+                line-height: 150%;
+            }}
+            
+            QLabel#accordion_item_desc {{
+                background-color: transparent;
+                color: {BitSOTATheme.COLOR1_60};
+                font-family: "Geist", -apple-system, BlinkMacSystemFont, sans-serif;
+                font-size: 14px;
+                font-weight: 400;
+                line-height: 150%;
+                margin-left: 16px;
+            }}
+            
+            QLabel#accordion_item_text {{
+                background-color: transparent;
+                color: {BitSOTATheme.COLOR1};
+                font-family: "Geist", -apple-system, BlinkMacSystemFont, sans-serif;
+                font-size: 14px;
+                font-weight: 400;
+                line-height: 150%;
+            }}
+        """
+    
     def __init__(self, title: str, content_items: list, parent=None):
         super().__init__(parent)
-        self.setStyleSheet("AccordionItem { background-color: transparent; }")
         self.is_expanded = False
         self.content_items = content_items
+        
+        # Apply component stylesheet
+        self.setStyleSheet(self.get_stylesheet())
+        
         self.setup_ui(title)
 
     def setup_ui(self, title: str):
@@ -21,7 +77,6 @@ class AccordionItem(QWidget):
         self.main_layout.setSpacing(0)
 
         self.header = QWidget()
-        self.header.setStyleSheet("QWidget { background-color: transparent; }")
         self.header.setCursor(Qt.CursorShape.PointingHandCursor)
         header_layout = QHBoxLayout(self.header)
         header_layout.setContentsMargins(16, 16, 16, 16)
@@ -33,13 +88,6 @@ class AccordionItem(QWidget):
 
         self.title_label = QLabel(title)
         self.title_label.setObjectName("accordion_title")
-        self.title_label.setStyleSheet("""
-            background: transparent;
-            color: #150049;
-            font-family: "Geist", -apple-system, BlinkMacSystemFont, sans-serif;
-            font-size: 14px;
-            font-weight: 500;
-        """)
         header_layout.addWidget(self.title_label)
         header_layout.addStretch()
 
@@ -51,7 +99,6 @@ class AccordionItem(QWidget):
         self.main_layout.addWidget(self.header)
 
         self.content_widget = QWidget()
-        self.content_widget.setStyleSheet("QWidget { background-color: transparent; }")
         content_layout = QVBoxLayout(self.content_widget)
         content_layout.setContentsMargins(16, 0, 16, 16)
         content_layout.setSpacing(8)
@@ -59,40 +106,18 @@ class AccordionItem(QWidget):
         for item in self.content_items:
             if isinstance(item, dict):
                 item_label = QLabel(f"• {item['title']}")
+                item_label.setObjectName("accordion_item_title")
                 item_label.setWordWrap(True)
-                item_label.setStyleSheet("""
-                    background-color: transparent;
-                    color: #150049;
-                    font-family: "Geist", -apple-system, BlinkMacSystemFont, sans-serif;
-                    font-size: 14px;
-                    font-weight: 500;
-                    line-height: 150%;
-                """)
                 content_layout.addWidget(item_label)
 
                 desc_label = QLabel(item['description'])
+                desc_label.setObjectName("accordion_item_desc")
                 desc_label.setWordWrap(True)
-                desc_label.setStyleSheet("""
-                    background-color: transparent;
-                    color: rgba(21, 0, 73, 0.60);
-                    font-family: "Geist", -apple-system, BlinkMacSystemFont, sans-serif;
-                    font-size: 14px;
-                    font-weight: 400;
-                    line-height: 150%;
-                    margin-left: 16px;
-                """)
                 content_layout.addWidget(desc_label)
             else:
                 item_label = QLabel(item)
+                item_label.setObjectName("accordion_item_text")
                 item_label.setWordWrap(True)
-                item_label.setStyleSheet("""
-                    background-color: transparent;
-                    color: #150049;
-                    font-family: "Geist", -apple-system, BlinkMacSystemFont, sans-serif;
-                    font-size: 14px;
-                    font-weight: 400;
-                    line-height: 150%;
-                """)
                 content_layout.addWidget(item_label)
 
         self.content_widget.hide()
@@ -107,23 +132,137 @@ class AccordionItem(QWidget):
 
 
 class UserGuideModal(QDialog):
+    """User Guide modal dialog component."""
+    
+    # Constants
+    MODAL_WIDTH = 560
+    MODAL_HEIGHT = 675
+    MODAL_PADDING = 32
+    SECTION_SPACING = 16
+    BUTTON_WIDTH = MODAL_WIDTH - (MODAL_PADDING * 2)  # 496
+    
     proceed_clicked = Signal()
+    
+    @staticmethod
+    def get_stylesheet():
+        """Get the stylesheet for UserGuideModal component."""
+        return f"""
+            QDialog#modal_dialog {{
+                background-color: {BitSOTATheme.CONTENT_BOX_BG};
+                border: none;
+                border-radius: 4px;
+            }}
+            
+            QLabel#modal_title {{
+                color: {BitSOTATheme.BLACK100};
+                font-family: "PingFang SC", "Microsoft YaHei", "Geist", -apple-system, BlinkMacSystemFont, sans-serif;
+                font-size: 24px;
+                font-weight: 600;
+            }}
+            
+            QScrollArea {{
+                border: none;
+                background-color: transparent;
+            }}
+            
+            QWidget#scroll_content {{
+                background-color: {BitSOTATheme.CONTENT_BOX_BG};
+            }}
+            
+            QLabel#section_title {{
+                background-color: transparent;
+                color: {BitSOTATheme.COLOR1};
+                font-family: "Geist", -apple-system, BlinkMacSystemFont, sans-serif;
+                font-size: 16px;
+                font-weight: 500;
+                margin-bottom: 8px;
+            }}
+            
+            QWidget#content_container {{
+                background-color: {BitSOTATheme.COLOR1_04};
+                border-radius: 8px;
+            }}
+            
+            QWidget#separator {{
+                background-color: {BitSOTATheme.COLOR1_12};
+            }}
+            
+            QLabel#command_label {{
+                background-color: {BitSOTATheme.COLOR1_08};
+                color: {BitSOTATheme.COLOR1};
+                font-family: "SF Mono", "Monaco", "Consolas", "Courier New", monospace;
+                font-size: 13px;
+                font-weight: 500;
+                padding: 12px;
+                border-radius: 6px;
+                border: 1px solid {BitSOTATheme.COLOR1_12};
+            }}
+            
+            QLabel#step_number {{
+                background-color: rgba(109, 96, 142, 0.16);
+                color: {BitSOTATheme.COLOR1};
+                border-radius: 4px;
+                font-family: "Geist", -apple-system, BlinkMacSystemFont, sans-serif;
+                font-size: 14px;
+                font-weight: 500;
+            }}
+            
+            QLabel#step_text {{
+                background-color: transparent;
+                color: {BitSOTATheme.COLOR1};
+                font-family: "Geist", -apple-system, BlinkMacSystemFont, sans-serif;
+                font-size: 14px;
+                font-weight: 400;
+            }}
+            
+            QLabel#info_text {{
+                background-color: transparent;
+                color: {BitSOTATheme.COLOR1};
+                font-family: "Geist", -apple-system, BlinkMacSystemFont, sans-serif;
+                font-size: 14px;
+                font-weight: 400;
+                line-height: 150%;
+            }}
+            
+            QLabel#note_text {{
+                background-color: transparent;
+                color: {BitSOTATheme.COLOR1_60};
+                font-family: "Geist", -apple-system, BlinkMacSystemFont, sans-serif;
+                font-size: 13px;
+                font-weight: 400;
+                font-style: italic;
+                line-height: 150%;
+            }}
+        """
 
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setObjectName("modal_dialog")
         self.setModal(True)
-        self.setFixedSize(560, 675)
-        # Remove system title bar (red/yellow/green buttons on macOS)
+        self.setFixedSize(self.MODAL_WIDTH, self.MODAL_HEIGHT)
         self.setWindowFlags(Qt.WindowType.FramelessWindowHint | Qt.WindowType.Dialog)
         self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
+        self.setStyleSheet(self.get_stylesheet())
         self.setup_ui()
 
     def setup_ui(self):
+        """Setup the main UI layout."""
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(32, 24, 32, 24)
+        layout.setContentsMargins(self.MODAL_PADDING, 24, self.MODAL_PADDING, 24)
         layout.setSpacing(24)
 
+        # Header
+        layout.addLayout(self._create_header())
+        
+        # Scrollable content
+        scroll_area = self._create_scroll_area()
+        layout.addWidget(scroll_area, 1)
+        
+        # Proceed button
+        layout.addWidget(self._create_proceed_button())
+
+    def _create_header(self):
+        """Create the modal header with title and close button."""
         header_layout = QHBoxLayout()
         header_layout.setSpacing(8)
 
@@ -136,282 +275,217 @@ class UserGuideModal(QDialog):
         header_layout.addWidget(title_label)
         header_layout.addStretch()
 
-        close_btn_widget = QSvgWidget(resource_path("gui/images/cancel.svg"))
-        close_btn_widget.setFixedSize(24, 24)
-        close_btn_widget.setCursor(Qt.CursorShape.PointingHandCursor)
-        close_btn_widget.mousePressEvent = lambda event: self.reject()
-        header_layout.addWidget(close_btn_widget)
+        close_btn = QSvgWidget(resource_path("gui/images/cancel.svg"))
+        close_btn.setFixedSize(24, 24)
+        close_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        close_btn.mousePressEvent = lambda event: self.reject()
+        header_layout.addWidget(close_btn)
 
-        layout.addLayout(header_layout)
+        return header_layout
 
+    def _create_scroll_area(self):
+        """Create the scrollable content area."""
         scroll_area = QScrollArea()
         scroll_area.setWidgetResizable(True)
         scroll_area.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         scroll_area.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
-        scroll_area.setStyleSheet("QScrollArea { border: none; background-color: transparent; }")
 
         scroll_content = QWidget()
-        scroll_content.setStyleSheet("QWidget { background-color: #FFFFFF; }")
+        scroll_content.setObjectName("scroll_content")
         scroll_layout = QVBoxLayout(scroll_content)
         scroll_layout.setContentsMargins(0, 0, 0, 0)
         scroll_layout.setSpacing(0)
 
-        getting_started_label = QLabel("Getting Started")
-        getting_started_label.setStyleSheet("""
-            background-color: transparent;
-            color: #150049;
-            font-family: "Geist", -apple-system, BlinkMacSystemFont, sans-serif;
-            font-size: 16px;
-            font-weight: 500;
-            margin-bottom: 8px;
-        """)
-        scroll_layout.addWidget(getting_started_label)
+        # Getting Started section
+        self._add_section(scroll_layout, "Getting Started", [
+            AccordionItem(
+                "What is BitSota",
+                ["Platform to let one easily participate in AutoML experiments. You can mine on any machine regardless of compute limitation"]
+            )
+        ])
 
-        content_container = QWidget()
-        content_container.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
-        content_container.setStyleSheet("""
-            background-color: rgba(21, 0, 73, 0.04);
-            border-radius: 8px;
-        """)
-        content_layout = QVBoxLayout(content_container)
-        content_layout.setContentsMargins(0, 0, 0, 0)
-        content_layout.setSpacing(0)
+        scroll_layout.addSpacing(self.SECTION_SPACING)
 
-        bitsota_item = AccordionItem(
-            "What is BitSota",
-            ["Platform to let one easily participate in AutoML experiments. You can mine on any machine regardless of compute limitation"]
-        )
-        content_layout.addWidget(bitsota_item)
+        # Mining section
+        self._add_section(scroll_layout, "Mining", [
+            AccordionItem(
+                "Understanding mining modes",
+                [
+                    {
+                        "title": "Direct Mining",
+                        "description": "Connect directly to validators in the Bittensor network. Best for experienced users who want full control over their mining operations. Results are sent to a relay server from which validators can retrieve them"
+                    },
+                    {
+                        "title": "Pool Mining",
+                        "description": "Join a mining pool for simplified setup and shared resources. Ideal for beginners. Tasks are retrieved from a centralised pool, mining operation runs on the user's machine and results are sent to the pool server which also handles rewards for miners"
+                    }
+                ]
+            )
+        ])
 
-        scroll_layout.addWidget(content_container)
+        scroll_layout.addSpacing(self.SECTION_SPACING)
 
-        scroll_layout.addSpacing(16)
+        # Wallet Setup section
+        wallet_items = [
+            AccordionItem(
+                "Load existing Bittensor wallet from laptop",
+                ["People with wallets already on their machine can load their hotkeys to mine the subnet"]
+            ),
+            self._create_separator(),
+            AccordionItem(
+                "Import hotkey",
+                ["Those with hotkeys but not in the folder we'd load from can enter the hotkey's secret phrase and import it"]
+            ),
+            self._create_separator(),
 
-        mining_label = QLabel("Mining")
-        mining_label.setStyleSheet("""
-            background-color: transparent;
-            color: #150049;
-            font-family: "Geist", -apple-system, BlinkMacSystemFont, sans-serif;
-            font-size: 16px;
-            font-weight: 500;
-            margin-bottom: 8px;
-        """)
-        scroll_layout.addWidget(mining_label)
+            self._create_hotkey_accordion_item(),
+            self._create_separator(),
 
-        mining_container = QWidget()
-        mining_container.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
-        mining_container.setStyleSheet("""
-            background-color: rgba(21, 0, 73, 0.04);
-            border-radius: 8px;
-        """)
-        mining_layout = QVBoxLayout(mining_container)
-        mining_layout.setContentsMargins(0, 0, 0, 0)
-        mining_layout.setSpacing(0)
+            self._create_registration_accordion_item(),
+            self._create_separator(),
+            AccordionItem(
+                "Providing coldkey address",
+                ["We need you to provide a coldkey address where we pay out to you your earnings/rewards as paying cannot be done to hotkeys"]
+            )
+        ]
+        
+        self._add_section(scroll_layout, "Wallet Setup", wallet_items)
+        scroll_layout.addStretch()
 
-        mining_modes_item = AccordionItem(
-            "Understanding mining modes",
-            [
-                {
-                    "title": "Direct Mining",
-                    "description": "Connect directly to validators in the Bittensor network. Best for experienced users who want full control over their mining operations. Results are sent to a relay server from which validators can retrieve them"
-                },
-                {
-                    "title": "Pool Mining",
-                    "description": "Join a mining pool for simplified setup and shared resources. Ideal for beginners. Tasks are retrieved from a centralised pool, mining operation runs on the user's machine and results are sent to the pool server which also handles rewards for miners"
-                }
-            ]
-        )
-        mining_layout.addWidget(mining_modes_item)
+        scroll_area.setWidget(scroll_content)
+        return scroll_area
 
-        scroll_layout.addWidget(mining_container)
+    def _create_proceed_button(self):
+        """Create the proceed button."""
+        proceed_btn = PrimaryButton("Proceed", width=self.BUTTON_WIDTH)
+        proceed_btn.clicked.connect(self._on_proceed)
+        return proceed_btn
 
-        scroll_layout.addSpacing(16)
+    def _add_section(self, layout, title, items):
+        """Add a section with title and content items.
+        
+        Args:
+            layout: The layout to add to
+            title: Section title text
+            items: List of AccordionItems or widgets to add
+        """
+        # Section title
+        title_label = QLabel(title)
+        title_label.setObjectName("section_title")
+        layout.addWidget(title_label)
 
-        wallet_setup_label = QLabel("Wallet Setup")
-        wallet_setup_label.setStyleSheet("""
-            background-color: transparent;
-            color: #150049;
-            font-family: "Geist", -apple-system, BlinkMacSystemFont, sans-serif;
-            font-size: 16px;
-            font-weight: 500;
-            margin-bottom: 8px;
-        """)
-        scroll_layout.addWidget(wallet_setup_label)
+        # Content container
+        container = QWidget()
+        container.setObjectName("content_container")
+        container.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
+        container_layout = QVBoxLayout(container)
+        container_layout.setContentsMargins(0, 0, 0, 0)
+        container_layout.setSpacing(0)
 
-        wallet_container = QWidget()
-        wallet_container.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
-        wallet_container.setStyleSheet("""
-            background-color: rgba(21, 0, 73, 0.04);
-            border-radius: 8px;
-        """)
-        wallet_layout = QVBoxLayout(wallet_container)
-        wallet_layout.setContentsMargins(0, 0, 0, 0)
-        wallet_layout.setSpacing(0)
+        # Add items
+        for item in items:
+            container_layout.addWidget(item)
 
-        load_wallet_item = AccordionItem(
-            "Load existing Bittensor wallet from laptop",
-            ["People with wallets already on their machine can load their hotkeys to mine the subnet"]
-        )
-        wallet_layout.addWidget(load_wallet_item)
+        layout.addWidget(container)
 
-        separator2 = QWidget()
-        separator2.setFixedHeight(1)
-        separator2.setStyleSheet("background-color: rgba(21, 0, 73, 0.12);")
-        wallet_layout.addWidget(separator2)
+    def _create_separator(self):
+        """Create a horizontal separator line."""
+        separator = QWidget()
+        separator.setObjectName("separator")
+        separator.setFixedHeight(1)
+        return separator
 
-        import_hotkey_item = AccordionItem(
-            "Import hotkey",
-            ["Those with hotkeys but not in the folder we'd load from can enter the hotkey's secret phrase and import it"]
-        )
-        wallet_layout.addWidget(import_hotkey_item)
-
-        separator3 = QWidget()
-        separator3.setFixedHeight(1)
-        separator3.setStyleSheet("background-color: rgba(21, 0, 73, 0.12);")
-        wallet_layout.addWidget(separator3)
-
+    def _create_hotkey_accordion_item(self):
+        """Create the 'How to create a hotkey' accordion item."""
         create_hotkey_content = QWidget()
-        create_hotkey_content.setStyleSheet("QWidget { background-color: transparent; }")
-        create_hotkey_layout = QVBoxLayout(create_hotkey_content)
-        create_hotkey_layout.setContentsMargins(16, 16, 16, 16)
-        create_hotkey_layout.setSpacing(12)
+        layout = QVBoxLayout(create_hotkey_content)
+        layout.setContentsMargins(16, 16, 16, 16)
+        layout.setSpacing(12)
 
-        create_steps = [
+        steps = [
             "Create your TAO wallet",
             "Secure your mnemonic and hotkey",
             "Connect your wallet"
         ]
 
-        for i, step in enumerate(create_steps, 1):
-            step_widget = QWidget()
-            step_widget.setStyleSheet("QWidget { background-color: transparent; }")
-            step_layout = QHBoxLayout(step_widget)
-            step_layout.setContentsMargins(0, 0, 0, 0)
-            step_layout.setSpacing(12)
+        for i, step in enumerate(steps, 1):
+            step_widget = self._create_step_widget(i, step)
+            layout.addWidget(step_widget)
 
-            number_label = QLabel(str(i))
-            number_label.setFixedSize(24, 24)
-            number_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-            number_label.setStyleSheet("""
-                background-color: rgba(109, 96, 142, 0.16);
-                color: #150049;
-                border-radius: 4px;
-                font-family: "Geist", -apple-system, BlinkMacSystemFont, sans-serif;
-                font-size: 14px;
-                font-weight: 500;
-            """)
-            step_layout.addWidget(number_label)
+        accordion = AccordionItem("How to create a hotkey", [])
+        accordion.content_widget.layout().addWidget(create_hotkey_content)
+        return accordion
 
-            step_label = QLabel(step)
-            step_label.setStyleSheet("""
-                background-color: transparent;
-                color: #150049;
-                font-family: "Geist", -apple-system, BlinkMacSystemFont, sans-serif;
-                font-size: 14px;
-                font-weight: 400;
-            """)
-            if i == 1:
-                step_label.setText('<a href="https://docs.learnbittensor.org/keys/working-with-keys?create-wallet=cold-hot#creating-a-wallet-with-btcli" style="color: #0F6FFF; text-decoration: underline;">Create your TAO wallet</a>')
-                step_label.setOpenExternalLinks(True)
-                step_label.setStyleSheet("""
-                    background-color: transparent;
-                    font-family: "Geist", -apple-system, BlinkMacSystemFont, sans-serif;
-                    font-size: 14px;
-                    font-weight: 400;
-                """)
-            step_layout.addWidget(step_label)
-            step_layout.addStretch()
+    def _create_step_widget(self, number, text):
+        """Create a numbered step widget.
+        
+        Args:
+            number: Step number
+            text: Step text
+        """
+        widget = QWidget()
+        layout = QHBoxLayout(widget)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(12)
 
-            create_hotkey_layout.addWidget(step_widget)
+        # Number label
+        number_label = QLabel(str(number))
+        number_label.setObjectName("step_number")
+        number_label.setFixedSize(24, 24)
+        number_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        layout.addWidget(number_label)
 
-        create_hotkey_item = AccordionItem(
-            "How to create a hotkey",
-            []
+        # Text label
+        text_label = QLabel(text)
+        text_label.setObjectName("step_text")
+        
+        # Add link for first step
+        if number == 1:
+            text_label.setText(
+                '<a href="https://docs.learnbittensor.org/keys/working-with-keys?create-wallet=cold-hot#creating-a-wallet-with-btcli" '
+                'style="color: #0F6FFF; text-decoration: underline;">Create your TAO wallet</a>'
+            )
+            text_label.setOpenExternalLinks(True)
+        
+        layout.addWidget(text_label)
+        layout.addStretch()
+
+        return widget
+
+    def _create_registration_accordion_item(self):
+        """Create the 'Wallet Registration for Direct Mining' accordion item."""
+        content = QWidget()
+        layout = QVBoxLayout(content)
+        layout.setContentsMargins(16, 16, 16, 16)
+        layout.setSpacing(12)
+
+        # Info text
+        info_label = QLabel(
+            "Before you can start direct mining, you must register your wallet on the subnet using btcli:"
         )
-        create_hotkey_item.content_widget.layout().addWidget(create_hotkey_content)
-        wallet_layout.addWidget(create_hotkey_item)
-
-        separator4 = QWidget()
-        separator4.setFixedHeight(1)
-        separator4.setStyleSheet("background-color: rgba(21, 0, 73, 0.12);")
-        wallet_layout.addWidget(separator4)
-
-        registration_content = QWidget()
-        registration_content.setStyleSheet("QWidget { background-color: transparent; }")
-        registration_layout = QVBoxLayout(registration_content)
-        registration_layout.setContentsMargins(16, 16, 16, 16)
-        registration_layout.setSpacing(12)
-
-        info_label = QLabel("Before you can start direct mining, you must register your wallet on the subnet using btcli:")
+        info_label.setObjectName("info_text")
         info_label.setWordWrap(True)
-        info_label.setStyleSheet("""
-            background-color: transparent;
-            color: #150049;
-            font-family: "Geist", -apple-system, BlinkMacSystemFont, sans-serif;
-            font-size: 14px;
-            font-weight: 400;
-            line-height: 150%;
-        """)
-        registration_layout.addWidget(info_label)
+        layout.addWidget(info_label)
 
-        command_label = QLabel("btcli subnet register --netuid 94 --wallet.name your_wallet --wallet.hotkey your_hotkey")
+        # Command
+        command_label = QLabel(
+            "btcli subnet register --netuid 94 --wallet.name your_wallet --wallet.hotkey your_hotkey"
+        )
+        command_label.setObjectName("command_label")
         command_label.setWordWrap(True)
-        command_label.setStyleSheet("""
-            background-color: rgba(21, 0, 73, 0.08);
-            color: #150049;
-            font-family: "SF Mono", "Monaco", "Consolas", "Courier New", monospace;
-            font-size: 13px;
-            font-weight: 500;
-            padding: 12px;
-            border-radius: 6px;
-            border: 1px solid rgba(21, 0, 73, 0.12);
-        """)
-        registration_layout.addWidget(command_label)
+        layout.addWidget(command_label)
 
+        # Note
         note_label = QLabel("Note: Pool mining does not require subnet registration")
+        note_label.setObjectName("note_text")
         note_label.setWordWrap(True)
-        note_label.setStyleSheet("""
-            background-color: transparent;
-            color: rgba(21, 0, 73, 0.60);
-            font-family: "Geist", -apple-system, BlinkMacSystemFont, sans-serif;
-            font-size: 13px;
-            font-weight: 400;
-            font-style: italic;
-            line-height: 150%;
-        """)
-        registration_layout.addWidget(note_label)
+        layout.addWidget(note_label)
 
-        registration_item = AccordionItem(
-            "Wallet Registration for Direct Mining",
-            []
-        )
-        registration_item.content_widget.layout().addWidget(registration_content)
-        wallet_layout.addWidget(registration_item)
-
-        separator5 = QWidget()
-        separator5.setFixedHeight(1)
-        separator5.setStyleSheet("background-color: rgba(21, 0, 73, 0.12);")
-        wallet_layout.addWidget(separator5)
-
-        coldkey_address_item = AccordionItem(
-            "Providing coldkey address",
-            ["We need you to provide a coldkey address where we pay out to you your earnings/rewards as paying cannot be done to hotkeys"]
-        )
-        wallet_layout.addWidget(coldkey_address_item)
-
-        scroll_layout.addWidget(wallet_container)
-        scroll_layout.addStretch()
-
-        scroll_area.setWidget(scroll_content)
-        layout.addWidget(scroll_area, 1)
-
-        proceed_btn = QPushButton("Proceed")
-        proceed_btn.setObjectName("primary_button")
-        proceed_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        proceed_btn.setFixedHeight(48)
-        proceed_btn.clicked.connect(self._on_proceed)
-        layout.addWidget(proceed_btn)
+        accordion = AccordionItem("Wallet Registration for Direct Mining", [])
+        accordion.content_widget.layout().addWidget(content)
+        return accordion
 
     def _on_proceed(self):
+        """Handle proceed button click."""
         self.proceed_clicked.emit()
         self.accept()

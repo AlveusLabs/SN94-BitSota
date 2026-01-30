@@ -12,6 +12,7 @@ class StartScreen(QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setObjectName("start_screen")
+        self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
         self.setup_ui()
 
     def setup_ui(self):
@@ -38,7 +39,13 @@ class StartScreen(QWidget):
         self.tagline.setObjectName("start_tagline")
         left_box_layout.addWidget(self.tagline)
 
-        self.start_button = PrimaryButton("Start")
+        self.start_button = PrimaryButton(
+            "Start",
+            width=200,
+            height=48,
+            icon_path=resource_path("gui/images/arrow.svg"),
+            icon_size=20
+        )
         self.start_button.clicked.connect(self.start_clicked.emit)
         left_box_layout.addWidget(self.start_button)
 

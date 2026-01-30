@@ -8,7 +8,8 @@ class BitSOTATheme:
     # Brand Colors
     COLOR1 = "#150049"  # Brand - Dark Color
     COLOR2 = "#8EFBFF"  # bitsota Color2
-    
+    COLOR2_VARIANT = "#71DADE"  # Color2 variant for button text
+
     # Dark Theme Colors
     BLACK100 = "#0C0029"  # Dark background
     BLACK60 = "rgba(12, 0, 41, 0.6)"  # 60% dark
@@ -49,7 +50,7 @@ class BitSOTATheme:
         }}
 
         QWidget#start_screen {{
-            background-color: {BitSOTATheme.START_SCREEN_BG};
+            background-color: {BitSOTATheme.CONTENT_BOX_BG};
         }}
 
         /* Top navigation bar */
@@ -208,25 +209,28 @@ class BitSOTATheme:
         QWidget#tab_switcher_container {{
             background-color: #F6F5F8;
             border-radius: 4px;
+            padding: 4px;
         }}
 
         QPushButton#tab_switcher_active {{
+            height: 32px;
+            padding: 0px 16px;
             background-color: #FFFFFF;
             color: {BitSOTATheme.BLACK100};
             border: none;
             border-radius: 4px;
-            padding: 10px 16px;
             font-family: "PingFang SC", "Microsoft YaHei", "Geist", -apple-system, BlinkMacSystemFont, sans-serif;
             font-size: 14px;
             font-weight: 500;
         }}
 
         QPushButton#tab_switcher_inactive {{
+            height: 32px;
+            padding: 0px 16px;
             background-color: transparent;
             color: rgba(12, 0, 41, 0.6);
             border: none;
             border-radius: 4px;
-            padding: 10px 16px;
             font-family: "PingFang SC", "Microsoft YaHei", "Geist", -apple-system, BlinkMacSystemFont, sans-serif;
             font-size: 14px;
             font-weight: 500;
@@ -367,26 +371,8 @@ class BitSOTATheme:
             font-weight: 400;
         }}
 
-        QDialog#modal_dialog {{
-            background-color: {BitSOTATheme.CONTENT_BOX_BG};
-            border: none;
-            border-radius: 4px;
-        }}
-
-        QLabel#modal_title {{
-            color: {BitSOTATheme.BLACK100};
-            font-family: "PingFang SC", "Microsoft YaHei", "Geist", -apple-system, BlinkMacSystemFont, sans-serif;
-            font-size: 24px;
-            font-weight: 600;
-        }}
-
-        QLabel#modal_message {{
-            color: {BitSOTATheme.BLACK100};
-            font-family: "PingFang SC", "Microsoft YaHei", "Geist", -apple-system, BlinkMacSystemFont, sans-serif;
-            font-size: 16px;
-            font-weight: 400;
-            line-height: 1.5;
-        }}
+        /* Modal dialog styles moved to respective modal component files */
+        /* See UserGuideModal.get_stylesheet(), ColdkeyAddressModal.get_stylesheet(), etc. */
 
         QPushButton#modal_close {{
             background-color: transparent;
@@ -433,11 +419,11 @@ class BitSOTATheme:
 
         QWidget#mining_config_box {{
             background-color: {BitSOTATheme.COLOR1_04};
-            border-radius: 8px;
+            border-radius: 4px;
         }}
 
         QWidget#app_container {{
-            background-color: #F6F5F8;
+            background-color: #FFFFFF;
         }}
         
         QWidget#content_wrapper {{
@@ -450,37 +436,8 @@ class BitSOTATheme:
             border-radius: 4px;
         }}
 
-        QPushButton#primary_button {{
-            background-color: {BitSOTATheme.COLOR1};
-            color: #71DADE;
-            border: none;
-            border-radius: 4px;
-            padding: 10px 24px;
-            font-family: "PingFang SC", "Microsoft YaHei", "Geist", -apple-system, BlinkMacSystemFont, sans-serif;
-            font-size: 16px;
-            font-weight: 600;
-            line-height: 1.2;
-            min-height: 48px;
-        }}
-
-        QPushButton#primary_button:hover {{
-            background-color: rgba(21, 0, 73, 0.9);
-        }}
-
-        QPushButton#primary_button:pressed {{
-            background-color: rgba(21, 0, 73, 0.8);
-        }}
-
-        QPushButton#primary_button QWidget#icon_container {{
-            background-color: transparent;
-            border: none;
-        }}
-
-        QPushButton#primary_button QLabel#button_text_label {{
-            background: transparent;
-            border: none;
-            color: #8EFBFF;
-        }}
+        /* Primary button styles moved to gui/components/common/button.py */
+        /* See PrimaryButton.get_stylesheet() for button styles */
 
         QPushButton#stop_mining_button {{
             background-color: #EF4858;
@@ -514,7 +471,7 @@ class BitSOTATheme:
             color: #FFFFFF;
         }}
 
-        QPushButton#secondary_button {{
+        QPushButton#clear_logs_button {{
             background-color: #D0CCDB;
             color: {BitSOTATheme.BLACK100};
             border: none;
@@ -523,27 +480,6 @@ class BitSOTATheme:
             font-family: "PingFang SC", "Microsoft YaHei", "Geist", -apple-system, BlinkMacSystemFont, sans-serif;
             font-size: 14px;
             font-weight: 600;
-            line-height: 1.2;
-        }}
-
-        QPushButton#secondary_button:hover {{
-            background-color: #C0BCCB;
-        }}
-
-        QPushButton#secondary_button:pressed {{
-            background-color: #B0ACBB;
-        }}
-
-        QPushButton#clear_logs_button {{
-            background-color: #D0CCDB;
-            color: {BitSOTATheme.BLACK100};
-            border: none;
-            border-radius: 4px;
-            padding: 10px 24px;
-            padding: 4px 12px;
-            font-family: "PingFang SC", "Microsoft YaHei", "Geist", -apple-system, BlinkMacSystemFont, sans-serif;
-            font-size: 14px;
-            font-weight: 400;
         }}
 
         QLabel {{
@@ -552,7 +488,7 @@ class BitSOTATheme:
         }}
 
         QLabel#start_tagline {{
-            color: #FFFFFF;
+            color: #150049;
             font-family: "PingFang SC", "Microsoft YaHei", "Geist", -apple-system, BlinkMacSystemFont, sans-serif;
             font-size: 20px;
             font-weight: 400;

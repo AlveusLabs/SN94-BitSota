@@ -1,12 +1,12 @@
 from PySide6.QtCore import Qt, Signal, QEvent
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel,
-    QLineEdit, QPushButton, QGridLayout, QStackedWidget
+    QLineEdit, QGridLayout, QStackedWidget
 )
 from PySide6.QtSvgWidgets import QSvgWidget
-from PySide6.QtGui import QKeyEvent, QEnterEvent
+from PySide6.QtGui import QKeyEvent
+from gui.components import PrimaryButton, SecondaryButton
 from gui.resource_path import resource_path
-
 
 class WalletOptionContainer(QWidget):
     clicked = Signal()
@@ -54,10 +54,7 @@ class WalletOptionContainer(QWidget):
         desc_label.setWordWrap(True)
         layout.addWidget(desc_label)
 
-        self.button = QPushButton(button_text)
-        self.button.setObjectName("primary_button")
-        self.button.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.button.setFixedSize(207, 48)
+        self.button = PrimaryButton(button_text)
         self.button.clicked.connect(self.clicked.emit)
 
         layout.addWidget(self.button, alignment=Qt.AlignmentFlag.AlignLeft)
@@ -83,10 +80,8 @@ class ImportHotkeyScreen(QWidget):
         main_layout.setSpacing(0)
 
         content_box = QWidget()
-        content_box.setObjectName("content_box")
         content_box.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
         layout = QVBoxLayout(content_box)
-        layout.setContentsMargins(32, 32, 32, 32)
         layout.setSpacing(24)
 
         title = QLabel("Hotkey Credentials")
@@ -138,17 +133,11 @@ class ImportHotkeyScreen(QWidget):
         buttons_layout = QHBoxLayout()
         buttons_layout.setSpacing(16)
 
-        import_btn = QPushButton("Import")
-        import_btn.setObjectName("primary_button")
-        import_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        import_btn.setFixedSize(207, 48)
+        import_btn = PrimaryButton("Import")
         import_btn.clicked.connect(self._on_import)
         buttons_layout.addWidget(import_btn)
 
-        cancel_btn = QPushButton("Cancel")
-        cancel_btn.setObjectName("secondary_button")
-        cancel_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        cancel_btn.setFixedSize(207, 48)
+        cancel_btn = SecondaryButton("Cancel")
         cancel_btn.clicked.connect(self.cancelled.emit)
         buttons_layout.addWidget(cancel_btn)
 

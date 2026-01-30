@@ -79,17 +79,28 @@ class ModalManager(QObject):
 
     def update_overlay_geometry(self):
         """Update overlay position and size to match content area"""
-        # Only update when app_container is visible
-        if self.content_stack.currentWidget() == self.app_container:
-            # Get screen_stack position relative to central widget
-            central_widget = self.main_window.centralWidget()
+        central_widget = self.main_window.centralWidget()
+        
+        # Check which widget is currently displayed
+        current_widget = self.content_stack.currentWidget()
+        
+        if current_widget == self.app_container:
+            # When app_container is visible, overlay covers screen_stack area
             pos = self.screen_stack.mapTo(central_widget, self.screen_stack.rect().topLeft())
-            # Set overlay geometry to match screen_stack
             self.modal_overlay.setGeometry(
                 pos.x(),
                 pos.y(),
                 self.screen_stack.width(),
                 self.screen_stack.height()
+            )
+        else:
+            # When start_screen or other screens are visible, overlay covers entire content_stack
+            pos = self.content_stack.mapTo(central_widget, self.content_stack.rect().topLeft())
+            self.modal_overlay.setGeometry(
+                pos.x(),
+                pos.y(),
+                self.content_stack.width(),
+                self.content_stack.height()
             )
 
     def handle_resize_event(self):
