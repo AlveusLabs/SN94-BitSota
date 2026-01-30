@@ -91,13 +91,13 @@ class ChartWidget(QWidget):
     - Displays tooltip with current values
     """
     
-    # Chart data range
-    MAX_STAKE = 1860000  # Maximum stake amount (total pool stake)
-    
-    def __init__(self, parent=None):
+    def __init__(self, max_stake: float = 0, parent=None):
         super().__init__(parent)
         self.setMinimumHeight(120)
         self.setMouseTracking(True)  # Enable mouse tracking
+        
+        # Chart data range
+        self.max_stake = max_stake  # Maximum stake amount (total pool stake)
         
         # Mouse hover state
         self.hover_x = -1  # Current mouse X coordinate, -1 means not hovering
@@ -106,6 +106,16 @@ class ChartWidget(QWidget):
         # Create tooltip
         self.tooltip = ChartTooltip()
         self.tooltip.hide()
+    
+    def set_max_stake(self, max_stake: float):
+        """
+        Update maximum stake amount
+        
+        Args:
+            max_stake: Maximum stake amount (total pool stake)
+        """
+        self.max_stake = max_stake
+        self.update()  # Trigger repaint
         
     def _calculate_unlock_rate(self, progress: float) -> float:
         """
@@ -148,7 +158,7 @@ class ChartWidget(QWidget):
         if 0 <= self.hover_x <= width:
             # Calculate values at current position
             progress = self.hover_x / width
-            stake = progress * self.MAX_STAKE
+            stake = progress * self.max_stake
             rate = self._calculate_unlock_rate(progress)
             
             # Update tooltip content

@@ -133,15 +133,15 @@ class StakeUnlockCard(StatsCard):
         stats_layout.setSpacing(24)
         
         # Your staked amount
-        staked_widget = self._create_stat_widget("800.24", "$TAO", "Your Staked", dashed=True)
+        staked_widget, self.staked_label = self._create_stat_widget("0.00", "$TAO", "Your Staked", dashed=True)
         stats_layout.addWidget(staked_widget)
         
         # Current unlock rate
-        unlock_widget = self._create_stat_widget("49", "%", "Current Unlock Rate")
+        unlock_widget, self.unlock_label = self._create_stat_widget("0", "%", "Current Unlock Rate")
         stats_layout.addWidget(unlock_widget)
         
         # Pool share
-        pool_widget = self._create_stat_widget("4.9", "%", "Pool Share")
+        pool_widget, self.pool_label = self._create_stat_widget("0.0", "%", "Pool Share")
         stats_layout.addWidget(pool_widget)
         
         stats_layout.addStretch()
@@ -160,10 +160,10 @@ class StakeUnlockCard(StatsCard):
         layout.addSpacing(18)
         
         # ========== Total Pool Stake ==========
-        total_label = QLabel("Total Pool Stake: 1,860,000 $TAO")
-        total_label.setObjectName("total_label")
-        total_label.setAlignment(Qt.AlignmentFlag.AlignRight)
-        layout.addWidget(total_label)
+        self.total_label = QLabel("Total Pool Stake: 0 $TAO")
+        self.total_label.setObjectName("total_label")
+        self.total_label.setAlignment(Qt.AlignmentFlag.AlignRight)
+        layout.addWidget(self.total_label)
         layout.addSpacing(18)
         
         # ========== Chart Area ==========
@@ -197,8 +197,8 @@ class StakeUnlockCard(StatsCard):
         chart_content_layout.addWidget(y_axis)
         
         # Chart drawing area
-        chart_area = ChartWidget()
-        chart_content_layout.addWidget(chart_area, 1)
+        self.chart_area = ChartWidget()
+        chart_content_layout.addWidget(self.chart_area, 1)
         
         chart_layout.addWidget(chart_content)
         
@@ -210,7 +210,7 @@ class StakeUnlockCard(StatsCard):
         
         layout.addWidget(chart_widget, 1)
         
-    def _create_stat_widget(self, value: str, unit: str, label: str, dashed: bool = False) -> QWidget:
+    def _create_stat_widget(self, value: str, unit: str, label: str, dashed: bool = False) -> tuple:
         """
         Create stat value component
         
@@ -221,7 +221,7 @@ class StakeUnlockCard(StatsCard):
             dashed: Whether to show dashed underline
             
         Returns:
-            QWidget containing value and label
+            Tuple of (QWidget, QLabel) - widget and value label reference
         """
         widget = QWidget()
         layout = QVBoxLayout(widget)
@@ -264,4 +264,26 @@ class StakeUnlockCard(StatsCard):
         desc_label.setObjectName("desc_label")
         layout.addWidget(desc_label)
         
-        return widget
+        return widget, value_label
+    
+    def set_values(self, staked: str, unlock_rate: str, pool_share: str, total_pool: str):
+        """
+        Update all displayed values
+        
+        Args:
+            staked: Your staked amount
+            unlock_rate: Current unlock rate percentage
+            pool_share: Pool share percentage
+            total_pool: Total pool stake amount
+        """
+        self.staked_label.setText(staked)
+        self.unlock_label.setText(unlock_rate)
+        self.pool_label.setText(pool_share)
+        self.total_label.setText(f"Total Pool Stake: {total_pool} $TAO")
+        
+        # Update chart max stake if total_pool is a valid number
+        try:
+            max_stake = float(total_pool.replace(",", ""))
+            self.chart_area.set_max_stake(max_stake)
+        except ValueError:
+            pass

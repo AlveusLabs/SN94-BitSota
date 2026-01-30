@@ -134,16 +134,41 @@ class ProfileScreen(QWidget):
     def _on_stake_clicked(self):
         print("Stake clicked")
     
-    def update_stats(self, claimable: str = "0.00", total_rewards: str = "0.00", 
-                     runtime: str = "00h 00m"):
+    def update_stats(
+        self,
+        claimable: str = "0.00",
+        nominal_rewards: str = "0",
+        liquid_ratio: float = 1.0,
+        auto_staked_ratio: float = 0.0,
+        total_rewards: str = "0.00",
+        runtime: str = "00h 00m",
+        staked: str = "0.00",
+        unlock_rate: str = "0",
+        pool_share: str = "0.0",
+        total_pool: str = "0",
+    ):
         """
         Update page displayed statistics
         
         Args:
             claimable: Claimable reward amount
+            nominal_rewards: Nominal rewards amount
+            liquid_ratio: Liquid reward ratio (0.0-1.0)
+            auto_staked_ratio: Auto-staked reward ratio (0.0-1.0)
             total_rewards: Total TAO reward amount
             runtime: Cumulative runtime
+            staked: User's staked amount
+            unlock_rate: Current unlock rate percentage
+            pool_share: Pool share percentage
+            total_pool: Total pool stake amount
         """
-        self.claimable_card.set_value(claimable)
+        # Claimable reward card
+        self.claimable_card.set_value(claimable, nominal_rewards)
+        self.claimable_card.progress_bar.set_ratios(liquid_ratio, auto_staked_ratio)
+        
+        # Small stats cards
         self.total_rewards_card.set_value(total_rewards, "$TAO")
         self.runtime_card.set_value(runtime, "")
+        
+        # Stake & unlock rate card
+        self.stake_card.set_values(staked, unlock_rate, pool_share, total_pool)
