@@ -14,7 +14,7 @@ def verify_solution_quality(
     solution_data: Dict[str, Any],
     sota_threshold: float = None,
     *,
-    epochs: int = 1,
+    epochs: Optional[int] = None,
     task_count: Optional[int] = None,
     task_seed: Optional[int] = None,
     n_samples: Optional[int] = None,

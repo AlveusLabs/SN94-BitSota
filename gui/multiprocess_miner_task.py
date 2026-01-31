@@ -17,6 +17,7 @@ class MiningStatsAccumulator:
     def __init__(
         self,
         *,
+        checkpoint_generations: int = 1,
         tasks_completed: int = 0,
         successful_submissions: int = 0,
         best_score: Optional[float] = None,
@@ -25,6 +26,10 @@ class MiningStatsAccumulator:
         self.successful_submissions = int(successful_submissions)
         self.best_score = best_score
 
+        self._regularized_log_every = max(1, int(checkpoint_generations))
+        self._last_generation_by_worker: Dict[int, int] = {}
+        self._last_regularized_iter_by_worker: Dict[int, int] = {}
+
         number = r"([-+]?(?:\\d+\\.?\\d*|\\d*\\.?\\d+)(?:[eE][-+]?\\d+)?)"
         self._re_score_verified = re.compile(
             rf"\\bScore:\\s*{number}\\s*\\(verified\\)", re.IGNORECASE
@@ -32,6 +37,8 @@ class MiningStatsAccumulator:
         self._re_verified_score = re.compile(
             rf"\\bverified_score\\b[^0-9\\-\\+]*{number}", re.IGNORECASE
         )
+        self._re_gen_line = re.compile(r"^Gen\\s+(\\d+)\\b", re.IGNORECASE)
+        self._re_regularized_iter = re.compile(r"\\biter=(\\d+)\\b", re.IGNORECASE)
 
     def _maybe_update_best_verified(self, verified_score: float) -> bool:
         try:
@@ -43,7 +50,7 @@ class MiningStatsAccumulator:
             return True
         return False
 
-    def process_log_line(self, msg: str) -> Optional[Dict[str, object]]:
+    def process_log_line(self, msg: str, *, worker_id: Optional[int] = None) -> Optional[Dict[str, object]]:
         """Return updated stats dict (or None if unchanged)."""
 
         changed = False
@@ -59,9 +66,43 @@ class MiningStatsAccumulator:
             self.successful_submissions += 1
             changed = True
 
-        if msg.startswith("[regularized-evo]") or msg.startswith("Gen ") or "generation" in lowered:
-            self.tasks_completed += 1
-            changed = True
+        wid = -1
+        if worker_id is not None:
+            try:
+                wid = int(worker_id)
+            except Exception:
+                wid = -1
+
+        if msg.startswith("Gen "):
+            m_gen = self._re_gen_line.match(msg)
+            if m_gen:
+                try:
+                    generation = int(m_gen.group(1))
+                except Exception:
+                    generation = None
+                if generation is not None:
+                    last_seen = int(self._last_generation_by_worker.get(wid, 0))
+                    if generation > last_seen:
+                        delta = int(generation) - last_seen
+                        self._last_generation_by_worker[wid] = int(generation)
+                        self.tasks_completed += int(delta)
+                        changed = True
+        elif msg.startswith("[regularized-evo]"):
+            m_iter = self._re_regularized_iter.search(msg)
+            if m_iter:
+                try:
+                    iteration = int(m_iter.group(1))
+                except Exception:
+                    iteration = None
+                if iteration is not None and (
+                    iteration == 1 or (iteration % int(self._regularized_log_every)) == 0
+                ):
+                    last_seen = int(self._last_regularized_iter_by_worker.get(wid, 0))
+                    if iteration > last_seen:
+                        delta = int(iteration) - last_seen
+                        self._last_regularized_iter_by_worker[wid] = int(iteration)
+                        self.tasks_completed += int(delta)
+                        changed = True
 
         m = self._re_score_verified.search(msg)
         if m and self._maybe_update_best_verified(m.group(1)):
@@ -119,6 +160,7 @@ class MultiProcessDirectMiningTask(QRunnable):
         self._stop_event: Optional[mp.synchronize.Event] = None
 
         self._stats = MiningStatsAccumulator(
+            checkpoint_generations=self._regularized_log_every,
             tasks_completed=initial_tasks,
             successful_submissions=initial_submissions,
             best_score=initial_best_score,
@@ -199,7 +241,7 @@ class MultiProcessDirectMiningTask(QRunnable):
                 if msg_type == "log":
                     worker_id = int(msg.get("worker_id", -1))
                     line = str(msg.get("message") or "")
-                    updated = self._stats.process_log_line(line)
+                    updated = self._stats.process_log_line(line, worker_id=worker_id)
                     if updated is not None:
                         self.tasks_completed = int(updated.get("tasks_completed", self.tasks_completed))
                         self.successful_submissions = int(

@@ -118,6 +118,31 @@ def save_mining_stats(tasks_completed: int, successful_submissions: int, best_sc
         print(f"Failed to save mining stats: {e}")
 
 
+def get_population_state_file() -> Path:
+    return get_wallet_dir().parent / "population_state.json"
+
+
+def load_population_state() -> dict:
+    try:
+        state_file = get_population_state_file()
+        if state_file.exists():
+            with open(state_file, "r") as f:
+                return json.load(f)
+    except Exception as e:
+        print(f"Failed to load population state: {e}")
+    return {}
+
+
+def save_population_state(state: dict) -> None:
+    try:
+        state_file = get_population_state_file()
+        state_file.parent.mkdir(parents=True, exist_ok=True)
+        with open(state_file, "w") as f:
+            json.dump(state, f, indent=2)
+    except Exception as e:
+        print(f"Failed to save population state: {e}")
+
+
 def validate_coldkey_address(address: str) -> Tuple[bool, str]:
     if not address or not address.strip():
         return False, "Coldkey address cannot be empty"

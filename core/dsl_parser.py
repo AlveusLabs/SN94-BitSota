@@ -61,7 +61,19 @@ class DSLParser:
     @classmethod
     def from_dsl(cls, dsl_str: str, input_dim: int) -> AlgorithmArray:
         """Parse DSL string into AlgorithmArray"""
-        lines = [l.strip() for l in dsl_str.strip().split("\n") if l.strip()]
+        raw_lines = dsl_str.splitlines()
+        lines: list[str] = []
+        for raw in raw_lines:
+            line = raw.strip()
+            if not line:
+                continue
+            # Support inline comments: "s3 = 0.02  # learning rate".
+            # Full-line comments (including phase headers and meta) are preserved.
+            if not line.startswith("#") and "#" in line:
+                line = line.split("#", 1)[0].rstrip()
+                if not line:
+                    continue
+            lines.append(line)
 
         meta = {}
         for line in lines:

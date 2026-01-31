@@ -6,16 +6,18 @@ from typing import Tuple, List, Optional, Dict
 import numpy as np
 
 from core.algorithm_array import AlgorithmArray
+from core.hyperparams import get_miner_hyperparams
 from core.tasks.base import Task
 from core.tasks.cifar10 import CIFAR10BinaryTask
 
 
-DEFAULT_MINER_TASK_COUNT = int(os.getenv("MINER_TASK_COUNT", "32"))
-DEFAULT_MINER_TASK_SEED = int(os.getenv("MINER_TASK_SEED", "0"))
-DEFAULT_FEC_CACHE_SIZE = int(os.getenv("MINER_FEC_CACHE_SIZE", "100000"))
-DEFAULT_FEC_TRAIN_EXAMPLES = int(os.getenv("MINER_FEC_TRAIN_EXAMPLES", "32"))
-DEFAULT_FEC_VALID_EXAMPLES = int(os.getenv("MINER_FEC_VALID_EXAMPLES", "32"))
-DEFAULT_FEC_FORGET_EVERY = int(os.getenv("MINER_FEC_FORGET_EVERY", "0"))
+_DEFAULT_MINER_HP = get_miner_hyperparams()
+DEFAULT_MINER_TASK_COUNT = int(_DEFAULT_MINER_HP.miner_task_count)
+DEFAULT_MINER_TASK_SEED = int(_DEFAULT_MINER_HP.miner_task_seed)
+DEFAULT_FEC_CACHE_SIZE = int(_DEFAULT_MINER_HP.fec_cache_size)
+DEFAULT_FEC_TRAIN_EXAMPLES = int(_DEFAULT_MINER_HP.fec_train_examples)
+DEFAULT_FEC_VALID_EXAMPLES = int(_DEFAULT_MINER_HP.fec_valid_examples)
+DEFAULT_FEC_FORGET_EVERY = int(_DEFAULT_MINER_HP.fec_forget_every)
 _FEC_PROBE_SEED = 1337
 _FEC_TRACE_DECIMALS = 3
 

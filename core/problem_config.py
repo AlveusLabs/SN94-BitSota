@@ -77,6 +77,7 @@ class ProblemConfig:
     miner_task_count: Optional[int] = None
     validator_task_count: Optional[int] = None
     miner_validate_every_n_generations: Optional[int] = None
+    miner_iterations: Optional[int] = None
 
     engine_type: Optional[str] = None
     checkpoint_generations: Optional[int] = None
@@ -186,6 +187,7 @@ def load_problem_config(explicit_path: Optional[str | Path] = None) -> Optional[
 
     root = _as_dict(payload)
     mining = _as_dict(root.get("mining")) or root
+    args = _as_dict(root.get("args"))
 
     env_overrides: Dict[str, Any] = {}
     env_overrides.update(_as_dict(root.get("env")))
@@ -208,6 +210,9 @@ def load_problem_config(explicit_path: Optional[str | Path] = None) -> Optional[
     )
 
     checkpoint_generations = _maybe_int(mining.get("checkpoint_generations"))
+    miner_iterations = _maybe_int(args.get("iterations"))
+    if miner_iterations is not None:
+        miner_iterations = max(0, int(miner_iterations))
 
     return ProblemConfig(
         source_path=path,
@@ -215,6 +220,7 @@ def load_problem_config(explicit_path: Optional[str | Path] = None) -> Optional[
         miner_task_count=max(1, miner_task_count) if miner_task_count is not None else None,
         validator_task_count=max(1, validator_task_count) if validator_task_count is not None else None,
         miner_validate_every_n_generations=max(1, validate_every) if validate_every is not None else None,
+        miner_iterations=miner_iterations,
         engine_type=engine_type,
         checkpoint_generations=max(1, checkpoint_generations) if checkpoint_generations is not None else None,
         fec_cache_size=_maybe_int(mining.get("fec_cache_size")),
@@ -223,4 +229,3 @@ def load_problem_config(explicit_path: Optional[str | Path] = None) -> Optional[
         fec_forget_every=_maybe_int(mining.get("fec_forget_every")),
         engine_params=engine_params,
     )
-

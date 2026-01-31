@@ -8,6 +8,7 @@ from PySide6.QtWidgets import (
     QApplication,
 )
 from typing import Optional
+import os
 import webbrowser
 
 from bittensor_network.wallet import Wallet
@@ -210,10 +211,14 @@ class MiningWindow(QMainWindow):
                 else getattr(cfg, "miner_validate_every_n_generations", 1000)
             )
 
+            miner_verbose = (
+                str(os.getenv("BITSOTA_GUI_MINER_VERBOSE", "0")).strip().lower()
+                in {"1", "true", "yes", "on"}
+            )
             self.client = BittensorDirectClient(
                 wallet=self.wallet,
                 relay_endpoint=relay_endpoint,
-                verbose=True,
+                verbose=miner_verbose,
                 contract_manager=self.contract_manager,
                 miner_task_count=miner_task_count,
                 validator_task_count=validator_task_count,

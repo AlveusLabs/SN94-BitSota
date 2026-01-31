@@ -1,0 +1,19 @@
+{
+  "miner_task_count": 32,
+  "miner_task_seed": 0,
+  "validator_task_count": null,
+  "fec_cache_size": 100000,
+  "fec_train_examples": 32,
+  "fec_valid_examples": 32,
+  "fec_forget_every": 0,
+  "submission_cooldown_seconds": 60,
+  "submit_only_if_improved": false,
+  "max_submission_attempts_per_generation": null,
+  "validate_every_n_generations": 1,
+  "sota_cache_seconds": 30.0,
+  "sota_failure_backoff_seconds": 5.0,
+  "persist_state": true,
+  "persist_every_n_generations": 5000,
+  "gene_dump_every": 1000
+}
+

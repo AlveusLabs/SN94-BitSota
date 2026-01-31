@@ -22,6 +22,7 @@ from core.tasks.mnist import MNISTBinaryTask
 from core.tasks.scalar_linear import ScalarLinearRegressionTask
 from core.dsl_parser import DSLParser
 from core.evaluations import verify_solution_quality
+from core.hyperparams import get_miner_hyperparams
 
 from .auth_mixins import BittensorAuthMixin
 from .engines.ga_engine import BaselineEvolutionEngine
@@ -69,6 +70,8 @@ class DirectClient:
         persist_state: Optional[bool] = None,
         state_dir: Optional[str] = None,
     ):
+        hp = get_miner_hyperparams()
+
         self.public_address = public_address
         self.relay_endpoint = relay_endpoint or DEFAULT_RELAY_ENDPOINT
         self.verbose = verbose
@@ -79,13 +82,27 @@ class DirectClient:
         self.mining_start_time = None
         self.metrics_logger = MinerMetricsLogger(metrics_log_file) if metrics_log_file else None
         self.contract_manager = contract_manager
-        self.miner_task_count = max(1, miner_task_count or DEFAULT_MINER_TASK_COUNT)
+        if miner_task_count is None:
+            miner_task_count = int(getattr(hp, "miner_task_count", DEFAULT_MINER_TASK_COUNT) or DEFAULT_MINER_TASK_COUNT)
+        self.miner_task_count = max(1, int(miner_task_count))
         self.validator_task_count = None
+        if validator_task_count is None:
+            validator_task_count = getattr(hp, "validator_task_count", None)
         if validator_task_count is not None:
             try:
                 self.validator_task_count = max(1, int(validator_task_count))
             except Exception:
                 self.validator_task_count = None
+
+        if fec_cache_size is None:
+            fec_cache_size = getattr(hp, "fec_cache_size", None)
+        if fec_train_examples is None:
+            fec_train_examples = getattr(hp, "fec_train_examples", None)
+        if fec_valid_examples is None:
+            fec_valid_examples = getattr(hp, "fec_valid_examples", None)
+        if fec_forget_every is None:
+            fec_forget_every = getattr(hp, "fec_forget_every", None)
+
         self.fec_cache_size = fec_cache_size
         self.fec_train_examples = fec_train_examples
         self.fec_valid_examples = fec_valid_examples
@@ -99,28 +116,20 @@ class DirectClient:
         self._warned_info_level_suppressed = False
         self._last_submission_timestamp = 0.0
         try:
-            self.submission_cooldown_seconds = max(
-                0, int(os.getenv("MINER_SUBMISSION_COOLDOWN_SECONDS", "60"))
-            )
+            self.submission_cooldown_seconds = max(0, int(getattr(hp, "submission_cooldown_seconds", 60)))
         except Exception:
             self.submission_cooldown_seconds = 60
 
         if submit_only_if_improved is None:
-            gate = os.getenv("MINER_SUBMIT_ONLY_IF_IMPROVED", "").strip().lower()
-            submit_only_if_improved = gate in {"1", "true", "yes", "y", "on"}
+            submit_only_if_improved = bool(getattr(hp, "submit_only_if_improved", False))
         self.submit_only_if_improved = bool(submit_only_if_improved)
         if self.submit_only_if_improved:
             logger.info(
-                "Miner submission gate enabled (MINER_SUBMIT_ONLY_IF_IMPROVED): only submit if verified score improves local best"
+                "Miner submission gate enabled: only submit if verified score improves local best"
             )
 
         if max_submission_attempts_per_generation is None:
-            raw = os.getenv("MINER_MAX_SUBMISSION_ATTEMPTS_PER_GENERATION", "").strip()
-            if raw:
-                try:
-                    max_submission_attempts_per_generation = int(raw)
-                except Exception:
-                    max_submission_attempts_per_generation = None
+            max_submission_attempts_per_generation = getattr(hp, "max_submission_attempts_per_generation", None)
         if max_submission_attempts_per_generation is None:
             max_submission_attempts_per_generation = 3 if self.submit_only_if_improved else 1
         self.max_submission_attempts_per_generation = max(
@@ -128,9 +137,7 @@ class DirectClient:
         )
 
         try:
-            default_validate_every = max(
-                1, int(os.getenv("MINER_VALIDATE_EVERY_N_GENERATIONS", "1"))
-            )
+            default_validate_every = max(1, int(getattr(hp, "validate_every_n_generations", 1)))
         except Exception:
             default_validate_every = 1
 
@@ -143,19 +150,17 @@ class DirectClient:
             self.validate_every_n_generations = int(default_validate_every)
         if self.validate_every_n_generations > 1:
             logger.info(
-                "Miner validation throttle enabled (MINER_VALIDATE_EVERY_N_GENERATIONS=%d)",
+                "Miner validation throttle enabled (validate_every_n_generations=%d)",
                 int(self.validate_every_n_generations),
             )
 
         try:
-            self.sota_cache_seconds = max(
-                0.0, float(os.getenv("MINER_SOTA_CACHE_SECONDS", "30"))
-            )
+            self.sota_cache_seconds = max(0.0, float(getattr(hp, "sota_cache_seconds", 30.0)))
         except Exception:
             self.sota_cache_seconds = 30.0
         try:
             self.sota_fetch_failure_backoff_seconds = max(
-                0.0, float(os.getenv("MINER_SOTA_FAILURE_BACKOFF_SECONDS", "5"))
+                0.0, float(getattr(hp, "sota_failure_backoff_seconds", 5.0))
             )
         except Exception:
             self.sota_fetch_failure_backoff_seconds = 5.0
@@ -180,15 +185,20 @@ class DirectClient:
         self.worker_id = int(worker_id)
 
         if persist_state is None:
-            raw = os.getenv("MINER_PERSIST_STATE", "1").strip().lower()
-            persist_state = raw not in {"0", "false", "no", "off"}
+            persist_state = bool(getattr(hp, "persist_state", True))
         self.persist_state = bool(persist_state)
 
         try:
-            raw_checkpoint = os.getenv("MINER_PERSIST_EVERY_N_GENERATIONS", "5000").strip()
-            self.persist_every_n_generations = max(0, int(raw_checkpoint or 0))
+            self.persist_every_n_generations = max(
+                0, int(getattr(hp, "persist_every_n_generations", 5000))
+            )
         except Exception:
             self.persist_every_n_generations = 5000
+
+        try:
+            self.gene_dump_every = max(1, int(getattr(hp, "gene_dump_every", 1000)))
+        except Exception:
+            self.gene_dump_every = 1000
 
         state_dir_path: Optional[Path] = None
         if state_dir:
@@ -809,18 +819,21 @@ class DirectClient:
         except Exception:
             validate_every = 1
         logger.info(f"Validating every {validate_every} generations")
-        last_validation_generation = -validate_every
+        # Treat "validate every N generations" as: first validation happens at generation N
+        # (not at generation 1). Using a negative sentinel causes validation on the first
+        # generation for N>1, which is a large and surprising startup cost.
+        last_validation_generation = 0
         pending_best_candidate = None
         pending_best_candidate_score = -np.inf
         pending_best_candidate_over_local_count = 0
         pending_best_candidate_from_cooldown = False
         pending_prevalidated = None
-        last_submit_attempt_generation = -validate_every
+        last_submit_attempt_generation = 0
 
         throttled_mode = validate_every > 1
         pop_size = int(getattr(engine, "pop_size", 0) or 0)
         try:
-            gene_dump_every = max(1, int(os.getenv("MINER_GENE_DUMP_EVERY", "1000")))
+            gene_dump_every = max(1, int(getattr(self, "gene_dump_every", 1000)))
         except Exception:
             gene_dump_every = 1000
         logger.info(
@@ -859,7 +872,7 @@ class DirectClient:
                 prev_best_ever = best_ever_score
                 best_ever_score = best_score
                 generations_since_improvement = 0
-                logger.info(
+                logger.debug(
                     "New best_ever_score at gen=%d: %.6f (prev=%.6f)",
                     int(generation),
                     float(best_ever_score),
@@ -885,7 +898,7 @@ class DirectClient:
                 pending_best_candidate = best_over_local_algo
                 pending_best_candidate_score = float(best_over_local_score)
                 pending_best_candidate_over_local_count = int(over_local_count)
-                logger.info(
+                logger.debug(
                     "New pending_best_candidate at gen=%d: score=%.6f (prev=%.6f) over_local_count=%d phase_sizes=%s",
                     int(generation),
                     float(pending_best_candidate_score),
@@ -903,8 +916,8 @@ class DirectClient:
                         else 0,
                     },
                 )
-            elif over_local_count > 0 and logger.isEnabledFor(logging.INFO):
-                logger.info(
+            elif over_local_count > 0 and logger.isEnabledFor(logging.DEBUG):
+                logger.debug(
                     "Candidates over local best at gen=%d: count=%d best_score=%.6f best_verified_local=%.6f",
                     int(generation),
                     int(over_local_count),
@@ -916,7 +929,7 @@ class DirectClient:
                 pending_best_candidate is not None
                 and float(pending_best_candidate_score) <= float(best_verified_local)
             ):
-                logger.info(
+                logger.debug(
                     "Dropping pending_best_candidate at gen=%d: pending_score=%.6f <= best_verified_local=%.6f",
                     int(generation),
                     float(pending_best_candidate_score),
@@ -932,7 +945,7 @@ class DirectClient:
                     if float(pending_prevalidated.get("verified_score", -np.inf)) <= float(
                         best_verified_local
                     ):
-                        logger.info(
+                        logger.debug(
                             "Clearing pending_prevalidated at gen=%d: verified_score=%.6f <= best_verified_local=%.6f",
                             int(generation),
                             float(pending_prevalidated.get("verified_score", -np.inf)),
@@ -940,7 +953,7 @@ class DirectClient:
                         )
                         pending_prevalidated = None
                 except Exception:
-                    logger.info(
+                    logger.debug(
                         "Clearing pending_prevalidated at gen=%d: invalid verified_score",
                         int(generation),
                     )
@@ -949,7 +962,7 @@ class DirectClient:
             cooldown_remaining = self._submission_cooldown_remaining()
             if cooldown_remaining > 0 and best_over_local_algo is not None:
                 if not pending_best_candidate_from_cooldown:
-                    logger.info(
+                    logger.debug(
                         "In submission cooldown (%.1fs remaining); caching candidate opportunities",
                         float(cooldown_remaining),
                     )
@@ -962,7 +975,7 @@ class DirectClient:
                 and (generation - last_submit_attempt_generation) >= validate_every
             ):
                 last_submit_attempt_generation = generation
-                logger.info(
+                logger.debug(
                     "Retrying submission for prevalidated candidate at gen=%d (verified_score=%.6f)",
                     int(generation),
                     float(pending_prevalidated.get("verified_score", -np.inf)),
@@ -1199,7 +1212,7 @@ class DirectClient:
                     #         logger.info(f"Increased population size to {engine.pop_size}")
 
                 # Check if we should refresh SOTA threshold (in case it changed)
-                if generation % 50 == 0:
+                if generation % 5000 == 0:
                     new_sota = self._fetch_sota_threshold()
                     if new_sota != sota_threshold:
                         logger.info(

@@ -10,9 +10,15 @@ from PySide6.QtWidgets import (
     QPushButton,
 )
 from PySide6.QtSvgWidgets import QSvgWidget
-from typing import Optional
+from typing import Optional, Any
 import logging
+import json
+import os
 import re
+import signal
+import subprocess
+import sys
+from uuid import uuid4
 
 from gui.components import PrimaryButton, SecondaryButton
 from gui.components.modal import ConfirmationModal
@@ -85,6 +91,9 @@ class GUILogHandler(logging.Handler):
         self._re_score_verified = re.compile(rf"\bScore:\s*{number}\s*\(verified\)", re.IGNORECASE)
         self._re_verified_score = re.compile(rf"\bverified_score\b[^0-9\-\+]*{number}", re.IGNORECASE)
         self._re_regularized_iter = re.compile(r"\biter=(\d+)\b", re.IGNORECASE)
+        self._re_gen_line = re.compile(r"^Gen\s+(\d+)\b", re.IGNORECASE)
+        self._last_generation_seen = 0
+        self._last_regularized_iter_seen = 0
 
     def _maybe_update_best_verified(self, verified_score: float):
         try:
@@ -152,8 +161,41 @@ class GUILogHandler(logging.Handler):
                     }
                 )
 
-        if msg.startswith("[regularized-evo]") or msg.startswith("Gen ") or "generation" in msg.lower():
-            self.task.tasks_completed += 1
+        updated_tasks = False
+        if msg.startswith("Gen "):
+            m_gen = self._re_gen_line.match(msg)
+            if m_gen:
+                try:
+                    generation = int(m_gen.group(1))
+                except Exception:
+                    generation = None
+                if generation is not None and generation > int(self._last_generation_seen):
+                    delta = int(generation) - int(self._last_generation_seen)
+                    self._last_generation_seen = int(generation)
+                    self.task.tasks_completed += int(delta)
+                    updated_tasks = True
+        elif msg.startswith("[regularized-evo]") and not suppress_log:
+            m_iter = self._re_regularized_iter.search(msg)
+            if m_iter:
+                try:
+                    iteration = int(m_iter.group(1))
+                except Exception:
+                    iteration = None
+                if iteration is not None and iteration > int(self._last_regularized_iter_seen):
+                    delta = int(iteration) - int(self._last_regularized_iter_seen)
+                    self._last_regularized_iter_seen = int(iteration)
+                    self.task.tasks_completed += int(delta)
+                    updated_tasks = True
+
+        # Emit periodic stats updates on progress logs (avoid per-generation GUI updates).
+        if updated_tasks and msg.startswith("Gen "):
+            self.stats_signal.emit(
+                {
+                    "tasks_completed": self.task.tasks_completed,
+                    "successful_submissions": self.task.successful_submissions,
+                    "best_score": self.task.best_score,
+                }
+            )
 
         m = self._re_score_verified.search(msg)
         if m:
@@ -224,11 +266,81 @@ class DirectMiningTask(QRunnable):
             )
 
             if hasattr(self.client, "run_continuous_mining"):
-                result = self.client.run_continuous_mining(
-                    task_type=self.task_type,
-                    engine_type=self.engine_type,
-                    checkpoint_generations=self.checkpoint_generations,
-                )
+                profile_out = os.getenv("BITSOTA_GUI_PROFILE_ONE_GEN_OUT", "").strip()
+                if profile_out:
+                    import cProfile
+
+                    out_path = os.path.expanduser(profile_out)
+                    out_dir = os.path.dirname(out_path)
+                    if out_dir:
+                        try:
+                            os.makedirs(out_dir, exist_ok=True)
+                        except Exception:
+                            pass
+
+                    client = self.client
+                    original_get_engine = getattr(client, "_get_engine", None)
+                    if callable(original_get_engine):
+                        counter = {"n": 0}
+
+                        def _wrapped_get_engine(task_type: str, engine_type: str = "archive"):
+                            engine = original_get_engine(task_type, engine_type)
+                            if getattr(engine, "_bitsota_profile_wrapped", False):
+                                return engine
+                            original_evolve = getattr(engine, "evolve_generation", None)
+                            if not callable(original_evolve):
+                                return engine
+
+                            def _wrapped_evolve_generation(*args, **kwargs):
+                                out = original_evolve(*args, **kwargs)
+                                counter["n"] += 1
+                                if counter["n"] >= 1:
+                                    try:
+                                        client.stop_signal = True
+                                    except Exception:
+                                        pass
+                                return out
+
+                            try:
+                                engine.evolve_generation = _wrapped_evolve_generation  # type: ignore[method-assign]
+                                engine._bitsota_profile_wrapped = True  # type: ignore[attr-defined]
+                            except Exception:
+                                pass
+                            return engine
+
+                        try:
+                            client._get_engine = _wrapped_get_engine  # type: ignore[method-assign]
+                        except Exception:
+                            pass
+
+                    self.signals.log.emit(
+                        f"[profiling] Capturing 1 generation to {out_path} (BITSOTA_GUI_PROFILE_ONE_GEN_OUT)"
+                    )
+                    prof = cProfile.Profile()
+                    prof.enable()
+                    try:
+                        result = client.run_continuous_mining(
+                            task_type=self.task_type,
+                            engine_type=self.engine_type,
+                            checkpoint_generations=self.checkpoint_generations,
+                        )
+                    finally:
+                        prof.disable()
+                        try:
+                            prof.dump_stats(out_path)
+                        except Exception as e:
+                            self.signals.log.emit(f"[profiling] Failed to write pstats: {e}")
+                        if callable(original_get_engine):
+                            try:
+                                client._get_engine = original_get_engine  # type: ignore[method-assign]
+                            except Exception:
+                                pass
+                else:
+                    result = self.client.run_continuous_mining(
+                        task_type=self.task_type,
+                        engine_type=self.engine_type,
+                        checkpoint_generations=self.checkpoint_generations,
+                    )
                 self.signals.log.emit(f"Mining session completed: {result}")
             else:
                 self.signals.error.emit("Direct client not available")
@@ -257,7 +369,15 @@ class MiningScreen(QWidget):
         super().__init__(parent)
         self.main_window = main_window
         self.is_mining = False
-        self.mining_task: Optional[DirectMiningTask] = None
+        self.sidecar_process: Optional[subprocess.Popen] = None
+        self.miner_process: Optional[subprocess.Popen] = None
+        self.sidecar_url: Optional[str] = None
+        self.sidecar_run_id: Optional[str] = None
+        self.sidecar_log_cursor = 0
+        self.sidecar_candidate_cursor = 0
+        self.sidecar_population_cursor = 0
+        self._pool_coordinator = None
+        self._pool_task_type: Optional[str] = None
         self.thread_pool = QThreadPool()
         self.tasks_completed = 0
         self.successful_submissions = 0
@@ -266,7 +386,10 @@ class MiningScreen(QWidget):
         self._load_mining_stats()
 
         self.sota_timer = QTimer()
-        self.sota_timer.timeout.connect(self.update_global_sota)
+        self.sota_timer.timeout.connect(self._refresh_global_sota_from_relay)
+
+        self.sidecar_poll_timer = QTimer()
+        self.sidecar_poll_timer.timeout.connect(self._poll_sidecar)
 
     def setup_ui(self):
         main_layout = QVBoxLayout(self)
@@ -351,18 +474,17 @@ class MiningScreen(QWidget):
         self.task_type_combo = QComboBox()
         self.task_type_combo.setObjectName("form_input")
         cfg = get_app_config()
-        self.task_type_map = {"CIFAR-10 Binary": "cifar10_binary"}
-        if getattr(cfg, "test_mode", False):
-            self.task_type_map.update(
-                {
-                    "MNIST Binary": "mnist_binary",
-                    "Scalar Linear": "scalar_linear",
-                }
-            )
+        # Allow selecting supported task types regardless of test_mode so profiling/local
+        # runs can match `scripts/miner_local_og.py` behavior.
+        self.task_type_map = {
+            "CIFAR-10 Binary": "cifar10_binary",
+            "MNIST Binary": "mnist_binary",
+            "Scalar Linear": "scalar_linear",
+            "Pool": "pool",
+            "Pool Lease": "pool_lease",
+        }
         self.task_type_combo.addItems(list(self.task_type_map.keys()))
-        self.task_type_combo.setEnabled(bool(getattr(cfg, "test_mode", False)))
-        if not getattr(cfg, "test_mode", False):
-            self.task_type_combo.setToolTip("Task selection is available in test mode only.")
+        self.task_type_combo.setEnabled(True)
         self.task_type_combo.currentTextChanged.connect(lambda: self.update_global_sota())
         config_row.addWidget(self.task_type_combo, 1)
 
@@ -405,8 +527,8 @@ class MiningScreen(QWidget):
             self._stop_mining()
 
     def _start_mining(self):
-        if self.is_mining and self.mining_task:
-            self._append_log("ERROR: Mining task still running. Please wait for it to stop.")
+        if self.is_mining:
+            self._append_log("ERROR: Mining is already running.")
             return
 
         if not self.main_window:
@@ -417,27 +539,84 @@ class MiningScreen(QWidget):
             self._append_log("ERROR: No wallet loaded. Please load a wallet first.")
             return
 
-        if not self.main_window.client:
-            self._append_log("ERROR: Client not initialized. Please ensure wallet is properly loaded.")
-            return
+        task_display = self.task_type_combo.currentText()
+        task_type = self.task_type_map.get(task_display, "cifar10_binary")
+        self._pool_task_type = str(task_type)
+        is_pool = str(task_type) in {"pool", "pool_lease"}
 
-        if not self.main_window.coldkey_address:
-            self._append_log("ERROR: No coldkey address provided. Please provide your coldkey address first.")
-            self.main_window._prompt_for_coldkey_address()
-            return
+        if not is_pool:
+            if not self.main_window.client:
+                self._append_log("ERROR: Client not initialized. Please ensure wallet is properly loaded.")
+                return
+
+            if not self.main_window.coldkey_address:
+                self._append_log(
+                    "ERROR: No coldkey address provided. Please provide your coldkey address first."
+                )
+                self.main_window._prompt_for_coldkey_address()
+                return
+
+            try:
+                relay_url = self.main_window._get_relay_endpoint_from_config()
+                self._append_log(f"Relay endpoint: {relay_url}")
+            except Exception:
+                pass
+
+            if not self._check_invite_code():
+                self._show_invite_code_modal()
+                return
+
+            if not self._send_coldkey_address():
+                self._append_log(
+                    "ERROR: Failed to send coldkey address to relay. Please try again."
+                )
+                return
+
+        workers = 1
+        if hasattr(self, "workers_combo") and self.workers_combo is not None:
+            try:
+                workers = max(1, int(self.workers_combo.currentText()))
+            except Exception:
+                workers = 1
 
         try:
-            relay_url = self.main_window._get_relay_endpoint_from_config()
-            self._append_log(f"Relay endpoint: {relay_url}")
-        except Exception:
-            pass
+            sidecar_url = self._ensure_sidecar_running()
+            self.sidecar_url = sidecar_url
 
-        if not self._check_invite_code():
-            self._show_invite_code_modal()
-            return
+            run_id = self._sidecar_start_run(sidecar_url)
+            self.sidecar_run_id = run_id
+            self.sidecar_log_cursor = 0
+            self.sidecar_candidate_cursor = 0
+            self.sidecar_population_cursor = 0
 
-        if not self._send_coldkey_address():
-            self._append_log("ERROR: Failed to send coldkey address to relay. Please try again.")
+            global_sota = None
+            if not is_pool:
+                global_sota = self._refresh_global_sota_from_relay()
+                if global_sota is not None:
+                    self._sidecar_set_global_sota(sidecar_url, global_sota)
+
+            if is_pool:
+                self._start_pool_miner_process(
+                    sidecar_url=sidecar_url,
+                    run_id=run_id,
+                    workers=workers,
+                )
+                self._start_pool_task_driver(
+                    sidecar_url=sidecar_url,
+                    run_id=run_id,
+                    pool_mode=str(task_type),
+                )
+            else:
+                self._start_miner_process(
+                    sidecar_url=sidecar_url,
+                    run_id=run_id,
+                    task_type=task_type,
+                    workers=workers,
+                    global_sota=global_sota,
+                )
+        except Exception as e:
+            self._append_log(f"ERROR: Failed to start mining processes: {e}")
+            self._stop_mining_processes()
             return
 
         self.is_mining = True
@@ -448,146 +627,25 @@ class MiningScreen(QWidget):
         self.start_mining_btn.style().unpolish(self.start_mining_btn)
         self.start_mining_btn.style().polish(self.start_mining_btn)
 
-        task_display = self.task_type_combo.currentText()
-        task_type = self.task_type_map.get(task_display, "cifar10_binary")
-        cfg = get_app_config()
-        problem_cfg = getattr(self.main_window, "problem_config", None)
-        explicit_engine_params = getattr(problem_cfg, "engine_params", None) if problem_cfg is not None else None
-
-        # Ensure defaults (memory + phase op limits) match the C++ reference unless
-        # problem_config explicitly overrides them.
-        try:
-            client = self.main_window.client
-            client.engine_params = _apply_cpp_defaults_to_engine_params(
-                task_type,
-                getattr(client, "engine_params", None),
-                explicit_engine_params=explicit_engine_params,
-            ) or {}
-            cache = getattr(client, "_engine_cache", None)
-            if isinstance(cache, dict):
-                cache.clear()
-        except Exception:
-            pass
-
-        workers = 1
-        if hasattr(self, "workers_combo") and self.workers_combo is not None:
-            try:
-                workers = max(1, int(self.workers_combo.currentText()))
-            except Exception:
-                workers = 1
-
-        from gui.stop_flag import StopFlag
-        stop_flag = StopFlag()
-
-        if workers > 1:
-            from gui.multiprocess_miner_task import MultiProcessDirectMiningTask
-
-            miner_task_count = getattr(cfg, "miner_task_count", None)
-            validator_task_count = getattr(cfg, "validator_task_count", None)
-            validate_every = getattr(cfg, "miner_validate_every_n_generations", 1000)
-            engine_type = "baseline"
-            checkpoint_generations = 10
-            engine_params = None
-            env_overrides = None
-
-            if problem_cfg is not None:
-                miner_task_count = (
-                    problem_cfg.miner_task_count
-                    if problem_cfg.miner_task_count is not None
-                    else miner_task_count
-                )
-                validator_task_count = (
-                    problem_cfg.validator_task_count
-                    if problem_cfg.validator_task_count is not None
-                    else validator_task_count
-                )
-                validate_every = (
-                    problem_cfg.miner_validate_every_n_generations
-                    if problem_cfg.miner_validate_every_n_generations is not None
-                    else validate_every
-                )
-                if getattr(problem_cfg, "engine_type", None):
-                    engine_type = str(problem_cfg.engine_type)
-                if getattr(problem_cfg, "checkpoint_generations", None):
-                    checkpoint_generations = int(problem_cfg.checkpoint_generations)
-                engine_params = getattr(problem_cfg, "engine_params", None)
-                env_overrides = getattr(problem_cfg, "env", None)
-
-            engine_params = _apply_cpp_defaults_to_engine_params(
-                task_type,
-                engine_params if isinstance(engine_params, dict) else None,
-                explicit_engine_params=explicit_engine_params,
-            )
-
-            worker_config = {
-                "wallet_name": getattr(self.main_window.wallet, "name", None),
-                "wallet_hotkey": getattr(self.main_window.wallet, "hotkey_str", None),
-                "wallet_path": getattr(self.main_window.wallet, "path", None),
-                "relay_endpoint": self.main_window._get_relay_endpoint_from_config(),
-                "miner_task_count": miner_task_count,
-                "validator_task_count": validator_task_count,
-                "validate_every_n_generations": validate_every,
-                "engine_params": engine_params,
-                "env_overrides": env_overrides if isinstance(env_overrides, dict) else None,
-                "task_type": task_type,
-                "engine_type": engine_type,
-                "checkpoint_generations": int(checkpoint_generations),
-                "verbose": True,
-            }
-            seed = getattr(cfg, "miner_seed", None)
-            migration_generations = getattr(cfg, "miner_migration_generations", 0)
-            self.mining_task = MultiProcessDirectMiningTask(
-                worker_config=worker_config,
-                workers=workers,
-                seed=seed,
-                migration_generations=migration_generations,
-                initial_tasks=self.tasks_completed,
-                initial_submissions=self.successful_submissions,
-                initial_best_score=self.best_score,
-            )
-        else:
-            engine_type = "baseline"
-            checkpoint_generations = 10
-            if problem_cfg is not None:
-                if getattr(problem_cfg, "engine_type", None):
-                    engine_type = str(problem_cfg.engine_type)
-                if getattr(problem_cfg, "checkpoint_generations", None):
-                    checkpoint_generations = int(problem_cfg.checkpoint_generations)
-            self.mining_task = DirectMiningTask(
-                client=self.main_window.client,
-                task_type=task_type,
-                stop_flag=stop_flag,
-                engine_type=engine_type,
-                checkpoint_generations=checkpoint_generations,
-                initial_tasks=self.tasks_completed,
-                initial_submissions=self.successful_submissions,
-                initial_best_score=self.best_score,
-            )
-
-        self.mining_task.signals.log.connect(self._append_log)
-        self.mining_task.signals.error.connect(self._handle_mining_error)
-        self.mining_task.signals.finished.connect(self._on_mining_finished)
-        self.mining_task.signals.stats_updated.connect(self._update_stats)
-
-        self.thread_pool.start(self.mining_task)
-        self._append_log(f"Starting mining for task: {task_type}")
+        self._append_log(f"Starting mining for task: {task_type} (workers={workers})")
         self.update_connection_status(True)
-        self.update_global_sota()
-        self.sota_timer.start(30000)
+        if not is_pool:
+            self.sota_timer.start(30000)
+        self.sidecar_poll_timer.start(1000)
 
     def _stop_mining(self):
         self.is_mining = False
         self.sota_timer.stop()
+        self.sidecar_poll_timer.stop()
+        self._stop_mining_processes()
         self.start_mining_btn.update_icon(resource_path("gui/images/play.svg"))
         self.start_mining_btn.update_text("Start Mining")
         self.start_mining_btn.setObjectName("primary_button")
         self.start_mining_btn.setStyleSheet("")
         self.start_mining_btn.style().unpolish(self.start_mining_btn)
         self.start_mining_btn.style().polish(self.start_mining_btn)
-
-        if self.mining_task:
-            self.mining_task.stop()
-            self._append_log("Stopping mining...")
+        self.update_connection_status(False)
+        self._append_log("Mining stopped.")
 
     def _check_invite_code(self) -> bool:
         if get_app_config().test_mode:
@@ -710,18 +768,10 @@ class MiningScreen(QWidget):
         self._save_mining_stats()
 
     def _on_mining_finished(self):
-        if self.mining_task:
-            final_stats = {
-                "tasks_completed": self.mining_task.tasks_completed,
-                "successful_submissions": self.mining_task.successful_submissions,
-                "best_score": self.mining_task.best_score
-            }
-            self._update_stats(final_stats)
-            self._save_mining_stats()
-            self.mining_task = None
-
         self.is_mining = False
         self.sota_timer.stop()
+        self.sidecar_poll_timer.stop()
+        self._stop_mining_processes()
         self.start_mining_btn.update_icon(resource_path("gui/images/play.svg"))
         self.start_mining_btn.update_text("Start Mining")
         self.start_mining_btn.setObjectName("primary_button")
@@ -730,6 +780,564 @@ class MiningScreen(QWidget):
         self.start_mining_btn.style().polish(self.start_mining_btn)
         self.update_connection_status(False)
         self._append_log("Mining stopped.")
+
+    @staticmethod
+    def _get_sidecar_url() -> str:
+        host = os.getenv("BITSOTA_SIDECAR_HOST", "127.0.0.1").strip() or "127.0.0.1"
+        port = os.getenv("BITSOTA_SIDECAR_PORT", "8123").strip() or "8123"
+        return f"http://{host}:{port}"
+
+    def _ensure_sidecar_running(self) -> str:
+        url = self._get_sidecar_url().rstrip("/")
+        try:
+            r = requests.get(f"{url}/health", timeout=0.5)
+            r.raise_for_status()
+            return url
+        except Exception:
+            pass
+
+        cmd = [
+            sys.executable,
+            "-m",
+            "sidecar",
+            "--host",
+            os.getenv("BITSOTA_SIDECAR_HOST", "127.0.0.1"),
+            "--port",
+            os.getenv("BITSOTA_SIDECAR_PORT", "8123"),
+        ]
+        self.sidecar_process = subprocess.Popen(
+            cmd,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            env=os.environ.copy(),
+            start_new_session=True,
+        )
+        try:
+            self._append_log(f"Sidecar started (pid={int(self.sidecar_process.pid)}).")
+        except Exception:
+            pass
+
+        deadline = time.time() + 5.0
+        last_err = None
+        while time.time() < deadline:
+            try:
+                r = requests.get(f"{url}/health", timeout=0.5)
+                r.raise_for_status()
+                return url
+            except Exception as e:
+                last_err = e
+                time.sleep(0.1)
+        raise RuntimeError(f"Sidecar failed to start: {last_err}")
+
+    def _sidecar_start_run(self, sidecar_url: str) -> str:
+        run_id = str(uuid4())
+        r = requests.post(
+            f"{sidecar_url.rstrip('/')}/runs/start",
+            json={"run_id": run_id, "replace": True},
+            timeout=1.0,
+        )
+        r.raise_for_status()
+        payload = r.json() or {}
+        return str(payload.get("run_id") or run_id)
+
+    def _sidecar_set_global_sota(self, sidecar_url: str, value: float) -> None:
+        try:
+            payload = {"value": float(value)}
+            if self.sidecar_run_id:
+                payload["run_id"] = str(self.sidecar_run_id)
+            requests.post(
+                f"{sidecar_url.rstrip('/')}/set_global_sota",
+                json=payload,
+                timeout=1.0,
+            )
+        except Exception:
+            return
+
+    def _start_pool_miner_process(
+        self,
+        *,
+        sidecar_url: str,
+        run_id: str,
+        workers: int,
+    ) -> None:
+        cfg = get_app_config()
+        cmd = [
+            sys.executable,
+            "-m",
+            "scripts.pool_miner_sidecar",
+            "--sidecar-url",
+            str(sidecar_url),
+            "--run-id",
+            str(run_id),
+            "--workers",
+            str(int(max(1, workers))),
+            "--mode",
+            "real",
+            "--lease-evolve-generations",
+            str(int(max(1, getattr(cfg, "pool_lease_evolve_generations", 1000)))),
+        ]
+        self.miner_process = subprocess.Popen(
+            cmd,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            env=os.environ.copy(),
+            start_new_session=True,
+        )
+        try:
+            self._append_log(f"Pool miner started (pid={int(self.miner_process.pid)}).")
+        except Exception:
+            pass
+
+    def _start_pool_task_driver(self, *, sidecar_url: str, run_id: str, pool_mode: str) -> None:
+        if not self.main_window or not self.main_window.wallet:
+            raise RuntimeError("Wallet unavailable for pool driver")
+
+        from gui.pool_task_driver import PoolApiClient, PoolLeaseCoordinator, PoolTaskCoordinator, SidecarJobClient
+
+        cfg = get_app_config()
+        pool_endpoint = str(getattr(cfg, "pool_endpoint", "") or "").strip()
+        if not pool_endpoint:
+            raise RuntimeError("Pool endpoint missing in config")
+
+        pool_client = PoolApiClient(pool_endpoint, self.main_window.wallet, timeout_s=2.0)
+        sidecar_jobs = SidecarJobClient(sidecar_url, run_id, timeout_s=0.5)
+        if str(pool_mode) == "pool_lease":
+            self._pool_coordinator = PoolLeaseCoordinator(
+                pool_client=pool_client,
+                sidecar_jobs=sidecar_jobs,
+                log=self._append_log,
+                request_interval_s=1.0,
+            )
+        else:
+            self._pool_coordinator = PoolTaskCoordinator(
+                pool_client=pool_client,
+                sidecar_jobs=sidecar_jobs,
+                log=self._append_log,
+                request_interval_s=1.0,
+            )
+        self._append_log(f"[pool] Pool endpoint: {pool_endpoint}")
+
+    def _start_miner_process(
+        self,
+        *,
+        sidecar_url: str,
+        run_id: str,
+        task_type: str,
+        workers: int,
+        global_sota: Optional[float],
+    ) -> None:
+        cfg = get_app_config()
+        problem_cfg = getattr(self.main_window, "problem_config", None)
+        problem_config_path = getattr(cfg, "problem_config_path", None) or getattr(problem_cfg, "source_path", None)
+        initial_population_path = getattr(cfg, "population_state_path", None)
+        if isinstance(initial_population_path, str):
+            initial_population_path = initial_population_path.strip() or None
+        if not initial_population_path:
+            try:
+                from gui.wallet_utils_gui import get_population_state_file
+
+                initial_population_path = str(get_population_state_file())
+            except Exception:
+                initial_population_path = None
+
+        snapshot_every = None
+        try:
+            snapshot_every = int(getattr(problem_cfg, "checkpoint_generations", None) or 0)
+        except Exception:
+            snapshot_every = None
+        if not snapshot_every:
+            try:
+                snapshot_every = int(getattr(cfg, "miner_validate_every_n_generations", 0) or 0)
+            except Exception:
+                snapshot_every = None
+
+        cmd = [
+            sys.executable,
+            "-m",
+            "scripts.miner_local_og_sidecar",
+            "--sidecar-url",
+            sidecar_url,
+            "--run-id",
+            run_id,
+            "--task-type",
+            str(task_type),
+            "--workers",
+            str(int(max(1, workers))),
+            "--iterations",
+            str(int(getattr(problem_cfg, "miner_iterations", 0) or 0)),
+        ]
+        if global_sota is not None:
+            cmd.extend(["--sota-threshold", str(float(global_sota))])
+        if problem_config_path:
+            cmd.extend(["--config", str(problem_config_path)])
+        if snapshot_every and int(snapshot_every) > 0:
+            cmd.extend(["--population-snapshot-every", str(int(snapshot_every))])
+        if initial_population_path:
+            try:
+                p = os.path.expanduser(str(initial_population_path))
+            except Exception:
+                p = None
+            if p and os.path.exists(p):
+                cmd.extend(["--initial-population-path", str(p)])
+
+        env = os.environ.copy()
+        env_overrides = getattr(problem_cfg, "env", None) if problem_cfg is not None else None
+        if isinstance(env_overrides, dict):
+            for k, v in env_overrides.items():
+                if k:
+                    env[str(k)] = str(v)
+
+        self.miner_process = subprocess.Popen(
+            cmd,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            env=env,
+            start_new_session=True,
+        )
+        try:
+            self._append_log(f"Miner started (pid={int(self.miner_process.pid)}).")
+        except Exception:
+            pass
+
+    @staticmethod
+    def _terminate_process(proc: Optional[subprocess.Popen], *, timeout_s: float = 5.0) -> None:
+        if proc is None:
+            return
+
+        try:
+            if os.name == "posix" and getattr(proc, "pid", None):
+                try:
+                    os.killpg(int(proc.pid), signal.SIGTERM)
+                except Exception:
+                    proc.terminate()
+            else:
+                proc.terminate()
+        except Exception:
+            pass
+
+        try:
+            proc.wait(timeout=max(0.1, float(timeout_s)))
+            return
+        except Exception:
+            pass
+
+        try:
+            if os.name == "posix" and getattr(proc, "pid", None):
+                try:
+                    os.killpg(int(proc.pid), signal.SIGKILL)
+                except Exception:
+                    proc.kill()
+            else:
+                proc.kill()
+        except Exception:
+            pass
+
+        try:
+            proc.wait(timeout=max(0.1, float(timeout_s)))
+        except Exception:
+            pass
+
+    def _stop_mining_processes(self) -> None:
+        proc = self.miner_process
+        self.miner_process = None
+        self._terminate_process(proc, timeout_s=5.0)
+
+        sidecar_proc = self.sidecar_process
+        self.sidecar_process = None
+        self._terminate_process(sidecar_proc, timeout_s=5.0)
+
+        self.sidecar_url = None
+        self.sidecar_run_id = None
+        self.sidecar_log_cursor = 0
+        self.sidecar_candidate_cursor = 0
+        self.sidecar_population_cursor = 0
+        self._pool_coordinator = None
+        self._pool_task_type = None
+
+    def _refresh_global_sota_from_relay(self) -> Optional[float]:
+        if not self.main_window:
+            return None
+        sota = None
+        try:
+            sota = self.main_window.get_current_sota()
+        except Exception:
+            sota = None
+        if sota is None:
+            return None
+        if self.sidecar_url:
+            self._sidecar_set_global_sota(self.sidecar_url, float(sota))
+        return float(sota)
+
+    def _poll_sidecar(self) -> None:
+        if not self.sidecar_url:
+            return
+
+        if self.miner_process is not None and self.miner_process.poll() is not None:
+            self._append_log("Miner process exited.")
+            self._on_mining_finished()
+            return
+
+        base = self.sidecar_url.rstrip("/")
+        try:
+            st_params = {"run_id": str(self.sidecar_run_id)} if self.sidecar_run_id else None
+            st = requests.get(f"{base}/state", params=st_params, timeout=0.5).json()
+        except Exception:
+            self.update_connection_status(False)
+            return
+
+        self.update_connection_status(True)
+
+        try:
+            tasks = int(st.get("tasks_completed", 0) or 0)
+        except Exception:
+            tasks = 0
+        try:
+            subs = int(st.get("successful_submissions", 0) or 0)
+        except Exception:
+            subs = 0
+        local_sota = st.get("local_sota")
+        global_sota = st.get("global_sota")
+
+        self._update_stats(
+            {
+                "tasks_completed": tasks,
+                "successful_submissions": subs,
+                "best_score": local_sota,
+            }
+        )
+
+        try:
+            if global_sota is not None:
+                self.global_sota_label.setText(f"{float(global_sota):.4f}")
+            else:
+                self.global_sota_label.setText("-")
+        except Exception:
+            self.global_sota_label.setText("-")
+
+        # Logs
+        try:
+            r = requests.get(
+                f"{base}/logs",
+                params={
+                    "run_id": str(self.sidecar_run_id),
+                    "cursor": int(self.sidecar_log_cursor),
+                    "limit": 200,
+                }
+                if self.sidecar_run_id
+                else {"cursor": int(self.sidecar_log_cursor), "limit": 200},
+                timeout=0.5,
+            )
+            payload = r.json() or {}
+            items = payload.get("items") or []
+            cursor = payload.get("cursor")
+            for it in items:
+                msg = None
+                if isinstance(it, dict):
+                    msg = it.get("message")
+                if msg:
+                    self._append_log(str(msg))
+            if cursor is not None:
+                self.sidecar_log_cursor = int(cursor)
+        except Exception:
+            pass
+
+        # Candidates
+        try:
+            r = requests.get(
+                f"{base}/candidates",
+                params={
+                    "run_id": str(self.sidecar_run_id),
+                    "cursor": int(self.sidecar_candidate_cursor),
+                    "limit": 50,
+                }
+                if self.sidecar_run_id
+                else {"cursor": int(self.sidecar_candidate_cursor), "limit": 50},
+                timeout=0.5,
+            )
+            payload = r.json() or {}
+            items = payload.get("items") or []
+            cursor = payload.get("cursor")
+            if cursor is not None:
+                self.sidecar_candidate_cursor = int(cursor)
+
+            for cand in items:
+                if isinstance(cand, dict):
+                    self._maybe_submit_candidate(cand, global_sota=global_sota, local_sota=local_sota)
+        except Exception:
+            pass
+
+        # Populations (for resume)
+        try:
+            r = requests.get(
+                f"{base}/populations",
+                params={
+                    "run_id": str(self.sidecar_run_id),
+                    "cursor": int(self.sidecar_population_cursor),
+                    "limit": 10,
+                }
+                if self.sidecar_run_id
+                else {"cursor": int(self.sidecar_population_cursor), "limit": 10},
+                timeout=0.5,
+            )
+            payload = r.json() or {}
+            items = payload.get("items") or []
+            cursor = payload.get("cursor")
+            if cursor is not None:
+                self.sidecar_population_cursor = int(cursor)
+            for snap in items:
+                if isinstance(snap, dict):
+                    self._persist_population_snapshot(snap)
+        except Exception:
+            pass
+
+        coordinator = self._pool_coordinator
+        if coordinator is not None:
+            try:
+                coordinator.tick()
+            except Exception:
+                pass
+
+    def _persist_population_snapshot(self, snap: dict) -> None:
+        cfg = get_app_config()
+        path = getattr(cfg, "population_state_path", None)
+        if isinstance(path, str):
+            path = path.strip() or None
+        if not path:
+            try:
+                from gui.wallet_utils_gui import get_population_state_file
+
+                path = str(get_population_state_file())
+            except Exception:
+                return
+
+        try:
+            resolved = os.path.expanduser(str(path))
+        except Exception:
+            resolved = str(path)
+
+        pop = snap.get("population")
+        if not isinstance(pop, list) or not pop:
+            return
+
+        worker_id = snap.get("worker_id", 0)
+        iteration = snap.get("iteration", 0)
+        task_type = snap.get("task_type")
+        engine = snap.get("engine")
+
+        try:
+            wid = str(int(worker_id))
+        except Exception:
+            wid = str(worker_id)
+
+        state: dict = {}
+        try:
+            if os.path.exists(resolved):
+                with open(resolved, "r") as f:
+                    state = json.load(f)
+        except Exception:
+            state = {}
+
+        if not isinstance(state, dict):
+            state = {}
+
+        # If task/engine changed, start a fresh state file.
+        if task_type and state.get("task_type") not in {None, task_type}:
+            state = {}
+        if engine and state.get("engine") not in {None, engine}:
+            state = {}
+
+        workers = state.get("workers")
+        if not isinstance(workers, dict):
+            workers = {}
+
+        workers[wid] = {"iteration": iteration, "population": pop}
+        state["version"] = 1
+        if task_type:
+            state["task_type"] = task_type
+        if engine:
+            state["engine"] = engine
+        if self.sidecar_run_id:
+            state["run_id"] = self.sidecar_run_id
+        state["updated_at_s"] = time.time()
+        state["workers"] = workers
+
+        try:
+            out_dir = os.path.dirname(resolved)
+            if out_dir:
+                os.makedirs(out_dir, exist_ok=True)
+            with open(resolved, "w") as f:
+                json.dump(state, f, indent=2)
+        except Exception:
+            return
+
+    def _maybe_submit_candidate(self, cand: dict, *, global_sota: Any, local_sota: Any) -> None:
+        if not self.main_window or not self.main_window.client:
+            return
+
+        try:
+            verified_score = float(cand.get("validator_score", -float("inf")))
+        except Exception:
+            return
+
+        g = None
+        l = None
+        try:
+            if global_sota is not None:
+                g = float(global_sota)
+        except Exception:
+            g = None
+        try:
+            if local_sota is not None:
+                l = float(local_sota)
+        except Exception:
+            l = None
+
+        threshold = max(v for v in [g, l] if v is not None) if (g is not None or l is not None) else None
+        if threshold is not None and verified_score <= float(threshold):
+            return
+
+        algo_dsl = cand.get("algorithm_dsl")
+        input_dim = cand.get("input_dim")
+        if not algo_dsl or input_dim is None:
+            return
+
+        task_type = str(cand.get("task_type") or "cifar10_binary")
+        eval_score = cand.get("eval_score")
+        worker_id = cand.get("worker_id")
+        iteration = cand.get("iteration")
+
+        task_id = f"{self.sidecar_run_id or 'run'}:{worker_id}:{iteration}"
+        solution_data = {
+            "task_id": task_id,
+            "task_type": task_type,
+            "algorithm_dsl": str(algo_dsl),
+            "input_dim": int(input_dim),
+            "eval_score": float(eval_score) if eval_score is not None else float(verified_score),
+            "worker_id": worker_id,
+            "iteration": iteration,
+        }
+
+        prevalidated = {"verified_score": float(verified_score)}
+        if g is not None:
+            prevalidated["sota_threshold"] = float(g)
+
+        self._append_log(f"[submit] Candidate verified_score={float(verified_score):.6f} threshold={threshold}")
+        result = self.main_window.client.submit_solution(solution_data, prevalidated=prevalidated)
+        status = str(result.get("status") or "")
+        self._append_log(f"[submit] status={status}")
+
+        if self.sidecar_url:
+            try:
+                payload = {"score": float(verified_score), "status": status}
+                if self.sidecar_run_id:
+                    payload["run_id"] = str(self.sidecar_run_id)
+                requests.post(
+                    f"{self.sidecar_url.rstrip('/')}/submission_result",
+                    json=payload,
+                    timeout=1.0,
+                )
+            except Exception:
+                pass
 
     def _on_mining_tab_changed(self, tab_id: str):
         if tab_id == "pool":
@@ -788,7 +1396,7 @@ class MiningScreen(QWidget):
         self.successful_submissions_label.setAlignment(Qt.AlignmentFlag.AlignRight)
         stats_grid.addWidget(self.successful_submissions_label, 1, 1)
 
-        label = QLabel("Best Local Score")
+        label = QLabel("Local SOTA")
         label.setObjectName("stat_label")
         stats_grid.addWidget(label, 2, 0)
         self.best_score_label = QLabel("-")
@@ -868,6 +1476,7 @@ class MiningScreen(QWidget):
         self.logs_text = QTextEdit()
         self.logs_text.setObjectName("logs_text")
         self.logs_text.setReadOnly(True)
+        self.logs_text.document().setMaximumBlockCount(5000)
         self.logs_text.setMinimumHeight(200)
         layout.addWidget(self.logs_text)
 
@@ -897,11 +1506,14 @@ class MiningScreen(QWidget):
             return
 
         try:
-            sota = self.main_window.get_current_sota()
-            if sota is not None:
-                self.global_sota_label.setText(f"{sota:.4f}")
-            else:
+            sota = self._refresh_global_sota_from_relay()
+            if sota is None:
                 self.global_sota_label.setText("-")
+                return
+            # When mining is running the label is driven by sidecar polling,
+            # but we still set it here for the idle case.
+            if not self.sidecar_url:
+                self.global_sota_label.setText(f"{float(sota):.4f}")
         except Exception as e:
             print(f"Error fetching SOTA: {e}")
             self.global_sota_label.setText("-")

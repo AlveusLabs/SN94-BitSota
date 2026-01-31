@@ -8,6 +8,7 @@ from typing import Any, Dict, Optional, Tuple
 import numpy as np
 
 from core.dsl_parser import DSLParser
+from core.hyperparams import get_validator_hyperparams
 from core.tasks.cifar10 import CIFAR10BinaryTask
 from core.tasks.mnist import MNISTBinaryTask
 from core.tasks.scalar_linear import ScalarLinearRegressionTask
@@ -16,8 +17,12 @@ logger = logging.getLogger(__name__)
 
 DEFAULT_TASK_TYPE = "cifar10_binary"
 DEFAULT_CIFAR_INPUT_DIM = 16
-VALIDATOR_TASK_COUNT = int(os.getenv("VALIDATOR_TASK_COUNT", "128"))
-VALIDATOR_TASK_SEED = int(os.getenv("VALIDATOR_TASK_SEED", "1337"))
+
+# Backward-compatible module-level defaults (used by scripts and legacy callers).
+# Prefer `validator_hyperparams.json` over env vars when setting these values.
+_DEFAULT_VALIDATOR_HP = get_validator_hyperparams()
+VALIDATOR_TASK_COUNT = int(_DEFAULT_VALIDATOR_HP.task_count)
+VALIDATOR_TASK_SEED = int(_DEFAULT_VALIDATOR_HP.task_seed)
 
 _VALIDATOR_CIFAR_TASK_CACHE: Dict[Tuple[int, int, int, int, int], list] = {}
 _VALIDATOR_MNIST_TASK_CACHE: Dict[Tuple[int, int, int, int, int], list] = {}
@@ -187,7 +192,7 @@ def verify_solution_quality(
     solution_data: Dict[str, Any],
     sota_threshold: float = None,
     *,
-    epochs: int = 1,
+    epochs: Optional[int] = None,
     task_count: Optional[int] = None,
     task_seed: Optional[int] = None,
     n_samples: Optional[int] = None,
@@ -210,12 +215,18 @@ def verify_solution_quality(
 
     task = None
     try:
+        hp = get_validator_hyperparams()
+
         algorithm_dsl = solution_data.get("algorithm_dsl")
         if not algorithm_dsl:
             logger.warning("Missing required field `algorithm_dsl` in solution data")
             return False, -np.inf
 
-        task_type = str(solution_data.get("task_type") or DEFAULT_TASK_TYPE).strip().lower()
+        default_task_type = str(hp.default_task_type or DEFAULT_TASK_TYPE).strip().lower()
+        if default_task_type not in TASK_REGISTRY:
+            default_task_type = DEFAULT_TASK_TYPE
+
+        task_type = str(solution_data.get("task_type") or default_task_type).strip().lower()
         if task_type not in TASK_REGISTRY:
             logger.warning("Unknown task type in solution data: %s", task_type)
             return False, -np.inf
@@ -224,7 +235,10 @@ def verify_solution_quality(
         if requested_dim:
             input_dim = int(requested_dim)
         else:
-            input_dim = DEFAULT_CIFAR_INPUT_DIM
+            try:
+                input_dim = int(getattr(hp, "default_input_dim", DEFAULT_CIFAR_INPUT_DIM))
+            except Exception:
+                input_dim = DEFAULT_CIFAR_INPUT_DIM
 
         try:
             algorithm = DSLParser.from_dsl(algorithm_dsl, input_dim)
@@ -232,9 +246,23 @@ def verify_solution_quality(
             logger.warning("Failed to parse algorithm DSL: %s", e)
             return False, -np.inf
 
-        suite_seed = int((task_seed if task_seed is not None else VALIDATOR_TASK_SEED)) + 7919 * max(1, input_dim)
-
+        if epochs is None:
+            epochs = int(getattr(hp, "epochs", 1) or 1)
         epochs = max(1, int(epochs))
+
+        if task_count is None:
+            task_count = int(getattr(hp, "task_count", VALIDATOR_TASK_COUNT) or VALIDATOR_TASK_COUNT)
+        if task_seed is None:
+            task_seed = int(getattr(hp, "task_seed", VALIDATOR_TASK_SEED) or VALIDATOR_TASK_SEED)
+
+        task_suite_overrides = hp.tasks.get(str(task_type).strip().lower())
+        if task_suite_overrides is not None:
+            if n_samples is None and task_suite_overrides.n_samples is not None:
+                n_samples = int(task_suite_overrides.n_samples)
+            if train_split is None and task_suite_overrides.train_split is not None:
+                train_split = float(task_suite_overrides.train_split)
+
+        suite_seed = int(task_seed) + 7919 * max(1, input_dim)
 
         scores = []
         task_results = []
@@ -293,8 +321,21 @@ def verify_solution_quality(
                 )
         elif task_type == "scalar_linear":
             task = ScalarLinearRegressionTask()
-            scalar_train = n_samples if n_samples is not None else None
-            scalar_val = n_samples if n_samples is not None else None
+            if n_samples is not None:
+                scalar_train = int(n_samples)
+                scalar_val = int(n_samples)
+            elif task_suite_overrides is not None:
+                scalar_train = (
+                    None
+                    if task_suite_overrides.train_samples is None
+                    else int(task_suite_overrides.train_samples)
+                )
+                scalar_val = (
+                    None if task_suite_overrides.val_samples is None else int(task_suite_overrides.val_samples)
+                )
+            else:
+                scalar_train = None
+                scalar_val = None
             task_specs = _get_scalar_validator_task_specs(
                 input_dim,
                 task_count=task_count,
@@ -325,10 +366,12 @@ def verify_solution_quality(
         score = float(np.median(scores)) if scores else task.get_baseline_fitness()
         # Never allow untrusted submissions to trigger verbose per-task logging.
         # Enable explicitly via environment variable + DEBUG log level.
-        log_all_task_scores = (
-            str(os.getenv("LOG_VALIDATOR_TASK_SCORES", "0")).strip().lower()
-            in {"1", "true", "yes", "on"}
-        )
+        log_all_task_scores = bool(getattr(hp, "log_task_scores", False))
+        if not log_all_task_scores:
+            log_all_task_scores = (
+                str(os.getenv("LOG_VALIDATOR_TASK_SCORES", "0")).strip().lower()
+                in {"1", "true", "yes", "on"}
+            )
         if log_all_task_scores and logger.isEnabledFor(logging.DEBUG):
             try:
                 logger.debug(
@@ -373,7 +416,7 @@ def score_algorithm_on_eval_suite(
     algorithm_dsl: str,
     input_dim: int = None,
     *,
-    epochs: int = 1,
+    epochs: Optional[int] = None,
     task_count: Optional[int] = None,
     task_seed: Optional[int] = None,
     n_samples: Optional[int] = None,
@@ -387,7 +430,29 @@ def score_algorithm_on_eval_suite(
     if not algorithm_dsl:
         return -np.inf
 
-    dim = int(input_dim) if input_dim else DEFAULT_CIFAR_INPUT_DIM
+    hp = get_validator_hyperparams()
+    if epochs is None:
+        epochs = int(getattr(hp, "epochs", 1) or 1)
+    if task_count is None:
+        task_count = int(getattr(hp, "task_count", VALIDATOR_TASK_COUNT) or VALIDATOR_TASK_COUNT)
+    if task_seed is None:
+        task_seed = int(getattr(hp, "task_seed", VALIDATOR_TASK_SEED) or VALIDATOR_TASK_SEED)
+
+    if n_samples is None or train_split is None:
+        suite_overrides = hp.tasks.get("cifar10_binary")
+        if suite_overrides is not None:
+            if n_samples is None and suite_overrides.n_samples is not None:
+                n_samples = int(suite_overrides.n_samples)
+            if train_split is None and suite_overrides.train_split is not None:
+                train_split = float(suite_overrides.train_split)
+
+    if input_dim:
+        dim = int(input_dim)
+    else:
+        try:
+            dim = int(getattr(hp, "default_input_dim", DEFAULT_CIFAR_INPUT_DIM))
+        except Exception:
+            dim = DEFAULT_CIFAR_INPUT_DIM
     task = _load_cifar_task(dim, preload=False)
     try:
         algorithm = DSLParser.from_dsl(algorithm_dsl, dim)
@@ -405,7 +470,7 @@ def score_algorithm_on_eval_suite(
     if not task_specs:
         return -np.inf
 
-    suite_seed = int((task_seed if task_seed is not None else VALIDATOR_TASK_SEED)) + 7919 * max(1, dim)
+    suite_seed = int(task_seed) + 7919 * max(1, dim)
 
     scores = []
     for spec in task_specs:

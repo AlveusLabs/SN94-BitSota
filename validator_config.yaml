@@ -1,0 +1,8 @@
+
+netuid: 94
+wallet_name: "your_wallet"
+wallet_hotkey: "your_hotkey"
+path: "~/.bittensor/wallets/"
+network: "finney"
+epoch_length: 100
+subtensor_chain_endpoint: null   # null → let bittensor pick default

@@ -1,0 +1,61 @@
+{
+  "_notes": {
+    "gui": "GUI mining runs continuously until you stop it; it uses the `mining` section below.",
+    "miner_local_og": "`scripts/miner_local_og.py` (and the GUI sidecar miner) can also read this file; it uses the `args` section below (including `iterations`).",
+    "train_val_overrides": "`train_examples`/`val_examples` map to (train_samples/val_samples) for scalar_linear; for mnist_binary/cifar10_binary they map to (n_samples=train+val, train_split=train/(train+val))."
+  },
+  "mining": {
+    "engine": "baseline",
+    "checkpoint_generations": 1000,
+
+    "miner_task_count": 4,
+    "validator_task_count": 4,
+    "validate_every": 1000,
+    "feature_dim": 4,
+    "train_examples": 100,
+    "val_examples": 100,
+    "fec_cache_size": 100000,
+
+    "engine_params": {
+      "pop_size": 100,
+      "tournament_size": 10,
+      "mutation_prob": 0.9,
+      "vector_dim": 4,
+      "setup_max_ops": 2,
+      "predict_max_ops": 2,
+      "learn_max_ops": 2,
+      "scalar_regs": 2,
+      "vector_regs": 2,
+      "matrix_regs": 2
+    }
+  },
+  "args": {
+    "workers": 1,
+    "engine": "baseline",
+    "task_type": "scalar_linear",
+    "seed": 123,
+    "iterations": 1000000,
+    "validate_every": 1000,
+    "pop_size": 100,
+    "tournament_size": 10,
+    "mutation_prob": 0.9,
+    "vector_dim": 4,
+    "feature_dim": 4,
+    "miner_task_count": 4,
+    "validator_task_count": 4,
+    "train_examples": 100,
+    "val_examples": 100,
+    "fec_cache_size": 100000,
+    "log_every": 1000,
+    "verbose": true,
+    "setup_max_ops": 2,
+    "predict_max_ops": 2,
+    "learn_max_ops": 2,
+    "scalar_regs": 2,
+    "vector_regs": 2,
+    "matrix_regs": 2
+  },
+  "env": {
+    "MINER_SUBMISSION_COOLDOWN_SECONDS": 60
+  }
+}
