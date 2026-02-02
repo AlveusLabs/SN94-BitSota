@@ -174,3 +174,41 @@ class RelayClient:
         except requests.exceptions.RequestException as e:
             logger.error(f"Failed to get SOTA events from relay: {e}")
             return None
+
+    def submit_test_solution(self, payload: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+        """
+        Submit a test solution to the relay (UID0-only endpoint).
+        """
+        try:
+            endpoint = f"{self.relay_url}/test/submit_solution"
+            headers = self._get_auth_headers()
+            if not headers:
+                return None
+            response = requests.post(
+                endpoint, headers=headers, json=payload, timeout=15
+            )
+            response.raise_for_status()
+            data = response.json()
+            return data if isinstance(data, dict) else None
+        except requests.exceptions.RequestException as e:
+            logger.error(f"Failed to submit test solution to relay: {e}")
+            return None
+
+    def get_test_submissions(self, limit: int = 50) -> Optional[List[Dict[str, Any]]]:
+        """
+        Fetch queued test submissions from the relay (UID0-only, claim-on-read).
+        """
+        try:
+            endpoint = f"{self.relay_url}/test/submissions"
+            headers = self._get_auth_headers()
+            if not headers:
+                return None
+            response = requests.get(
+                endpoint, headers=headers, params={"limit": int(limit)}, timeout=15
+            )
+            response.raise_for_status()
+            data = response.json()
+            return data if isinstance(data, list) else None
+        except requests.exceptions.RequestException as e:
+            logger.error(f"Failed to get test submissions from relay: {e}")
+            return None

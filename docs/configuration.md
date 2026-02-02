@@ -33,7 +33,7 @@ Used by:
 
 - `mining.mode` (string): UI/metadata hint (`direct` or `pool`). The current CLI decides direct vs pool strictly via `pool_url`.
 - `mining.task_type` (string): Task identifier.
-  - Current implementation supports `cifar10_binary` only.
+  - Default/subnet task is `cifar10_binary`. In `test_mode` (local testing), the GUI also exposes `mnist_binary` and `scalar_linear`.
 - `mining.engine_type` (string): Evolution engine in direct mode (`archive` or `ga`).
 - `mining.cycles` (int): Pool mode only; `0` means run forever.
 - `mining.alternate_tasks` (bool): Pool mode only; alternate `evolve`/`evaluate` task requests.
@@ -149,9 +149,44 @@ All keys below live under `capacitorless:`.
 
 ---
 
-## Runtime tuning (environment variables)
+## Hyperparameters JSON (preferred)
 
-These env vars are optional overrides used by miner/validator code paths.
+The miner + validator evaluation defaults are now sourced from JSON files in the repo root:
+
+- `miner_hyperparams.json` (direct miner defaults)
+- `validator_hyperparams.json` (validator evaluation defaults)
+
+These are meant to replace the “set a pile of env vars” workflow for routine tuning.
+
+### Miner (`miner_hyperparams.json`)
+
+Key fields (all optional; defaults shown in the file):
+- `miner_task_count`, `miner_task_seed`
+- `validator_task_count` (optional local pre-submit verification suite size)
+- `fec_cache_size`, `fec_train_examples`, `fec_valid_examples`, `fec_forget_every`
+- `submission_cooldown_seconds`, `submit_only_if_improved`, `max_submission_attempts_per_generation`
+- `validate_every_n_generations`
+- `sota_cache_seconds`, `sota_failure_backoff_seconds`
+- `persist_state`, `persist_every_n_generations`
+- `gene_dump_every`
+
+### Validator evaluation (`validator_hyperparams.json`)
+
+Key fields (all optional; defaults shown in the file):
+- `epochs`, `task_count`, `task_seed`
+- `default_task_type`, `default_input_dim`
+- `log_task_scores` (only logs per-task scores when log level is `DEBUG`)
+- `tasks.<task_type>.n_samples` / `train_split` (for `cifar10_binary`, `mnist_binary`)
+- `tasks.scalar_linear.train_samples` / `val_samples`
+
+### Override config file paths (optional)
+
+- `BITSOTA_MINER_HYPERPARAMS_PATH` / `MINER_HYPERPARAMS_PATH`
+- `BITSOTA_VALIDATOR_HYPERPARAMS_PATH` / `VALIDATOR_HYPERPARAMS_PATH`
+
+## Runtime tuning (environment variable overrides)
+
+Env vars are still supported for backward compatibility, and override the JSON defaults above.
 
 ### Miner
 
@@ -205,8 +240,10 @@ If set, `BITSOTA_GUI_CONFIG` points to a JSON file that overrides GUI endpoints:
 - `test_invite_code` (string)
 - `miner_task_count` (int)
 - `validator_task_count` (int)
+- `miner_validate_every_n_generations` (int)
+- `problem_config_path` (string)
 
 If `BITSOTA_GUI_CONFIG` is not set, the app looks for:
 - `./bitsota_gui_config.json`
-- `./new_gui_config.json`
+- `./gui_config.json`
 - `~/.bitsota/gui_config.json`

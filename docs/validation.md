@@ -8,8 +8,12 @@ Validators receive algorithm submissions from miners through the relay server, i
 
 ## How It Works
 
-```
-Relay Server → Validator Polls → Re-evaluates Submission → Verifies Score → Sets Weights → Miner Gets Emissions
+```mermaid
+flowchart LR
+  Relay[Relay API] -->|results| Validator[Validator]
+  Validator -->|re-evaluate| Validator
+  Validator -->|vote and weights| Chain[Bittensor chain]
+  Chain -->|emissions| Miner[Miner]
 ```
 
 Validators fix all evaluations to the CIFAR-10 binary (airplane vs automobile) dataset. Every relay submission is re-run on that benchmark regardless of the task type claimed by a miner.
@@ -64,6 +68,12 @@ btcli subnet register --netuid 94 --wallet.name validator_wallet --wallet.hotkey
 
 ```bash
 python neurons/validator_node.py --config validator_config.local.yaml
+```
+
+Optional logging-only test queue (UID0-only):
+
+```bash
+python neurons/validator_node.py --config validator_config.local.yaml --accept-test
 ```
 
 The validator starts two background services:
@@ -123,9 +133,12 @@ is_valid, validator_score = verify_solution_quality(algorithm_result, sota_score
 ```
 Validators now run every candidate on a deterministic slice of the CIFAR-10 task space.
 Each "task" corresponds to a class pair, projection matrix, and dataset split. The
-validator samples `VALIDATOR_TASK_COUNT` (default 5) tasks once using
-`VALIDATOR_TASK_SEED` and reuses that set for every submission, providing a repeatable
-score while still covering multiple projections.
+validator samples `task_count` tasks once using `task_seed` and reuses that set for every
+submission, providing a repeatable score while still covering multiple projections.
+
+Defaults live in `validator_hyperparams.json` (env overrides still work via
+`VALIDATOR_TASK_COUNT` / `VALIDATOR_TASK_SEED`). The current code defaults are
+`task_count=128`, `task_seed=1337`.
 
 **Step 3: SOTA Check**
 If validator's score is below the current State-of-the-Art threshold, submission is dropped regardless of miner's claimed score.

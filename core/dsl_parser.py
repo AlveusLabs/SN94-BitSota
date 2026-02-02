@@ -23,10 +23,19 @@ class DSLParser:
     @staticmethod
     def parse_address(addr: str) -> int:
         """Convert address string to integer index"""
+        if addr is None:
+            return -1
+
+        if not isinstance(addr, str):
+            addr = str(addr)
+
         if not addr:
             return -1
 
         addr = addr.lower().strip()
+
+        if addr in {"none", "null", "-1"}:
+            return -1
 
         if addr.startswith("s"):
             return ADDR_SCALARS + int(addr[1:])
@@ -52,7 +61,19 @@ class DSLParser:
     @classmethod
     def from_dsl(cls, dsl_str: str, input_dim: int) -> AlgorithmArray:
         """Parse DSL string into AlgorithmArray"""
-        lines = [l.strip() for l in dsl_str.strip().split("\n") if l.strip()]
+        raw_lines = dsl_str.splitlines()
+        lines: list[str] = []
+        for raw in raw_lines:
+            line = raw.strip()
+            if not line:
+                continue
+            # Support inline comments: "s3 = 0.02  # learning rate".
+            # Full-line comments (including phase headers and meta) are preserved.
+            if not line.startswith("#") and "#" in line:
+                line = line.split("#", 1)[0].rstrip()
+                if not line:
+                    continue
+            lines.append(line)
 
         meta = {}
         for line in lines:
@@ -117,6 +138,12 @@ class DSLParser:
             else:
                 max_sizes[phase] = max(meta_max, phase_counts.get(phase, 0))
 
+        meta_vector_dim = _meta_int("vector_dim")
+        if meta_vector_dim is None:
+            meta_vector_dim = int(input_dim)
+        else:
+            meta_vector_dim = max(int(meta_vector_dim), int(input_dim))
+
         array_algo = AlgorithmArray.create_empty(
             input_dim,
             phases,
@@ -124,7 +151,7 @@ class DSLParser:
             scalar_count=_meta_int("scalar_count"),
             vector_count=_meta_int("vector_count"),
             matrix_count=_meta_int("matrix_count"),
-            vector_dim=_meta_int("vector_dim"),
+            vector_dim=meta_vector_dim,
         )
 
         current_phase = "predict"

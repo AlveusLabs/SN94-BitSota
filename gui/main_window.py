@@ -8,6 +8,7 @@ from PySide6.QtWidgets import (
     QApplication,
 )
 from typing import Optional
+import os
 import webbrowser
 
 from bittensor_network.wallet import Wallet
@@ -182,12 +183,51 @@ class MiningWindow(QMainWindow):
         try:
             relay_endpoint = self._get_relay_endpoint_from_config()
             cfg = get_app_config()
+            problem_cfg = None
+            try:
+                from core.problem_config import apply_env_overrides, load_problem_config
+
+                problem_cfg = load_problem_config(getattr(cfg, "problem_config_path", None))
+                if problem_cfg and problem_cfg.env:
+                    apply_env_overrides(problem_cfg.env)
+            except Exception:
+                problem_cfg = None
+
+            self.problem_config = problem_cfg
+
+            miner_task_count = (
+                problem_cfg.miner_task_count
+                if problem_cfg and problem_cfg.miner_task_count is not None
+                else cfg.miner_task_count
+            )
+            validator_task_count = (
+                problem_cfg.validator_task_count
+                if problem_cfg and problem_cfg.validator_task_count is not None
+                else cfg.validator_task_count
+            )
+            validate_every = (
+                problem_cfg.miner_validate_every_n_generations
+                if problem_cfg and problem_cfg.miner_validate_every_n_generations is not None
+                else getattr(cfg, "miner_validate_every_n_generations", 1000)
+            )
+
+            miner_verbose = (
+                str(os.getenv("BITSOTA_GUI_MINER_VERBOSE", "0")).strip().lower()
+                in {"1", "true", "yes", "on"}
+            )
             self.client = BittensorDirectClient(
                 wallet=self.wallet,
                 relay_endpoint=relay_endpoint,
-                verbose=True,
+                verbose=miner_verbose,
                 contract_manager=self.contract_manager,
-                miner_task_count=cfg.miner_task_count,
+                miner_task_count=miner_task_count,
+                validator_task_count=validator_task_count,
+                validate_every_n_generations=validate_every,
+                engine_params=problem_cfg.engine_params if problem_cfg else None,
+                fec_cache_size=getattr(problem_cfg, "fec_cache_size", None) if problem_cfg else None,
+                fec_train_examples=getattr(problem_cfg, "fec_train_examples", None) if problem_cfg else None,
+                fec_valid_examples=getattr(problem_cfg, "fec_valid_examples", None) if problem_cfg else None,
+                fec_forget_every=getattr(problem_cfg, "fec_forget_every", None) if problem_cfg else None,
             )
             print(f"Direct client created successfully with relay: {relay_endpoint}")
         except Exception as e:

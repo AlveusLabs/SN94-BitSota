@@ -129,7 +129,20 @@ python neurons/validator_node.py
 - **[Mining Guide](docs/mining.md)** - Direct mining setup and strategies
 - **[Pool Mining Guide](docs/pool-mining.md)** - Collaborative mining details
 - **[Validation Guide](docs/validation.md)** - Running a validator node
+- **[Local Testing Guide](docs/local-testing.md)** - Run GUI + local relay + local validator
 - **[Rewards Guide](docs/rewards.md)** - Understanding incentive mechanisms
+
+### Docs website
+
+If you prefer a rendered docs website instead of reading markdown files:
+
+```bash
+python3 -m venv .venv-docs
+source .venv-docs/bin/activate
+python3 -m pip install -U pip
+python3 -m pip install -r requirements-docs.txt
+mkdocs serve -a 127.0.0.1:9001
+```
 
 ## Links
 

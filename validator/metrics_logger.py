@@ -66,6 +66,32 @@ class ValidatorMetricsLogger:
             "runtime_minutes": (time.time() - self.session_start) / 60
         }
         self._write_log(entry)
+
+    def log_test_submission(
+        self,
+        submission_id: str,
+        task_id: str,
+        claimed_score: float | None,
+        validator_score: float,
+        sota_threshold: float,
+        is_valid: bool,
+        submitter_hotkey: str | None = None,
+    ):
+        """Log a test submission evaluation (does not affect weights)."""
+        entry = {
+            "timestamp": datetime.now().isoformat(),
+            "session_id": self.session_id,
+            "event": "test_submission",
+            "test_submission_id": (submission_id or "")[:16],
+            "task_id": task_id,
+            "submitter_hotkey": (submitter_hotkey or "")[:8] + "..." if submitter_hotkey else None,
+            "claimed_score": claimed_score,
+            "validator_score": validator_score,
+            "sota_threshold": sota_threshold,
+            "is_valid": bool(is_valid),
+            "runtime_minutes": (time.time() - self.session_start) / 60,
+        }
+        self._write_log(entry)
     
     def log_sota_update(self, old_sota: float, new_sota: float, miner_hotkey: str):
         """Log SOTA threshold updates"""

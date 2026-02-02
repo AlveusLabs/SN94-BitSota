@@ -1,0 +1,10 @@
+:root {
+  --md-primary-fg-color: #5b21b6;
+  --md-accent-fg-color: #4f46e5;
+}
+
+.md-typeset .mermaid {
+  display: flex;
+  justify-content: center;
+}
+

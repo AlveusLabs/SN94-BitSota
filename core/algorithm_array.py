@@ -207,6 +207,7 @@ class AlgorithmArray:
         """Validate all addresses are within bounds"""
         errors = []
         max_addr = ADDR_MATRICES + self.matrix_count - 1
+        opcode_map = {v: k for k, v in OPCODES.items()}
 
         for phase in self.phase_arrays:
             arrays = self.phase_arrays[phase]
@@ -218,24 +219,18 @@ class AlgorithmArray:
                 arg1 = arrays["arg1"][i]
                 arg2 = arrays["arg2"][i]
 
-                # Check destination
-                if dest < 0 or dest > max_addr:
-                    errors.append(f"{phase} instruction {i}: dest {dest} out of bounds")
+                op_name = opcode_map.get(int(op))
+                meta = OPCODE_METADATA.get(op_name, None)
+                if meta is None:
+                    continue
 
-                # Check arguments (skip for NOOP/CONST)
-                if op not in [OPCODES["NOOP"], OPCODES["CONST"], OPCODES["CONST_VEC"]]:
-                    if arg1 < 0 or arg1 > max_addr:
-                        errors.append(
-                            f"{phase} instruction {i}: arg1 {arg1} out of bounds"
-                        )
-                    if (
-                        arg2 < 0
-                        or arg2 > max_addr
-                        and op not in [OPCODES["ABS"], OPCODES["EXP"], OPCODES["LOG"]]
-                    ):
-                        errors.append(
-                            f"{phase} instruction {i}: arg2 {arg2} out of bounds"
-                        )
+                # Only validate operands that are used for this opcode.
+                if meta["dest"] != "none" and (dest < 0 or dest > max_addr):
+                    errors.append(f"{phase} instruction {i}: dest {dest} out of bounds")
+                if meta["arg1"] != "none" and (arg1 < 0 or arg1 > max_addr):
+                    errors.append(f"{phase} instruction {i}: arg1 {arg1} out of bounds")
+                if meta["arg2"] != "none" and (arg2 < 0 or arg2 > max_addr):
+                    errors.append(f"{phase} instruction {i}: arg2 {arg2} out of bounds")
 
         return errors
 
@@ -254,6 +249,8 @@ class AlgorithmArray:
                 meta = OPCODE_METADATA[op_name]
 
                 def get_type(addr):
+                    if addr < 0:
+                        return "none"
                     if addr < ADDR_VECTORS:
                         return "s"
                     if addr < ADDR_MATRICES:

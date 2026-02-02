@@ -1,0 +1,23 @@
+{
+  "epochs": 1,
+  "task_count": 128,
+  "task_seed": 1337,
+  "default_task_type": "cifar10_binary",
+  "default_input_dim": 16,
+  "log_task_scores": false,
+  "tasks": {
+    "cifar10_binary": {
+      "n_samples": 2000,
+      "train_split": 0.5
+    },
+    "mnist_binary": {
+      "n_samples": 2000,
+      "train_split": 0.5
+    },
+    "scalar_linear": {
+      "train_samples": 1000,
+      "val_samples": 1000
+    }
+  }
+}
+

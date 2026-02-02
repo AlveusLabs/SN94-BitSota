@@ -8,8 +8,13 @@ Direct miners run an evolutionary/GP engine that searches over algorithm space. 
 
 ## How It Works
 
-```
-Your Machine → Evolution Engine → Surpass Benchmark Bar → Submit to Relay → Validators Reproduce → Contract Votes → Rewards
+```mermaid
+flowchart LR
+  Miner[Local miner] -->|evolve| Miner
+  Miner -->|submit| Relay[Relay API]
+  Relay -->|poll| Validator[Validator]
+  Validator -->|verify and vote| Chain[Bittensor chain]
+  Chain -->|emissions| Miner
 ```
 
 1. Your miner proposes an algorithm/program (e.g., via a DSL or op-graph).

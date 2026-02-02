@@ -44,7 +44,13 @@ def main(argv=None):
         default="validator_config.yaml",
         help="Path to validator YAML config (default: validator_config.yaml)",
     )
+    parser.add_argument(
+        "--accept-test",
+        action="store_true",
+        help="Poll relay test-submission queue for logging only (UID0-only; no weights).",
+    )
     args, remaining = parser.parse_known_args(argv)
+    accept_test = bool(getattr(args, "accept_test", False))
 
     logging.info("=" * 60)
     logging.info("Starting Validator Node")
@@ -787,6 +793,88 @@ def main(argv=None):
         ):
             logging.info("Submission deferred or failed; result may remain cached for later.")
 
+    def process_test_submissions(submissions):
+        """Evaluate relay test submissions for logging only (no votes/weights)."""
+        if not submissions:
+            return
+
+        logging.info("=" * 60)
+        logging.info(f"🧪 Received {len(submissions)} TEST submissions from relay")
+        logging.info("=" * 60)
+
+        sota_score = None
+        if relay_client:
+            try:
+                sota_score = relay_client.get_sota_threshold()
+            except Exception:
+                sota_score = None
+
+        if sota_score is None and contract_manager is not None:
+            try:
+                sota_score = contract_manager.get_current_sota_threshold()
+            except Exception:
+                sota_score = None
+
+        if sota_score is None:
+            sota_score = _fallback_sota_threshold()
+
+        for sub in submissions:
+            submission_id = sub.get("id") or sub.get("test_submission_id") or "unknown"
+            task_id = sub.get("task_id") or "unknown"
+            submitter_hotkey = sub.get("submitter_hotkey")
+            claimed_score = sub.get("score")
+            algorithm_result_str = sub.get("algorithm_result")
+
+            if not algorithm_result_str:
+                logging.warning(
+                    "🧪 Skipping TEST submission %s (missing algorithm_result)",
+                    submission_id,
+                )
+                continue
+
+            try:
+                algorithm_result = (
+                    algorithm_result_str
+                    if isinstance(algorithm_result_str, dict)
+                    else json.loads(algorithm_result_str)
+                )
+            except Exception as e:
+                logging.warning(
+                    "🧪 Skipping TEST submission %s (invalid algorithm_result JSON): %s",
+                    submission_id,
+                    e,
+                )
+                continue
+
+            eval_start = time.time()
+            is_valid, validator_score = verify_solution_quality(algorithm_result, sota_score)
+            eval_duration_s = time.time() - eval_start
+
+            logging.info(
+                "🧪 TEST submission id=%s task=%s valid=%s score=%.4f claimed=%s sota=%.4f (%.3fs)",
+                str(submission_id)[:16],
+                task_id,
+                is_valid,
+                float(validator_score),
+                claimed_score,
+                float(sota_score),
+                eval_duration_s,
+            )
+
+            if metrics_logger:
+                try:
+                    metrics_logger.log_test_submission(
+                        str(submission_id),
+                        str(task_id),
+                        float(claimed_score) if claimed_score is not None else None,
+                        float(validator_score),
+                        float(sota_score),
+                        bool(is_valid),
+                        submitter_hotkey=str(submitter_hotkey) if submitter_hotkey else None,
+                    )
+                except Exception:
+                    pass
+
     if relay_client:
         try:
             relay_poller = RelayPoller(
@@ -800,6 +888,32 @@ def main(argv=None):
             relay_poller = None
     else:
         relay_poller = None
+
+    test_poller = None
+    if accept_test:
+        if relay_client is None:
+            logging.warning(
+                "--accept-test enabled but relay.url is not configured; test polling disabled"
+            )
+        else:
+            try:
+                test_poller = RelayPoller(
+                    relay_client=relay_client,
+                    interval=int(
+                        relay_config.get(
+                            "test_poll_interval_seconds",
+                            relay_config.get("poll_interval_seconds", 60),
+                        )
+                    ),
+                    on_new_results=process_test_submissions,
+                    fetch_fn=lambda: relay_client.get_test_submissions(
+                        limit=int(relay_config.get("test_poll_limit", 50))
+                    ),
+                )
+                logging.info("Initialized TestSubmission poller")
+            except Exception as e:
+                logging.error(f"Failed to initialize TestSubmission poller: {e}")
+                test_poller = None
 
     logging.info("=" * 60)
     logging.info("Starting background workers...")
@@ -818,6 +932,14 @@ def main(argv=None):
         except Exception as e:
             logging.error(f"Failed to start RelayPoller: {e}")
             relay_poller = None
+
+    if test_poller:
+        try:
+            test_poller.start()
+            logging.info("✓ TestSubmission poller started")
+        except Exception as e:
+            logging.error(f"Failed to start TestSubmission poller: {e}")
+            test_poller = None
 
     logging.info("=" * 60)
     logging.info("✅ Validator node is running")
@@ -859,6 +981,18 @@ def main(argv=None):
                 except Exception as e:
                     logging.error(f"Failed to restart relay poller: {e}")
 
+            if (
+                test_poller
+                and test_poller.background_thread
+                and not test_poller.background_thread.is_alive()
+            ):
+                logging.warning("⚠️  TestSubmission poller thread died. Restarting...")
+                try:
+                    test_poller.start()
+                    logging.info("✓ TestSubmission poller restarted")
+                except Exception as e:
+                    logging.error(f"Failed to restart test submission poller: {e}")
+
     except KeyboardInterrupt:
         logging.info("\n" + "=" * 60)
         logging.info("Shutting down validator client...")
@@ -867,6 +1001,8 @@ def main(argv=None):
             metrics_logger.log_session_end()
         if relay_poller:
             relay_poller.stop()
+        if test_poller:
+            test_poller.stop()
         logging.info("✓ Shutdown complete")
 
 

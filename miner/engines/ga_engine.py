@@ -114,7 +114,8 @@ class BaselineEvolutionEngine(BaseEvolutionEngine):
                 queue_q1 = -np.inf
                 queue_q3 = -np.inf
             logger.info(
-                "[regularized-evo] pop=%d best=%.4f queue_best=%.4f queue_q1=%.4f queue_med=%.4f queue_q3=%.4f stagnation=%d success=%d failed=%d",
+                "[regularized-evo] iter=%d pop=%d best=%.4f queue_best=%.4f queue_q1=%.4f queue_med=%.4f queue_q3=%.4f stagnation=%d success=%d failed=%d",
+                int(self.generation) + 1,
                 len(self.population),
                 float(self.best_fitness),
                 float(queue_best),
@@ -205,6 +206,8 @@ class BaselineEvolutionEngine(BaseEvolutionEngine):
         algo.phase_sizes[phase] = 0
 
         max_size = algo.phase_max_sizes.get(phase, 1)
+        if max_size <= 0:
+            return
         target_size = max(1, np.random.randint(1, max_size + 1))
         for _ in range(target_size):
             self._add_random_instruction(algo, phase)
@@ -233,8 +236,8 @@ class BaselineEvolutionEngine(BaseEvolutionEngine):
 
         max_size = algo.phase_max_sizes.get(phase, 0)
         current_size = algo.get_phase_size(phase)
-        if current_size >= max_size > 0:
-            return  # Phase is full
+        if max_size <= 0 or current_size >= max_size:
+            return  # Phase is full; ignore insert mutation.
 
         op_name = np.random.choice(list(OPCODE_METADATA.keys()))
         op_meta = OPCODE_METADATA[op_name]

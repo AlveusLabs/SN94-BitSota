@@ -14,10 +14,19 @@ class DSLConverter:
     @staticmethod
     def parse_address(addr: str) -> int:
         """Convert address string to integer index"""
+        if addr is None:
+            return -1
+
+        if not isinstance(addr, str):
+            addr = str(addr)
+
         if not addr:
             return -1
 
         addr = addr.lower().strip()
+
+        if addr in {"none", "null", "-1"}:
+            return -1
 
         if addr.startswith("s"):
             return ADDR_SCALARS + int(addr[1:])

@@ -58,18 +58,27 @@ def main():
         app.setApplicationName("BitSota")
         app.setOrganizationName("BitSota")
 
-        lock_file_path = QDir.temp().absoluteFilePath("bitsota.lock")
-        lock_file = QLockFile(lock_file_path)
+        from gui.app_config import get_app_config
 
-        if not lock_file.tryLock(100):
-            print("Another instance already running!")
-            msg = QMessageBox()
-            msg.setIcon(QMessageBox.Icon.Warning)
-            msg.setWindowTitle("BitSota Already Running")
-            msg.setText("BitSota is already running. Only one instance can run at a time.")
-            msg.setStandardButtons(QMessageBox.StandardButton.Ok)
-            msg.exec()
-            return 0
+        cfg = get_app_config()
+        is_test_mode = bool(getattr(cfg, "test_mode", False))
+
+        lock_file = None
+        if not is_test_mode:
+            lock_file_path = QDir.temp().absoluteFilePath("bitsota.lock")
+            lock_file = QLockFile(lock_file_path)
+
+            if not lock_file.tryLock(100):
+                print("Another instance already running!")
+                msg = QMessageBox()
+                msg.setIcon(QMessageBox.Icon.Warning)
+                msg.setWindowTitle("BitSota Already Running")
+                msg.setText("BitSota is already running. Only one instance can run at a time.")
+                msg.setStandardButtons(QMessageBox.StandardButton.Ok)
+                msg.exec()
+                return 0
+        else:
+            print("[test_mode] Skipping single-instance lock")
 
         print("[5/6] Creating main window...")
         window = MiningWindow()
@@ -77,7 +86,8 @@ def main():
         window.show()
         result = app.exec()
 
-        lock_file.unlock()
+        if lock_file is not None:
+            lock_file.unlock()
         print(f"\nApp exited normally with code: {result}")
         return result
 

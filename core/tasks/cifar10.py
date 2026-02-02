@@ -32,7 +32,7 @@ DEFAULT_SAMPLE_COUNT = 2000
 PROJECTION_SEED_OFFSET = 17345
 SPLIT_SEED_OFFSET = 97531
 
-_CIFAR_CACHE: Dict[int, Tuple[np.ndarray, np.ndarray]] = {}
+_CIFAR_CACHE: Optional[Tuple[np.ndarray, np.ndarray]] = None
 try:
     _CIFAR_TASK_CACHE_MAXSIZE = max(0, int(os.getenv("CIFAR_TASK_CACHE_MAXSIZE", "512")))
 except Exception:
@@ -44,14 +44,21 @@ def _cached_task_arrays(task_spec: "CIFAR10TaskSpec") -> Tuple[np.ndarray, np.nd
     """Cache fully prepared train/val splits for deterministic task specs."""
 
     class_a, class_b = task_spec.class_pair
-    X, y = _fetch_cifar_subset(task_spec.n_samples)
+    X, y = _fetch_cifar()
     mask = (y == class_a) | (y == class_b)
-    X_pair = X[mask]
-    y_pair = y[mask]
-    if len(X_pair) == 0:
+    X_pair_all = X[mask]
+    y_pair_all = y[mask]
+    if len(X_pair_all) == 0:
         raise RuntimeError(
             f"No samples found for class pair {class_a}-{class_b} with n_samples={task_spec.n_samples}"
         )
+
+    requested = max(1, int(task_spec.n_samples))
+    sample_rng = np.random.default_rng(int(task_spec.split_seed))
+    replace = requested > len(X_pair_all)
+    sample_indices = sample_rng.choice(len(X_pair_all), size=requested, replace=replace)
+    X_pair = X_pair_all[sample_indices]
+    y_pair = y_pair_all[sample_indices]
 
     y_binary = (y_pair == class_b).astype(np.float32)
     proj_matrix = _build_projection(
@@ -59,7 +66,7 @@ def _cached_task_arrays(task_spec: "CIFAR10TaskSpec") -> Tuple[np.ndarray, np.nd
     )
     X_proj = _standardize_features(X_pair @ proj_matrix)
 
-    split_rng = np.random.default_rng(task_spec.split_seed)
+    split_rng = np.random.default_rng(int(task_spec.split_seed) + 1)
     indices = split_rng.permutation(len(X_proj))
     n_train = max(1, int(task_spec.train_split * len(X_proj)))
     n_train = min(n_train, len(X_proj) - 1) if len(X_proj) > 1 else 1
@@ -153,10 +160,11 @@ def _ensure_cifar_cached() -> None:
         if cache_file.exists():
             cache_file.unlink()
 
-def _fetch_cifar_subset(n_samples: int) -> Tuple[np.ndarray, np.ndarray]:
-    """Fetch (and cache) a subset of CIFAR-10."""
+def _fetch_cifar() -> Tuple[np.ndarray, np.ndarray]:
+    """Fetch (and cache) CIFAR-10."""
 
-    cache = _CIFAR_CACHE.get(n_samples)
+    global _CIFAR_CACHE
+    cache = _CIFAR_CACHE
     if cache is not None:
         return cache
 
@@ -170,11 +178,11 @@ def _fetch_cifar_subset(n_samples: int) -> Tuple[np.ndarray, np.ndarray]:
     finally:
         ssl._create_default_https_context = original_context
 
-    X = cifar.data[:n_samples].astype(np.float32) / 255.0
-    y = cifar.target[:n_samples].astype(np.int32)
-    _CIFAR_CACHE[n_samples] = (X, y)
+    X = cifar.data.astype(np.float32) / 255.0
+    y = cifar.target.astype(np.int32)
+    _CIFAR_CACHE = (X, y)
     logger.info("CIFAR-10 loaded successfully")
-    return X, y
+    return _CIFAR_CACHE
 
 
 def _build_projection(seed: int, input_dim: int, n_components: int) -> np.ndarray:
