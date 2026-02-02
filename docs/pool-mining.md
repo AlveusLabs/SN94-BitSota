@@ -1,6 +1,6 @@
-# Pool Mining Guide (Work In Progress)
+# Pool Mining Guide
 
-Pool mining allows participants with limited compute resources to contribute to algorithm evolution and evaluation while sharing rewards. Instead of competing individually, pool miners work together.
+Pool mining lets many miners cooperate on evolution and evaluation tasks, then share rewards based on contribution. Instead of a single miner running long local searches, the Pool coordinates smaller chunks of work and aggregates results.
 
 ## What is Pool Mining?
 
@@ -8,21 +8,25 @@ Pool mining is a collaborative approach where the pool coordinator distributes t
 
 ## How It Works
 
-```
-Pool Service → Assigns Tasks → Miner Evolves/Evaluates → Pool Consensus → Submit to Validators → Rewards Distributed
+```mermaid
+flowchart LR
+  Miner[Miner] -->|lease tasks| Pool[Pool API]
+  Pool -->|seed and eval batches| Miner
+  Miner -->|submit evals and evolutions| Pool
+  Pool -->|consensus| Pool
+  Pool -->|optional submit| Relay[Relay API]
 ```
 
-1. Miner registers with the pool at pool.bitsota.ai
-2. Miner requests a task (either evolution or evaluation)
-3. Pool assigns either:
-   - Evolution task: Take these 2 algorithms and evolve them
-   - Evaluation task: Run these algorithms and report scores
-4. Miner completes task and submits results back to pool
-5. Pool collects 3+ independent evaluations for each algorithm
-6. Pool computes consensus using median scores with 10% tolerance
-7. Pool rewards accurate evaluators and successful evolvers
-8. Pool submits best algorithms to validators
-9. At epoch end, pool distributes accumulated RAO rewards proportionally
+1. Miner registers and authenticates using Bittensor hotkey signatures.
+2. Miner requests work as a batch or a lease.
+3. Pool returns:
+   - algorithms to evaluate
+   - seed algorithms to evolve
+   - an evolve budget and timeouts
+4. Miner submits evaluations and evolution proposals back to the Pool.
+5. Pool computes consensus once enough evaluations exist.
+6. Pool records contributions and runs epoch logic to compute payouts.
+7. Pool can optionally forward top results to the relay for validator coordination.
 
 ## Pool vs Direct Mining
 
@@ -59,12 +63,34 @@ Choose pool mining if you have:
 
 ## Setup
 
-**Desktop GUI:**
-1. Download desktop app from [bitsota.ai](https://bitsota.ai)
-2. Install and launch
-3. Navigate to Pool Mining screen
-4. Select your wallet and hotkey
-6. Click Start Mining
+Pool mode is typically driven by the GUI, but the same workflow can be exercised locally with scripts.
+
+### GUI mode
+
+Configure `gui_config.json` and set:
+
+```json
+{
+  "pool_endpoint": "http://127.0.0.1:8434"
+}
+```
+
+Then start the GUI with `python3 -m gui`, select Pool in the task dropdown, and start mining.
+
+### Headless mode with sidecar
+
+This matches the GUI architecture:
+
+- one sidecar process
+- one compute worker that pulls jobs from sidecar
+- one driver that talks to the Pool API and submits results
+
+```bash
+docker compose -f Pool/docker-compose.sim.yaml up -d db api
+python3 -m sidecar --host 127.0.0.1 --port 8123
+python3 -m scripts.pool_miner_sidecar --sidecar-url http://127.0.0.1:8123 --run-id pool_smoke --workers 1
+python3 -m scripts.pool_sidecar_driver --pool-url http://127.0.0.1:8434 --sidecar-url http://127.0.0.1:8123 --run-id pool_smoke --duration-s 30
+```
 
 ## Understanding Pool Tasks
 
@@ -178,28 +204,15 @@ Update your software and verify installation.
 **"Cannot withdraw - below minimum":**
 Accumulate at least 5,000,000 RAO before withdrawing.
 
-## Pool Service Architecture
+## Pool API and auth
 
-The pool mining system runs independently at https://pool.bitsota.com. For technical details and source code, see:
+Pool endpoints use auth headers:
 
-The pool service handles:
-- Miner registration and authentication
-- Task assignment and tracking
-- Consensus computation
-- Reputation accounting
-- Epoch management
-- Reward distribution
-- Relay submission on behalf of miners
+- `X-Key` hotkey
+- `X-Timestamp` unix seconds
+- `X-Signature` signature over `auth:{X-Timestamp}`
 
-**API Endpoints:**
-- POST /api/v1/miners/{address}/register
-- POST /api/v1/tasks/{address}/request
-- POST /api/v1/tasks/{address}/{batch_id}/submit_evolution
-- POST /api/v1/tasks/{address}/{batch_id}/submit_evaluation
-- GET /api/v1/rewards/{address}/balance
-- POST /api/v1/rewards/{address}/withdraw
-
-All requests require Bittensor signature authentication.
+See [Pool API](reference/pool-api.md) for the endpoint list.
 
 ## Tips for Pool Miners
 
@@ -217,6 +230,11 @@ One bad evaluation that falls outside consensus doesn't hurt much, but consisten
 
 **Update regularly:**
 Pool operators update task types and parameters. Keep your miner software updated to stay compatible.
+
+## Next steps
+
+- If you are running locally, start at [Pool Functional Testing](guides/pool-functional-testing.md).
+- If you are running an end-to-end loop with relay and validator, start at [Local Testing](local-testing.md).
 
 ## Next Steps
 
