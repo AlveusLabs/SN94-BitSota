@@ -1,7 +1,7 @@
 import threading
 import time
 import logging
-from typing import Callable, List, Dict, Any
+from typing import Callable, List, Dict, Any, Optional
 
 from validator.relay_client import RelayClient
 
@@ -18,10 +18,12 @@ class RelayPoller:
         relay_client: RelayClient,
         interval: int,
         on_new_results: Callable[[List[Dict[str, Any]]], None],
+        fetch_fn: Optional[Callable[[], Optional[List[Dict[str, Any]]]]] = None,
     ):
         self.relay_client = relay_client
         self.interval = interval
         self.on_new_results = on_new_results
+        self.fetch_fn = fetch_fn or self.relay_client.get_all_results
         self.is_running = False
         self.background_thread = None
         self.lock = threading.Lock()
@@ -54,7 +56,7 @@ class RelayPoller:
         while self.is_running:
             try:
                 #logger.info("Relay poller fetching results")
-                results = self.relay_client.get_all_results()
+                results = self.fetch_fn()
                 if results:
                     self.on_new_results(results)
                 self.consecutive_failures = 0
