@@ -1,76 +1,251 @@
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import (
-    QDialog, QVBoxLayout, QHBoxLayout, QLabel,
-    QPushButton, QCheckBox, QWidget
+    QDialog, QVBoxLayout, QHBoxLayout, QLabel, QCheckBox, QWidget, QPushButton
 )
 from PySide6.QtSvgWidgets import QSvgWidget
+
 from gui.resource_path import resource_path
+from gui.theme import BitSOTATheme
+from gui.components.common.button import PrimaryButton
 
 
 class ErrorModal(QDialog):
+    """Error message modal dialog component"""
+    
+    # Constants
+    MODAL_WIDTH = 560
+    MODAL_HEIGHT = 400
+    MODAL_PADDING = 32
+    HEADER_SPACING = 8
+    CONTENT_SPACING = 32
+    BUTTON_HEIGHT = 48
+    ERROR_ICON_SIZE = 80
+    
+    @staticmethod
+    def get_stylesheet():
+        """Get the stylesheet for ErrorModal component"""
+        return f"""
+            QDialog#modal_dialog {{
+                background-color: {BitSOTATheme.CONTENT_BOX_BG};
+                border: none;
+                border-radius: 4px;
+            }}
+            
+            QLabel#error_header_title {{
+                color: {BitSOTATheme.BLACK100};
+                font-family: "PingFang SC", "Microsoft YaHei", "Geist", -apple-system, BlinkMacSystemFont, sans-serif;
+                font-size: 16px;
+                font-weight: 500;
+            }}
+            
+            QLabel#error_title {{
+                color: {BitSOTATheme.BLACK100};
+                font-family: "PingFang SC", "Microsoft YaHei", "Geist", -apple-system, BlinkMacSystemFont, sans-serif;
+                font-size: 20px;
+                font-weight: 600;
+                text-align: center;
+            }}
+            
+            QLabel#error_message {{
+                color: {BitSOTATheme.BLACK60};
+                font-family: "PingFang SC", "Microsoft YaHei", "Geist", -apple-system, BlinkMacSystemFont, sans-serif;
+                font-size: 14px;
+                font-weight: 400;
+                line-height: 150%;
+                text-align: center;
+            }}
+        """
+    
     def __init__(self, title: str, message: str, parent=None):
         super().__init__(parent)
+        self.title_text = title
+        self.message_text = message
+        
+        # Setup dialog properties
         self.setObjectName("modal_dialog")
         self.setModal(True)
-        self.setFixedSize(600, 300)
-        # Remove system title bar
+        self.setFixedSize(self.MODAL_WIDTH, self.MODAL_HEIGHT)
         self.setWindowFlags(Qt.WindowType.FramelessWindowHint | Qt.WindowType.Dialog)
-        self.setup_ui(title, message)
+        self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
+        
+        # Apply styles and setup UI
+        self.setStyleSheet(self.get_stylesheet())
+        self.setup_ui()
 
-    def setup_ui(self, title: str, message: str):
+    def setup_ui(self):
+        """Initialize the modal UI"""
+        # Main layout
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(32, 24, 32, 24)
-        layout.setSpacing(24)
-
-        header_layout = QHBoxLayout()
-        header_layout.setSpacing(8)
-
-        title_icon = QSvgWidget(resource_path("gui/images/frame.svg"))
-        title_icon.setFixedSize(24, 24)
-        header_layout.addWidget(title_icon)
-
-        title_label = QLabel(title)
-        title_label.setObjectName("modal_title")
-        header_layout.addWidget(title_label)
-        header_layout.addStretch()
-
-        close_btn_widget = QSvgWidget(resource_path("gui/images/cancel.svg"))
-        close_btn_widget.setFixedSize(24, 24)
-        close_btn_widget.setCursor(Qt.CursorShape.PointingHandCursor)
-        close_btn_widget.mousePressEvent = lambda event: self.reject()
-        header_layout.addWidget(close_btn_widget)
-
+        layout.setContentsMargins(self.MODAL_PADDING, 24, self.MODAL_PADDING, 24)
+        layout.setSpacing(self.CONTENT_SPACING)
+        
+        # Header
+        header_layout = self._create_header()
         layout.addLayout(header_layout)
-
-        message_label = QLabel(message)
-        message_label.setObjectName("modal_message")
+        
+        layout.addSpacing(16)
+        
+        # Error icon
+        error_icon_container = QWidget()
+        error_icon_container.setFixedHeight(self.ERROR_ICON_SIZE)
+        error_icon_layout = QHBoxLayout(error_icon_container)
+        error_icon_layout.setContentsMargins(0, 0, 0, 0)
+        error_icon_layout.setSpacing(0)
+        error_icon_layout.addStretch()
+        
+        error_icon = QSvgWidget(resource_path("gui/images/logo/error-info.svg"))
+        error_icon.setFixedSize(self.ERROR_ICON_SIZE, self.ERROR_ICON_SIZE)
+        error_icon_layout.addWidget(error_icon)
+        
+        error_icon_layout.addStretch()
+        layout.addWidget(error_icon_container)
+        
+        layout.addSpacing(24)
+        
+        # Error title
+        error_title = QLabel(self.title_text)
+        error_title.setObjectName("error_title")
+        error_title.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        layout.addWidget(error_title)
+        
+        layout.addSpacing(8)
+        
+        # Error message
+        message_label = QLabel(self.message_text)
+        message_label.setObjectName("error_message")
+        message_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         message_label.setWordWrap(True)
         layout.addWidget(message_label)
-
+        
         layout.addStretch()
-
-        ok_btn = QPushButton("OK")
-        ok_btn.setObjectName("primary_button")
-        ok_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        ok_btn.setFixedHeight(48)
-        ok_btn.clicked.connect(self.accept)
-        layout.addWidget(ok_btn)
+        
+        # Cancel button (dark style)
+        cancel_btn = self._create_cancel_button()
+        layout.addWidget(cancel_btn)
+    
+    def _create_header(self) -> QHBoxLayout:
+        """Create modal header with icon, title and close button"""
+        header_layout = QHBoxLayout()
+        header_layout.setSpacing(self.HEADER_SPACING)
+        
+        # Header icon (slash/warning icon)
+        header_icon = QSvgWidget(resource_path("gui/images/frame.svg"))
+        header_icon.setFixedSize(24, 24)
+        header_layout.addWidget(header_icon)
+        
+        # Header title
+        header_title = QLabel("Import Failed")
+        header_title.setObjectName("error_header_title")
+        header_layout.addWidget(header_title)
+        header_layout.addStretch()
+        
+        # Close button
+        close_btn = QSvgWidget(resource_path("gui/images/cancel.svg"))
+        close_btn.setFixedSize(24, 24)
+        close_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        close_btn.mousePressEvent = lambda event: self.reject()
+        header_layout.addWidget(close_btn)
+        
+        return header_layout
+    
+    def _create_cancel_button(self) -> QPushButton:
+        """Create cancel button with dark style"""
+        cancel_btn = QPushButton("Cancel")
+        cancel_btn.setObjectName("error_cancel_button")
+        cancel_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        cancel_btn.setFixedSize(
+            self.MODAL_WIDTH - (self.MODAL_PADDING * 2),
+            self.BUTTON_HEIGHT
+        )
+        cancel_btn.setStyleSheet(f"""
+            QPushButton#error_cancel_button {{
+                background-color: {BitSOTATheme.COLOR1};
+                color: {BitSOTATheme.COLOR2};
+                border: none;
+                border-radius: 4px;
+                font-family: "PingFang SC", "Microsoft YaHei", "Geist", -apple-system, BlinkMacSystemFont, sans-serif;
+                font-size: 16px;
+                font-weight: 600;
+            }}
+            
+            QPushButton#error_cancel_button:hover {{
+                background-color: rgba(21, 0, 73, 0.9);
+            }}
+        """)
+        cancel_btn.clicked.connect(self.accept)
+        
+        return cancel_btn
 
 
 
 class TermsAcceptanceModal(QDialog):
+    """Terms and conditions acceptance modal for wallet import"""
+    
+    # Constants
+    MODAL_WIDTH = 600
+    MODAL_HEIGHT = 500
+    MODAL_PADDING = 32
+    HEADER_SPACING = 8
+    CONTENT_SPACING = 24
+    BUTTON_HEIGHT = 48
+    
     confirmed = Signal()
+    
+    @staticmethod
+    def get_stylesheet():
+        """Get the stylesheet for TermsAcceptanceModal component"""
+        return f"""
+            QDialog#modal_dialog {{
+                background-color: {BitSOTATheme.CONTENT_BOX_BG};
+                border: none;
+                border-radius: 4px;
+            }}
+            
+            QLabel#modal_title {{
+                color: {BitSOTATheme.BLACK100};
+                font-family: "PingFang SC", "Microsoft YaHei", "Geist", -apple-system, BlinkMacSystemFont, sans-serif;
+                font-size: 24px;
+                font-weight: 600;
+            }}
+            
+            QWidget#important_container {{
+                background-color: {BitSOTATheme.COLOR1_04};
+                border-radius: 8px;
+            }}
+            
+            QLabel#important_title {{
+                background-color: transparent;
+                color: {BitSOTATheme.COLOR1};
+                font-family: "PingFang SC", "Microsoft YaHei", "Geist", -apple-system, BlinkMacSystemFont, sans-serif;
+                font-size: 16px;
+                font-weight: 500;
+            }}
+            
+            QLabel#info_text {{
+                background-color: transparent;
+                color: {BitSOTATheme.COLOR1_60};
+                font-family: "PingFang SC", "Microsoft YaHei", "Geist", -apple-system, BlinkMacSystemFont, sans-serif;
+                font-size: 14px;
+                font-weight: 400;
+                line-height: 150%;
+            }}
+        """
 
     def __init__(self, parent=None):
         super().__init__(parent)
-        self.setObjectName("modal_dialog")
-        self.setModal(True)
-        self.setFixedSize(600, 500)
-        # Remove system title bar
-        self.setWindowFlags(Qt.WindowType.FramelessWindowHint | Qt.WindowType.Dialog)
         self.terms_checkbox = None
         self.info_checkbox = None
         self.confirm_button = None
+        
+        # Setup dialog properties
+        self.setObjectName("modal_dialog")
+        self.setModal(True)
+        self.setFixedSize(self.MODAL_WIDTH, self.MODAL_HEIGHT)
+        self.setWindowFlags(Qt.WindowType.FramelessWindowHint | Qt.WindowType.Dialog)
+        self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
+        
+        # Apply styles and setup UI
+        self.setStyleSheet(self.get_stylesheet())
         self.setup_ui()
 
     def setup_ui(self):

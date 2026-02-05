@@ -3,6 +3,8 @@
 from PySide6.QtCore import QObject, Signal, QTimer
 from PySide6.QtWidgets import QStackedWidget
 
+from gui.components.navigation.topbar import NavTab
+
 
 class NavigationManager(QObject):
     """Manages application screen navigation and tab switching"""
@@ -37,6 +39,9 @@ class NavigationManager(QObject):
         self.wallet_screen = None
         self.mining_screen = None
         self.profile_screen = None
+        
+        # Track current screen
+        self.current_screen_tab = NavTab.MINING
 
     def set_screens(self, wallet_screen, mining_screen, profile_screen):
         """
@@ -67,48 +72,51 @@ class NavigationManager(QObject):
         Handle navigation tab switching
         
         Args:
-            tab_id: Tab ID (setup_wallet, mining, settings, profile)
+            tab_id: Tab ID from NavTab constants
         """
-        if tab_id == "setup_wallet":
+        if tab_id == NavTab.SETUP_WALLET:
             self.navigate_to_wallet()
-        elif tab_id == "mining":
+        elif tab_id == NavTab.MINING:
             self.navigate_to_mining()
-        elif tab_id == "profile":
-            # Profile feature not yet implemented, show coming soon prompt
-            # self.show_coming_soon.emit(
-            #     "Profile Screen",
-            #     "The Profile screen is coming soon! This screen will show your mining "
-            #     "history, rewards, and balances from both Direct Mining and Pool Mining. "
-            #     "You'll be able to view detailed statistics and claim your rewards."
-            # )
-            # Switch back to mining tab
-            # self.topbar.set_active_tab("mining")
+        elif tab_id == NavTab.PROFILE:
             self.navigate_to_profile()
-        elif tab_id == "settings":
-            # Settings feature can be implemented here
-            pass
+        elif tab_id == NavTab.LEADERBOARD:
+            # Leaderboard feature coming soon
+            self.show_coming_soon.emit(
+                "Leaderboard",
+                "The Leaderboard is coming soon! Track top miners, compare scores, and see how you rank against the community. Stay tuned for competitive mining features and rewards."
+            )
+            # Revert to previous active tab
+            QTimer.singleShot(100, lambda: self.topbar.set_active_tab(self._get_current_screen_tab()))
 
     def navigate_to_wallet(self):
         """Navigate to wallet screen"""
         if self.wallet_screen:
             self.screen_stack.setCurrentWidget(self.wallet_screen)
+            self.current_screen_tab = NavTab.SETUP_WALLET
             self.screen_changed.emit("wallet")
 
     def navigate_to_mining(self):
         """Navigate to mining screen"""
         if self.mining_screen:
             self.screen_stack.setCurrentWidget(self.mining_screen)
+            self.current_screen_tab = NavTab.MINING
             self.screen_changed.emit("mining")
 
     def navigate_to_profile(self):
         """Navigate to profile screen"""
         if self.profile_screen:
             self.screen_stack.setCurrentWidget(self.profile_screen)
+            self.current_screen_tab = NavTab.PROFILE
             self.screen_changed.emit("profile")
+    
+    def _get_current_screen_tab(self) -> str:
+        """Get the current active screen tab ID"""
+        return self.current_screen_tab
 
     def handle_wallet_connect(self):
         """Handle wallet connection request"""
-        self.topbar.set_active_tab("setup_wallet")
+        self.topbar.set_active_tab(NavTab.SETUP_WALLET)
         self.navigate_to_wallet()
 
     def handle_stack_change(self, index: int):
@@ -125,11 +133,11 @@ class NavigationManager(QObject):
     def auto_navigate_to_mining(self):
         """Auto-navigate to mining screen (used after wallet auto-load)"""
         self.show_main_app()
-        self.topbar.set_active_tab("mining")
+        self.topbar.set_active_tab(NavTab.MINING)
         self.navigate_to_mining()
 
     def auto_navigate_to_profile(self):
         """Auto-navigate to profile screen (used after wallet auto-load)"""
         self.show_main_app()
-        self.topbar.set_active_tab("profile")
+        self.topbar.set_active_tab(NavTab.PROFILE)
         self.navigate_to_profile()

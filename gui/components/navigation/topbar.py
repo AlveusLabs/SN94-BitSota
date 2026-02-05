@@ -4,6 +4,32 @@ from PySide6.QtSvgWidgets import QSvgWidget
 from gui.resource_path import resource_path
 
 
+class NavTab:
+    """Navigation tab identifiers and labels"""
+    
+    # Tab IDs
+    SETUP_WALLET = "setup_wallet"
+    MINING = "mining"
+    PROFILE = "profile"
+    LEADERBOARD = "settings"  # Note: ID is "settings" for backward compatibility
+    
+    # Tab labels
+    LABELS = {
+        SETUP_WALLET: "Setup Wallet",
+        MINING: "Mining",
+        PROFILE: "Profile",
+        LEADERBOARD: "Leaderboard"
+    }
+    
+    # All tabs in display order
+    ALL_TABS = [
+        (SETUP_WALLET, LABELS[SETUP_WALLET]),
+        (MINING, LABELS[MINING]),
+        (PROFILE, LABELS[PROFILE]),
+        (LEADERBOARD, LABELS[LEADERBOARD])
+    ]
+
+
 class NavTabButton(QWidget):
     """Top navigation tab button"""
     clicked = Signal()
@@ -105,7 +131,7 @@ class WalletDropdown(QWidget):
 
         # Chevron dropdown icon (right side)
         self.dropdown_icon = QSvgWidget(resource_path("gui/images/chevron-down.svg"))
-        self.dropdown_icon.setFixedSize(24, 24)
+        self.dropdown_icon.setFixedSize(12, 12)
         layout.addWidget(self.dropdown_icon)
 
     def set_wallet_name(self, name: str):
@@ -184,10 +210,8 @@ class TopBar(QWidget):
         layout.addLayout(self.nav_container)
 
         # Add navigation tabs
-        self.add_nav_tab("setup_wallet", "Setup Wallet")
-        self.add_nav_tab("mining", "Mining")
-        self.add_nav_tab("settings", "Settings")
-        self.add_nav_tab("profile", "Profile")
+        for tab_id, tab_label in NavTab.ALL_TABS:
+            self.add_nav_tab(tab_id, tab_label)
 
         layout.addStretch()
 
@@ -244,7 +268,7 @@ class TopBar(QWidget):
 
     def set_wallet_info(self, wallet_name: str, wallet_address: str = None):
         """Set wallet info and show connected state"""
-        self.wallet_dropdown.set_wallet_name(wallet_name)
+        self.wallet_dropdown.set_wallet_name(wallet_address)
         self.wallet_dropdown.show()
         self.wallet_not_connected_btn.hide()
 

@@ -1,18 +1,31 @@
+# PySide6 imports
 from PySide6.QtCore import Qt, Signal, QThread
 from PySide6.QtWidgets import (
-    QDialog, QVBoxLayout, QHBoxLayout, QLabel,
-    QPushButton, QLineEdit, QWidget
+    QDialog, QVBoxLayout, QHBoxLayout, QLabel, QLineEdit, QWidget, QPushButton
 )
 from PySide6.QtSvgWidgets import QSvgWidget
-from gui.resource_path import resource_path
-import requests
-import time
+
+# Standard library imports
 import logging
+import time
+
+# Third-party imports
+import requests
+
+# Local imports
+from gui.resource_path import resource_path
+from gui.theme import BitSOTATheme
+from gui.components.common.button import PrimaryButton
+
+# Constants
+HTTP_TIMEOUT_SECONDS = 10
 
 logger = logging.getLogger(__name__)
 
 
 class InviteCodeWorker(QThread):
+    """Background worker for verifying invite code"""
+    
     success = Signal()
     error = Signal(str)
 
@@ -24,14 +37,18 @@ class InviteCodeWorker(QThread):
         self.coldkey_address = coldkey_address
 
     def run(self):
+        """Verify invite code with relay server"""
         try:
+            # Create authentication headers
             msg = f"auth:{int(time.time())}"
             sig = self.wallet.hotkey.sign(msg).hex()
-
+            
+            # Build payload
             payload = {"code": self.code}
             if self.coldkey_address:
                 payload["coldkey_address"] = self.coldkey_address
-
+            
+            # Send verification request
             response = requests.post(
                 f"{self.relay_url}/invitation_code/link",
                 json=payload,
@@ -40,7 +57,7 @@ class InviteCodeWorker(QThread):
                     "X-Signature": sig,
                     "X-Timestamp": msg
                 },
-                timeout=10
+                timeout=HTTP_TIMEOUT_SECONDS
             )
 
             response.raise_for_status()
@@ -65,27 +82,61 @@ class InviteCodeWorker(QThread):
 
 
 class InviteCodeModal(QDialog):
-    code_verified = Signal()
-
+    """Invite Code verification modal dialog component"""
+    
+    # Constants
+    MODAL_WIDTH = 440
+    MODAL_HEIGHT = 480
+    MODAL_PADDING = 32
+    HEADER_PADDING = 20
+    CONTENT_SPACING = 24
+    BUTTON_HEIGHT = 48
+    CODE_INPUT_COUNT = 6
+    
+    # States
     STATE_ENTERING = "entering"
     STATE_ENTERED = "entered"
     STATE_ERROR = "error"
     STATE_SUCCESS = "success"
+    
+    code_verified = Signal()
+    
+    @staticmethod
+    def get_stylesheet():
+        """Get the stylesheet for InviteCodeModal component"""
+        return f"""
+            QDialog#modal_dialog {{
+                background-color: {BitSOTATheme.CONTENT_BOX_BG};
+                border: none;
+                border-radius: 4px;
+            }}
+            
+            QLabel#modal_title {{
+                color: {BitSOTATheme.BLACK100};
+                font-family: "PingFang SC", "Microsoft YaHei", "Geist", -apple-system, BlinkMacSystemFont, sans-serif;
+                font-size: 24px;
+                font-weight: 600;
+            }}
+        """
 
     def __init__(self, relay_url: str, wallet=None, coldkey_address: str = None, parent=None):
         super().__init__(parent)
-        self.setObjectName("modal_dialog")
-        self.setModal(True)
-        self.setFixedSize(440, 480)
-        # Remove system title bar
-        self.setWindowFlags(Qt.WindowType.FramelessWindowHint | Qt.WindowType.Dialog)
-        self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
         self.relay_url = relay_url
         self.wallet = wallet
         self.coldkey_address = coldkey_address
         self.current_state = self.STATE_ENTERING
         self.code_inputs = []
         self.worker = None
+        
+        # Setup dialog properties
+        self.setObjectName("modal_dialog")
+        self.setModal(True)
+        self.setFixedSize(self.MODAL_WIDTH, self.MODAL_HEIGHT)
+        self.setWindowFlags(Qt.WindowType.FramelessWindowHint | Qt.WindowType.Dialog)
+        self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
+        
+        # Apply styles and setup UI
+        self.setStyleSheet(self.get_stylesheet())
         self.setup_ui()
 
     def setup_ui(self):
