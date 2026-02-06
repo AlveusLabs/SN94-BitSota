@@ -61,7 +61,7 @@ class DirectClient:
         fec_train_examples: Optional[int] = None,
         fec_valid_examples: Optional[int] = None,
         fec_forget_every: Optional[int] = None,
-        engine_type: str = "archive",
+        engine_type: str = "baseline",
         validate_every_n_generations: Optional[int] = None,
         engine_params: Optional[Dict[str, Any]] = None,
         submit_only_if_improved: Optional[bool] = None,
@@ -391,7 +391,7 @@ class DirectClient:
             "algorithm": algo,
         }
 
-    def _get_engine(self, task_type: str, engine_type: str = "archive") -> BaseEvolutionEngine:
+    def _get_engine(self, task_type: str, engine_type: str = "baseline") -> BaseEvolutionEngine:
         key = (task_type, engine_type)
         if key in self._engine_cache:
             return self._engine_cache[key]
@@ -642,7 +642,7 @@ class DirectClient:
         Submits as soon as any algorithm beats SOTA threshold.
         """
         task_type = task_data["task_type"]
-        engine_type = getattr(self, "default_engine_type", "archive")
+        engine_type = getattr(self, "default_engine_type", "baseline")
         engine = self._get_engine(task_type, engine_type)
         task = engine.task
 
@@ -1248,7 +1248,7 @@ class DirectClient:
     def run_continuous_mining(
         self,
         task_type: str = DEFAULT_TASK_TYPE,
-        engine_type: str = "archive",  # "baseline" or "archive"
+        engine_type: str = "baseline",  # "baseline" or "archive"
         checkpoint_generations: int = 10,  # Log progress every N generations
     ) -> Dict[str, Any]:
         """

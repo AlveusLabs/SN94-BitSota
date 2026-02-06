@@ -120,6 +120,16 @@ def _apply_overrides(defaults: AppConfig, overrides: Dict[str, Any]) -> AppConfi
 _CACHED: Optional[AppConfig] = None
 
 
+def _apply_test_mode_env(defaults: AppConfig) -> AppConfig:
+    if os.environ.get("BITSOTA_TEST_MODE", "").strip() in {"1", "true", "TRUE", "yes", "YES"}:
+        return replace(
+            defaults,
+            test_mode=True,
+            test_invite_code=os.environ.get("BITSOTA_TEST_INVITE_CODE", defaults.test_invite_code),
+        )
+    return defaults
+
+
 def get_app_config(force_reload: bool = False) -> AppConfig:
     """
     Config policy:
@@ -130,17 +140,10 @@ def get_app_config(force_reload: bool = False) -> AppConfig:
     if _CACHED is not None and not force_reload:
         return _CACHED
 
-    defaults = AppConfig()
+    defaults = _apply_test_mode_env(AppConfig())
     if is_frozen():
         _CACHED = defaults
         return _CACHED
-
-    if os.environ.get("BITSOTA_TEST_MODE", "").strip() in {"1", "true", "TRUE", "yes", "YES"}:
-        defaults = replace(
-            defaults,
-            test_mode=True,
-            test_invite_code=os.environ.get("BITSOTA_TEST_INVITE_CODE", defaults.test_invite_code),
-        )
 
     path = _find_dev_config_path()
     overrides = _read_json_file(path) if path else {}

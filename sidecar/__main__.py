@@ -15,9 +15,10 @@ def main() -> None:
     args = parser.parse_args()
 
     import uvicorn
+    from sidecar.main import app
 
     uvicorn.run(
-        "sidecar.main:app",
+        app,
         host=str(args.host),
         port=int(args.port),
         reload=False,

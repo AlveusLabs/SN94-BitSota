@@ -54,7 +54,7 @@ def _install_island_engine_wrapper(
     wrapped_cache: Dict[tuple[str, str], IslandEngineWrapper] = {}
     original_get_engine = client._get_engine
 
-    def _wrapped_get_engine(task_type: str, engine_type: str = "archive"):
+    def _wrapped_get_engine(task_type: str, engine_type: str = "baseline"):
         key = (str(task_type), str(engine_type))
         cached = wrapped_cache.get(key)
         if cached is not None:

@@ -7,6 +7,115 @@ from pathlib import Path
 from typing import Any, Dict, Mapping, Optional
 
 
+def _default_cpp_cifar10_payload() -> Dict[str, Any]:
+    """Default problem config used by the GUI when no problem_config.json exists.
+
+    This mirrors `configs/problem_config_cpp_cifar10.json` (kept as a human-editable reference file).
+    """
+
+    return {
+        "mining": {
+            "engine": "baseline",
+            "checkpoint_generations": 10000,
+            "miner_task_count": 10,
+            "validator_task_count": 10,
+            "validate_every": 10000,
+            "engine_params": {
+                "pop_size": 100,
+                "tournament_size": 10,
+                "mutation_prob": 0.9,
+                "setup_max_ops": 7,
+                "predict_max_ops": 11,
+                "learn_max_ops": 23,
+                "scalar_regs": 5,
+                "vector_regs": 9,
+                "matrix_regs": 2,
+                "vector_dim": 16,
+                "cifar_seed": 1000060,
+            },
+        },
+        "args": {
+            "task_type": "cifar10_binary",
+            "engine": "baseline",
+            "workers": 1,
+            "seed": 1000060,
+            "iterations": 1000000,
+            "feature_dim": 16,
+            "train_examples": 8000,
+            "val_examples": 1000,
+            "pop_size": 100,
+            "miner_task_count": 10,
+            "tournament_size": 10,
+            "mutation_prob": 0.9,
+            "setup_max_ops": 7,
+            "predict_max_ops": 11,
+            "learn_max_ops": 23,
+            "scalar_regs": 5,
+            "vector_regs": 9,
+            "matrix_regs": 2,
+            "vector_dim": 16,
+            "cifar_seed": 1000060,
+            "validator_task_count": 10,
+            "validate_every": 10000,
+            "log_every": 10000,
+            "verbose": True,
+        },
+        "env": {
+            "VALIDATOR_TASK_COUNT": 10,
+        },
+    }
+
+
+def ensure_default_problem_config(
+    *,
+    destination: Optional[str | Path] = None,
+    overwrite: bool = False,
+) -> Optional[Path]:
+    """
+    Ensure a default problem config exists on disk.
+
+    Returns the path if created or already present; otherwise None.
+    """
+
+    target: Path
+    if destination:
+        resolved = _resolve_path(destination)
+        if not resolved:
+            return None
+        target = resolved
+    else:
+        target = (Path.home() / ".bitsota" / "problem_config.json").expanduser()
+        try:
+            target = target.resolve()
+        except Exception:
+            pass
+
+    try:
+        if target.exists() and not overwrite:
+            return target
+    except Exception:
+        return None
+
+    try:
+        target.parent.mkdir(parents=True, exist_ok=True)
+    except Exception:
+        return None
+
+    payload = _default_cpp_cifar10_payload()
+    tmp = target.with_suffix(target.suffix + ".tmp")
+    try:
+        tmp.write_text(json.dumps(payload, indent=2, sort_keys=False) + "\n", encoding="utf-8")
+        tmp.replace(target)
+        return target
+    except Exception:
+        try:
+            if tmp.exists():
+                tmp.unlink()
+        except Exception:
+            pass
+        return None
+
+
 def _as_dict(value: Any) -> Dict[str, Any]:
     return dict(value) if isinstance(value, dict) else {}
 
@@ -111,6 +220,9 @@ def find_problem_config_path(explicit_path: Optional[str | Path] = None) -> Opti
 
     candidates = [
         Path.cwd() / "problem_config.json",
+        Path.cwd() / "configs" / "problem_config.json",
+        Path.cwd() / "problem_config_cpp_cifar10.json",
+        Path.cwd() / "configs" / "problem_config_cpp_cifar10.json",
         Path.home() / ".bitsota" / "problem_config.json",
     ]
     for candidate in candidates:
