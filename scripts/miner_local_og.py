@@ -25,14 +25,48 @@ from typing import Any, Dict, List, Optional, Tuple
 
 import numpy as np
 
-import bitsota_sdk.evaluations as evaluations
-from bitsota_sdk.dsl_parser import DSLParser
-from bitsota_sdk.tasks.mnist import MNISTBinaryTask
-from bitsota_sdk.tasks.scalar_linear import ScalarLinearRegressionTask
 from miner.client import DirectClient, DEFAULT_TASK_TYPE, TASK_REGISTRY
 from miner.engines.ga_engine import BaselineEvolutionEngine
 from miner.engines.archive_engine import ArchiveAwareBaselineEvolution
 from miner.engines.base_engine import BaseEvolutionEngine
+
+try:
+    import bitsota_sdk.evaluations as evaluations
+    from bitsota_sdk.dsl_parser import DSLParser
+    from bitsota_sdk.tasks.mnist import MNISTBinaryTask
+    from bitsota_sdk.tasks.scalar_linear import ScalarLinearRegressionTask
+except ModuleNotFoundError:
+    import core.evaluations as evaluations
+    from core.dsl_parser import DSLParser
+    from core.tasks.cifar10 import CIFAR10BinaryTask
+    from core.tasks.mnist import MNISTBinaryTask
+    from core.tasks.scalar_linear import ScalarLinearRegressionTask
+
+    if not hasattr(evaluations, "_OFFLINE_BINARY_TASK_REGISTRY"):
+        evaluations._OFFLINE_BINARY_TASK_REGISTRY = {
+            "cifar10_binary": CIFAR10BinaryTask,
+            "mnist_binary": MNISTBinaryTask,
+            "scalar_linear": ScalarLinearRegressionTask,
+        }
+
+    if not callable(getattr(evaluations, "_get_offline_validator_task_specs", None)):
+        def _compat_get_offline_validator_task_specs(task_type: str, input_dim: int):
+            key = str(task_type).strip().lower()
+            if key == "cifar10_binary":
+                return evaluations._get_cifar_validator_task_specs(int(input_dim))
+            if key == "mnist_binary":
+                return evaluations._get_mnist_validator_task_specs(int(input_dim))
+            if key == "scalar_linear":
+                return evaluations._get_scalar_validator_task_specs(int(input_dim))
+            return []
+
+        evaluations._get_offline_validator_task_specs = _compat_get_offline_validator_task_specs
+
+    if not hasattr(evaluations, "SUPPORTED_OFFLINE_BINARY_TASK_TYPES"):
+        evaluations.SUPPORTED_OFFLINE_BINARY_TASK_TYPES = tuple(evaluations._OFFLINE_BINARY_TASK_REGISTRY.keys())
+
+    if not hasattr(evaluations, "DEFAULT_TASK_TYPE"):
+        evaluations.DEFAULT_TASK_TYPE = DEFAULT_TASK_TYPE
 
 
 LOCAL_TASK_REGISTRY: Dict[str, Any] = dict(TASK_REGISTRY)
@@ -110,7 +144,7 @@ class LocalTestingClient(DirectClient):
     def _fetch_sota_threshold(self) -> float:
         return self._sota_threshold
 
-    def _get_engine(self, task_type: str, engine_type: str = "archive") -> BaseEvolutionEngine:
+    def _get_engine(self, task_type: str, engine_type: str = "baseline") -> BaseEvolutionEngine:
         """Override to inject hyperparameters for each engine type."""
 
         key = (task_type, engine_type)
@@ -253,7 +287,7 @@ def parse_args() -> argparse.Namespace:
         default=None,
         help="Base RNG seed. When --workers>1, each worker uses seed+worker_id.",
     )
-    parser.add_argument("--engine", choices=["archive", "baseline"], default="archive")
+    parser.add_argument("--engine", choices=["archive", "baseline"], default="baseline")
     parser.add_argument("--task-type", choices=list(LOCAL_TASK_REGISTRY.keys()), default=DEFAULT_TASK_TYPE, help="Task to train on")
     parser.add_argument(
         "--iterations",

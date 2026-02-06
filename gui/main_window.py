@@ -185,9 +185,22 @@ class MiningWindow(QMainWindow):
             cfg = get_app_config()
             problem_cfg = None
             try:
-                from core.problem_config import apply_env_overrides, load_problem_config
+                from core.problem_config import (
+                    apply_env_overrides,
+                    ensure_default_problem_config,
+                    load_problem_config,
+                )
 
-                problem_cfg = load_problem_config(getattr(cfg, "problem_config_path", None))
+                explicit_problem_path = getattr(cfg, "problem_config_path", None)
+                problem_cfg = load_problem_config(explicit_problem_path)
+                if (
+                    problem_cfg is None
+                    and not explicit_problem_path
+                    and not os.environ.get("BITSOTA_PROBLEM_CONFIG")
+                ):
+                    default_path = ensure_default_problem_config()
+                    if default_path is not None:
+                        problem_cfg = load_problem_config(default_path)
                 if problem_cfg and problem_cfg.env:
                     apply_env_overrides(problem_cfg.env)
             except Exception:

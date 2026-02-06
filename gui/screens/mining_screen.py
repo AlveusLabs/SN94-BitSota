@@ -14,6 +14,7 @@ from typing import Optional, Any
 import logging
 import json
 import os
+from pathlib import Path
 import re
 import signal
 import subprocess
@@ -283,7 +284,7 @@ class DirectMiningTask(QRunnable):
                     if callable(original_get_engine):
                         counter = {"n": 0}
 
-                        def _wrapped_get_engine(task_type: str, engine_type: str = "archive"):
+                        def _wrapped_get_engine(task_type: str, engine_type: str = "baseline"):
                             engine = original_get_engine(task_type, engine_type)
                             if getattr(engine, "_bitsota_profile_wrapped", False):
                                 return engine
@@ -543,13 +544,14 @@ class MiningScreen(QWidget):
         task_type = self.task_type_map.get(task_display, "cifar10_binary")
         self._pool_task_type = str(task_type)
         is_pool = str(task_type) in {"pool", "pool_lease"}
+        no_relay_test = self._no_relay_test_enabled()
 
         if not is_pool:
-            if not self.main_window.client:
+            if not self.main_window.client and not no_relay_test:
                 self._append_log("ERROR: Client not initialized. Please ensure wallet is properly loaded.")
                 return
 
-            if not self.main_window.coldkey_address:
+            if not self.main_window.coldkey_address and not no_relay_test:
                 self._append_log(
                     "ERROR: No coldkey address provided. Please provide your coldkey address first."
                 )
@@ -562,15 +564,18 @@ class MiningScreen(QWidget):
             except Exception:
                 pass
 
-            if not self._check_invite_code():
-                self._show_invite_code_modal()
-                return
+            if no_relay_test:
+                self._append_log("NO_RELAY_TEST enabled: skipping relay invite/coldkey checks and relay submissions.")
+            else:
+                if not self._check_invite_code():
+                    self._show_invite_code_modal()
+                    return
 
-            if not self._send_coldkey_address():
-                self._append_log(
-                    "ERROR: Failed to send coldkey address to relay. Please try again."
-                )
-                return
+                if not self._send_coldkey_address():
+                    self._append_log(
+                        "ERROR: Failed to send coldkey address to relay. Please try again."
+                    )
+                    return
 
         workers = 1
         if hasattr(self, "workers_combo") and self.workers_combo is not None:
@@ -648,6 +653,9 @@ class MiningScreen(QWidget):
         self._append_log("Mining stopped.")
 
     def _check_invite_code(self) -> bool:
+        if self._no_relay_test_enabled():
+            self._append_log("NO_RELAY_TEST enabled: skipping invite code requirement.")
+            return True
         if get_app_config().test_mode:
             self._append_log("Test mode enabled: skipping invite code requirement.")
             return True
@@ -674,6 +682,9 @@ class MiningScreen(QWidget):
             return False
 
     def _send_coldkey_address(self) -> bool:
+        if self._no_relay_test_enabled():
+            self._append_log("NO_RELAY_TEST enabled: skipping coldkey update call to relay.")
+            return True
         try:
             relay_url = self.main_window._get_relay_endpoint_from_config()
             msg = f"auth:{int(time.time())}"
@@ -787,6 +798,80 @@ class MiningScreen(QWidget):
         port = os.getenv("BITSOTA_SIDECAR_PORT", "8123").strip() or "8123"
         return f"http://{host}:{port}"
 
+    @staticmethod
+    def _is_frozen() -> bool:
+        return bool(getattr(sys, "frozen", False))
+
+    @staticmethod
+    def _resolve_bundled_executable(*names: str) -> Optional[str]:
+        if not names:
+            return None
+
+        search_dirs = []
+        try:
+            search_dirs.append(Path(sys.executable).resolve().parent)
+        except Exception:
+            pass
+        try:
+            base = getattr(sys, "_MEIPASS", None)
+            if base:
+                search_dirs.append(Path(base))
+        except Exception:
+            pass
+
+        seen = set()
+        for directory in search_dirs:
+            key = str(directory)
+            if key in seen:
+                continue
+            seen.add(key)
+            for name in names:
+                candidate = directory / str(name)
+                if candidate.exists() and candidate.is_file():
+                    return str(candidate)
+        return None
+
+    def _sidecar_launch_cmd(self) -> list[str]:
+        if self._is_frozen():
+            sidecar_bin = self._resolve_bundled_executable(
+                "BitSotaSidecar.exe",
+                "BitSotaSidecar",
+            )
+            if not sidecar_bin:
+                raise RuntimeError("Bundled sidecar executable not found")
+            return [
+                sidecar_bin,
+                "--host",
+                os.getenv("BITSOTA_SIDECAR_HOST", "127.0.0.1"),
+                "--port",
+                os.getenv("BITSOTA_SIDECAR_PORT", "8123"),
+            ]
+
+        return [
+            sys.executable,
+            "-m",
+            "sidecar",
+            "--host",
+            os.getenv("BITSOTA_SIDECAR_HOST", "127.0.0.1"),
+            "--port",
+            os.getenv("BITSOTA_SIDECAR_PORT", "8123"),
+        ]
+
+    def _miner_launch_prefix(self, *, pool: bool) -> list[str]:
+        if self._is_frozen():
+            miner_name = "BitSotaPoolMiner" if pool else "BitSotaMiner"
+            miner_bin = self._resolve_bundled_executable(
+                f"{miner_name}.exe",
+                miner_name,
+            )
+            if not miner_bin:
+                raise RuntimeError(f"Bundled executable not found: {miner_name}")
+            return [miner_bin]
+
+        if pool:
+            return [sys.executable, "-m", "scripts.pool_miner_sidecar"]
+        return [sys.executable, "-m", "scripts.miner_local_og_sidecar"]
+
     def _ensure_sidecar_running(self) -> str:
         url = self._get_sidecar_url().rstrip("/")
         try:
@@ -796,15 +881,7 @@ class MiningScreen(QWidget):
         except Exception:
             pass
 
-        cmd = [
-            sys.executable,
-            "-m",
-            "sidecar",
-            "--host",
-            os.getenv("BITSOTA_SIDECAR_HOST", "127.0.0.1"),
-            "--port",
-            os.getenv("BITSOTA_SIDECAR_PORT", "8123"),
-        ]
+        cmd = self._sidecar_launch_cmd()
         self.sidecar_process = subprocess.Popen(
             cmd,
             stdout=subprocess.DEVNULL,
@@ -862,9 +939,7 @@ class MiningScreen(QWidget):
     ) -> None:
         cfg = get_app_config()
         cmd = [
-            sys.executable,
-            "-m",
-            "scripts.pool_miner_sidecar",
+            *self._miner_launch_prefix(pool=True),
             "--sidecar-url",
             str(sidecar_url),
             "--run-id",
@@ -952,9 +1027,7 @@ class MiningScreen(QWidget):
                 snapshot_every = None
 
         cmd = [
-            sys.executable,
-            "-m",
-            "scripts.miner_local_og_sidecar",
+            *self._miner_launch_prefix(pool=False),
             "--sidecar-url",
             sidecar_url,
             "--run-id",
@@ -1055,6 +1128,8 @@ class MiningScreen(QWidget):
         self._pool_task_type = None
 
     def _refresh_global_sota_from_relay(self) -> Optional[float]:
+        if self._no_relay_test_enabled():
+            return None
         if not self.main_window:
             return None
         sota = None
@@ -1271,8 +1346,11 @@ class MiningScreen(QWidget):
             return
 
     def _maybe_submit_candidate(self, cand: dict, *, global_sota: Any, local_sota: Any) -> None:
+        no_relay_test = self._no_relay_test_enabled()
+
         if not self.main_window or not self.main_window.client:
-            return
+            if not no_relay_test:
+                return
 
         try:
             verified_score = float(cand.get("validator_score", -float("inf")))
@@ -1322,8 +1400,12 @@ class MiningScreen(QWidget):
             prevalidated["sota_threshold"] = float(g)
 
         self._append_log(f"[submit] Candidate verified_score={float(verified_score):.6f} threshold={threshold}")
-        result = self.main_window.client.submit_solution(solution_data, prevalidated=prevalidated)
-        status = str(result.get("status") or "")
+        if no_relay_test:
+            status = "success"
+            self._append_log("[submit] NO_RELAY_TEST enabled: skipping relay submit, updating local sidecar state only.")
+        else:
+            result = self.main_window.client.submit_solution(solution_data, prevalidated=prevalidated)
+            status = str(result.get("status") or "")
         self._append_log(f"[submit] status={status}")
 
         if self.sidecar_url:
@@ -1338,6 +1420,13 @@ class MiningScreen(QWidget):
                 )
             except Exception:
                 pass
+
+    @staticmethod
+    def _no_relay_test_enabled() -> bool:
+        raw = os.getenv("NO_RELAY_TEST", "").strip()
+        if not raw:
+            raw = os.getenv("BITSOTA_NO_RELAY_TEST", "").strip()
+        return raw.lower() in {"1", "true", "yes", "on"}
 
     def _on_mining_tab_changed(self, tab_id: str):
         if tab_id == "pool":
