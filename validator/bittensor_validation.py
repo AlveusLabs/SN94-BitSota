@@ -2,6 +2,8 @@ import logging
 import time
 from typing import List
 
+import bittensor as bt
+import bittensor.utils.networking as net
 import torch
 
 __spec_version__ = 1337
