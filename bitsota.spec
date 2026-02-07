@@ -3,7 +3,11 @@ import os
 import platform
 import sys
 
-from PyInstaller.utils.hooks import collect_data_files, collect_dynamic_libs, collect_submodules
+from PyInstaller.utils.hooks import (
+    collect_all,
+    collect_data_files,
+    collect_dynamic_libs,
+), collect_submodules
 
 torch_data = collect_data_files("torch")
 torch_binaries = collect_dynamic_libs("torch")
@@ -14,6 +18,7 @@ datas = [
 ]
 datas.extend(torch_data)
 datas.extend(numpy_data)
+datas.extend(pyside_datas)
 
 hiddenimports = [
     "PIL",
@@ -53,7 +58,7 @@ a = Analysis(
         "scripts/pool_miner_sidecar.py",
     ],
     pathex=[],
-    binaries=torch_binaries,
+    binaries=torch_binaries + pyside_binaries,
     datas=datas,
     hiddenimports=hiddenimports,
     hookspath=[],
