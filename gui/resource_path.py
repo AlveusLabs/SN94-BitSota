@@ -9,4 +9,4 @@ def resource_path(relative_path: str) -> str:
     else:
         base_path = Path(__file__).parent.parent
 
-    return str(base_path / relative_path)
+    return str((base_path / relative_path).resolve().as_posix())

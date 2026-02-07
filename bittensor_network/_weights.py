@@ -2,7 +2,6 @@ import logging
 import threading
 from typing import Dict
 
-import bittensor as bt
 import torch
 import re
 

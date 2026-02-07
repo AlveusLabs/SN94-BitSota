@@ -1,4 +1,3 @@
-bittensor==9.12.2
 fastapi
 numpy==2.3.5
 pandas==2.3.3
@@ -8,7 +7,7 @@ PySide6==6.10.1
 PyYAML==6.0.3
 Requests
 scikit-learn==1.7.2
-setuptools==70.0.0
+setuptools
 SQLAlchemy==2.0.44
 substrate_interface==1.7.11
 torch==2.9.1
