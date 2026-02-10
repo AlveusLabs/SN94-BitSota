@@ -54,6 +54,11 @@ curl http://127.0.0.1:8002/sota_threshold
 curl "http://127.0.0.1:8002/sota-events?page=1&page_size=10"
 ```
 
+## Admin dashboard
+
+- HTML: `http://127.0.0.1:8002/admin/dashboard` (HTTP Basic; defaults to `admin` + `ADMIN_AUTH_TOKEN`)
+- JSON: `GET /admin/status` (use `X-Auth-Token`)
+
 ## Auth model
 
 The relay uses request headers for authenticated endpoints:

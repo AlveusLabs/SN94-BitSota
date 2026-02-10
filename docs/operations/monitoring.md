@@ -5,6 +5,8 @@
 - `GET /health`
 - `GET /sota_threshold`
 - `GET /sota-events`
+- `GET /admin/status` (admin auth required) returns JSON health + request-rate metrics
+- `GET /admin/dashboard` (admin auth required) shows a live HTML dashboard
 - `GET /docs` for interactive OpenAPI (local)
 
 Logs:

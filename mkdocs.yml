@@ -3,6 +3,7 @@ site_description: BitSota subnet documentation for miners, validators, relay, po
 
 theme:
   name: material
+  language: en
   features:
     - navigation.tabs
     - navigation.sections
@@ -26,6 +27,49 @@ theme:
         name: Switch to light mode
 
 plugins:
+  - i18n:
+      docs_structure: suffix
+      languages:
+        - locale: en
+          name: English
+          default: true
+          build: true
+        - locale: zh
+          name: 中文
+          build: true
+          nav_translations:
+            Home: 首页
+            Getting Started: 快速开始
+            Architecture: 架构
+            Components: 组件
+            Overview: 概览
+            Relay: Relay
+            Pool: 矿池
+            Sidecar: Sidecar
+            Miner: 矿工
+            Validator: 验证者
+            GUI: 图形界面
+            Guides: 指南
+            Local Testing: 本地测试
+            Full Docker Loop: 完整 Docker 流程
+            Pool Functional Testing: 矿池功能测试
+            Reference: 参考
+            Configuration: 配置
+            Mining: 挖矿
+            Pool Mining: 矿池挖矿
+            Validation: 验证
+            Rewards: 奖励
+            Reward Modes: 奖励模式
+            Capacitor: Capacitor
+            Relay API: Relay API
+            Pool API: Pool API
+            Operations: 运维
+            Monitoring: 监控
+            Deployment: 部署
+            Troubleshooting: 故障排查
+            Security: 安全
+            Contributing: 贡献
+            Docs Coverage: 文档覆盖率
   - search
 
 markdown_extensions:
