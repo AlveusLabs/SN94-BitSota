@@ -1,6 +1,11 @@
 # UltraSimplifiedMultiTrusteeDistributor — 测试操作手册
 ---
 
+说明：
+- 本页描述的是 EVM 版 `UltraSimplifiedMultiTrusteeDistributor` 流程。
+- Pool 服务端还可通过 `Pool/scripts/consensus_daemon.py` 使用 ink Merkle 分发流程（`publish_epoch` / `challenge_epoch`）。
+- Pool 服务端与桥接测试请参考 [矿池功能测试](guides/pool-functional-testing.md)。
+
 ## ✅ 前置条件
 
 * RPC 访问：`https://test.chain.opentensor.ai`

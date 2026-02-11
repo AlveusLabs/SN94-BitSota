@@ -52,6 +52,28 @@ The Pool supports two request styles:
 
 Consensus is computed on the server side after enough evaluations exist for a candidate.
 
+## Contracts used by the Pool
+
+Pool reward flow can run in two layers:
+
+1. Off-chain deterministic rewards:
+- `scripts/consensus_node.py` computes deterministic per-epoch payouts and Merkle root.
+- `scripts/merkle_claim_server.py` serves claim proofs and simulates claims locally.
+
+2. Optional on-chain ink Merkle distributor:
+- `scripts/consensus_daemon.py --mode publish` calls contract `publish_epoch`.
+- `scripts/consensus_daemon.py --mode verify` can call `challenge_epoch` on mismatches.
+
+For on-chain mode, configure:
+- `ONCHAIN_WS_URL`
+- `ONCHAIN_CONTRACT`
+- `ONCHAIN_METADATA`
+- `ONCHAIN_PUBLISHER_SURI`
+- `ONCHAIN_VERIFIER_1_SURI`
+- `ONCHAIN_VERIFIER_2_SURI`
+
+The contract enforces veto/challenge window and threshold.
+
 ## Functional testing and simulators
 
 See [Pool Functional Testing](../guides/pool-functional-testing.md).

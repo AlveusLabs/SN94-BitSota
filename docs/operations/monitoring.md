@@ -22,6 +22,20 @@ Logs:
 When using `Pool/docker-compose.sim.yaml`:
 - Monitor UI is published on `http://127.0.0.1:9000`
 
+Pool-specific observability checks:
+- `GET http://127.0.0.1:9000/metrics.json` for stack summary.
+- `docker compose -f Pool/docker-compose.sim.yaml logs -f consensus_publisher`
+- `docker compose -f Pool/docker-compose.sim.yaml logs -f consensus_verifier_1`
+- Inspect epoch artifacts in `Pool/.local_sim/epochs`:
+  - `epoch_<n>.json`
+  - `verify_<epoch>_<node>.json`
+  - `onchain_publish_<epoch>.json` (when on-chain bridge is enabled)
+  - `onchain_challenge_<epoch>_<node>.json` (when challenges are submitted)
+
+On-chain bridge behavior:
+- If `ONCHAIN_WS_URL`, `ONCHAIN_CONTRACT`, and signer vars are set, `consensus_daemon.py` attempts chain calls.
+- If unset, flow remains local/off-chain only.
+
 ## Validator
 
 - `validator.local_validator` writes JSONL metrics to `local_validator_metrics.log` by default

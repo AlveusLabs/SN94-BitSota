@@ -33,6 +33,17 @@ Pool API 是一个 FastAPI 服务。本地运行时，OpenAPI 页面在：
 | POST | `/api/v1/results/verify/{result_id}` | miner | 将已完成 result 标记为已验证 |
 | GET | `/api/v1/monitor/summary` | monitor | 聚合的监控摘要 |
 
+## 合约集成说明
+
+Pool API 本身不直接提供以下端点：
+- `publish_epoch`
+- `challenge_epoch`
+- `claim`
+
+这些流程由 Pool 脚本处理：
+- `scripts/consensus_daemon.py`：发布/校验与可选链上桥接
+- `scripts/merkle_claim_server.py`：链下 claim 模拟与 proof 服务
+
 ## 示例
 
 ### 注册

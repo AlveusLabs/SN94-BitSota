@@ -33,6 +33,17 @@ The timestamp must be within 5 minutes of server time.
 | POST | `/api/v1/results/verify/{result_id}` | miner | Mark a completed result as verified |
 | GET | `/api/v1/monitor/summary` | monitor | Aggregated monitor summary |
 
+## Contract integration note
+
+The Pool API itself does not expose direct endpoints for:
+- `publish_epoch`
+- `challenge_epoch`
+- `claim`
+
+Those are handled by Pool scripts:
+- `scripts/consensus_daemon.py` for publish/verify and optional on-chain bridge
+- `scripts/merkle_claim_server.py` for off-chain claim simulation/proof serving
+
 ## Examples
 
 ### Register
@@ -69,4 +80,3 @@ Submit a bundle:
 ## Source of truth
 
 See `Pool/app/api/v1` for request handling and `Pool/app/schemas` for models.
-

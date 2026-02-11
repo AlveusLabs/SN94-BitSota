@@ -52,6 +52,28 @@ Pool 支持两种请求方式：
 
 当某个候选拥有足够的评估样本后，服务器端会计算共识。
 
+## Pool 使用到的合约
+
+Pool 的奖励流程可以分两层：
+
+1. 链下确定性奖励计算：
+- `scripts/consensus_node.py` 计算每个 epoch 的确定性 payout 与 Merkle root。
+- `scripts/merkle_claim_server.py` 在本地提供 proof 并模拟 claim。
+
+2. 可选链上 ink Merkle 分发合约：
+- `scripts/consensus_daemon.py --mode publish` 调用合约 `publish_epoch`。
+- `scripts/consensus_daemon.py --mode verify` 在不一致时可调用 `challenge_epoch`。
+
+启用链上模式需配置：
+- `ONCHAIN_WS_URL`
+- `ONCHAIN_CONTRACT`
+- `ONCHAIN_METADATA`
+- `ONCHAIN_PUBLISHER_SURI`
+- `ONCHAIN_VERIFIER_1_SURI`
+- `ONCHAIN_VERIFIER_2_SURI`
+
+veto/challenge 窗口与阈值由合约侧强制执行。
+
 ## 功能测试与模拟器
 
 参考 [矿池功能测试](../guides/pool-functional-testing.md)。

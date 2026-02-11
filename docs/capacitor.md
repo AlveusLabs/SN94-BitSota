@@ -1,6 +1,11 @@
 # UltraSimplifiedMultiTrusteeDistributor — Test Playbook
 ---
 
+Note:
+- This page documents the EVM `UltraSimplifiedMultiTrusteeDistributor` flow.
+- The Pool server can also use an ink Merkle distributor flow (`publish_epoch` / `challenge_epoch`) through `Pool/scripts/consensus_daemon.py`.
+- For Pool server and bridge testing, see [Pool Functional Testing](guides/pool-functional-testing.md).
+
 ## ✅ Prerequisites
 
 * RPC access: `https://test.chain.opentensor.ai`
