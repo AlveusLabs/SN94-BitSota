@@ -50,7 +50,18 @@ Pool 支持两种请求方式：
   - 演化预算
   - 用于矿工协作的小 gossip 包
 
-当某个候选拥有足够的评估样本后，服务器端会计算共识。
+共识与奖励在服务端计算：
+
+- 评估共识使用严格 `k-of-n` 一致性（可配置 `consensus_threshold`）+ 容差 (`tolerance_ratio`)，不是默认中位数模式。
+- 若没有任何一致性簇达到阈值，该候选在该窗口不会得到共识分数。
+- 正向奖励需要同时满足：
+  - `in_consensus == true`
+  - 当前窗口活动量达到最小值（`evaluations_considered + evolutions_considered >= min_reward_activity`）
+- 共识支持多种演化基线模式：
+  - `sota`（全局窗口前基线）
+  - `genealogy`（父代基线）
+  - `local_evolver`（本地 lease 群体最佳分数 + 父代）
+- 可选按哈希重复惩罚（范围：`miner`、`global`、`both`）。
 
 ## Pool 使用到的合约
 

@@ -60,8 +60,9 @@ Pool API 本身不直接提供以下端点：
 {
   "task_type": "cifar10_binary",
   "eval_batch_size": 8,
-  "seed_batch_size": 2,
-  "gossip_limit": 5
+  "seed_batch_size": 8,
+  "gossip_limit": 20,
+  "sim_window_number": 9000
 }
 ```
 
@@ -71,11 +72,35 @@ Pool API 本身不直接提供以下端点：
 
 ```json
 {
-  "evaluations": [],
-  "evolutions": [],
-  "gossip": null
+  "evaluations": [
+    { "algorithm_id": 123, "score": 0.8123 }
+  ],
+  "evolutions": [
+    {
+      "parent_algorithm_ids": [123],
+      "algorithm_dsl": "# your evolved DSL"
+    }
+  ],
+  "gossip": {
+    "task_type": "cifar10_binary",
+    "algorithm_ids": [123, 456]
+  }
 }
 ```
+
+## Lease 语义与约束
+
+- `eval_batch_size` 与 `seed_batch_size` 如果提供，必须 `>= 2`。
+- `gossip_limit` 的 schema 约束为 `0..50`。
+- `sim_window_number` 仅用于本地/开发环境的合成窗口，生产环境禁用。
+- 同一矿工同一时间只能有一个 active assignment。
+- 在按窗口约束模式下，同一矿工每个窗口最多获得一个 lease。
+- lease 响应包含：
+  - `evaluate_algorithms`（要评估的群体），
+  - `seed_algorithms`（本地演化上下文），
+  - `evolve_budget`（当前为 `0` 或 `1`）。
+- 启动期回退：当全局 in-evaluation 候选仍不足时，服务端会用 seed 集临时填充 `evaluate_algorithms`，避免冷启动死锁。
+- `submit_lease` 会写入评估、递增候选评估计数，并最多接收 `evolve_budget` 个演化提案。
 
 ## 权威实现
 

@@ -60,8 +60,9 @@ Lease a bundle:
 {
   "task_type": "cifar10_binary",
   "eval_batch_size": 8,
-  "seed_batch_size": 2,
-  "gossip_limit": 5
+  "seed_batch_size": 8,
+  "gossip_limit": 20,
+  "sim_window_number": 9000
 }
 ```
 
@@ -71,11 +72,35 @@ Submit a bundle:
 
 ```json
 {
-  "evaluations": [],
-  "evolutions": [],
-  "gossip": null
+  "evaluations": [
+    { "algorithm_id": 123, "score": 0.8123 }
+  ],
+  "evolutions": [
+    {
+      "parent_algorithm_ids": [123],
+      "algorithm_dsl": "# your evolved DSL"
+    }
+  ],
+  "gossip": {
+    "task_type": "cifar10_binary",
+    "algorithm_ids": [123, 456]
+  }
 }
 ```
+
+## Lease semantics and constraints
+
+- `eval_batch_size` and `seed_batch_size` must be `>= 2` when provided.
+- `gossip_limit` is clamped by schema to `0..50`.
+- `sim_window_number` is for local/dev synthetic windows and is disabled in production.
+- A miner can hold only one active assignment at a time.
+- In enforced-window mode, a miner can receive at most one lease per window.
+- Lease response includes:
+  - `evaluate_algorithms` (population to evaluate),
+  - `seed_algorithms` (context for local evolution),
+  - `evolve_budget` (currently `0` or `1`).
+- Bootstrap behavior: if the global in-evaluation pool is still too small, the server can seed `evaluate_algorithms` from the seed set to avoid startup deadlock.
+- `submit_lease` stores evaluations, increments candidate evaluation counters, and accepts at most `evolve_budget` evolution proposals.
 
 ## Source of truth
 

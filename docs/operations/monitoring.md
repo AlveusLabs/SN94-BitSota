@@ -32,6 +32,17 @@ Pool-specific observability checks:
   - `onchain_publish_<epoch>.json` (when on-chain bridge is enabled)
   - `onchain_challenge_<epoch>_<node>.json` (when challenges are submitted)
 
+Dashboard and JSON metrics highlights:
+- Multi-source comparison UI supports toggling multiple simulation URLs on the same reward-distribution chart.
+- Distribution JSON includes total/eval/evolve curves:
+  - `distribution.curve_total_reward`
+  - `distribution.curve_eval_reward`
+  - `distribution.curve_evolve_reward`
+- Role-segmented reward quality is exposed for debugging:
+  - `distribution.evaluator_good_reward_share`, `distribution.evaluator_bad_reward_share`
+  - `distribution.evolver_good_reward_share`, `distribution.evolver_bad_reward_share`
+  - plus rewarded miner counts for each group.
+
 On-chain bridge behavior:
 - If `ONCHAIN_WS_URL`, `ONCHAIN_CONTRACT`, and signer vars are set, `consensus_daemon.py` attempts chain calls.
 - If unset, flow remains local/off-chain only.

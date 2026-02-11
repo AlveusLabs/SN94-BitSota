@@ -50,7 +50,18 @@ The Pool supports two request styles:
   - an evolve budget
   - a small gossip packet for miner coordination
 
-Consensus is computed on the server side after enough evaluations exist for a candidate.
+Consensus and rewards are computed server-side:
+
+- Evaluation consensus is strict `k-of-n` agreement (configurable `consensus_threshold`) inside tolerance (`tolerance_ratio`), not median-by-default.
+- If no agreement cluster reaches threshold, that candidate has no consensus score for that window.
+- Positive rewards are gated by:
+  - `in_consensus == true`
+  - minimum current-window activity (`evaluations_considered + evolutions_considered >= min_reward_activity`)
+- Evolver scoring modes are supported in consensus:
+  - `sota` (global pre-window baseline)
+  - `genealogy` (parent baseline)
+  - `local_evolver` (best scored local lease population + parent)
+- Optional repetition penalties can be applied by hash (`miner`, `global`, or `both` scope).
 
 ## Contracts used by the Pool
 
