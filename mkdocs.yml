@@ -52,6 +52,7 @@ plugins:
             Guides: 指南
             Local Testing: 本地测试
             Full Docker Loop: 完整 Docker 流程
+            Testnet Test: 测试网测试
             Pool Functional Testing: 矿池功能测试
             Reference: 参考
             Configuration: 配置
@@ -119,6 +120,7 @@ nav:
   - Guides:
       - Local Testing: local-testing.md
       - Full Docker Loop: guides/full-docker-loop.md
+      - Testnet Test: guides/testnet-test.md
       - Pool Functional Testing: guides/pool-functional-testing.md
   - Reference:
       - Configuration: configuration.md
