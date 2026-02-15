@@ -12,6 +12,7 @@ For backward compatibility, all components can still be imported from here.
 from .common.button import PrimaryButton, SecondaryButton
 from .common.overlay import ModalOverlay, show_modal_with_overlay
 from .common.tab_switcher import TabSwitcher
+from .common.select_input import SelectInput
 
 # Import navigation components from sub-packages
 from .navigation.topbar import TopBar
@@ -38,6 +39,7 @@ __all__ = [
     "ModalOverlay",
     "show_modal_with_overlay",
     "TabSwitcher",
+    "SelectInput",
     # Navigation components
     "TopBar",
     # Modal components

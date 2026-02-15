@@ -22,7 +22,7 @@ class WindowStyleManager:
     def setup_window(self):
         """Set up basic window properties: title, size, position"""
         self.window.setWindowTitle("BitSota")
-        self.window.setMinimumSize(1200, 800)
+        self.window.setMinimumSize(1200, 1000)
         self.window.resize(1400, 900)
         self._center_window()
 

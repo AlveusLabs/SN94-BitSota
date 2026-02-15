@@ -4,6 +4,7 @@ from .button import PrimaryButton, SecondaryButton
 from .overlay import ModalOverlay, show_modal_with_overlay
 from .tab_switcher import TabSwitcher
 from .normal_tab_switcher import NormalTabSwitcher
+from .select_input import SelectInput
 
 __all__ = [
     "PrimaryButton",
@@ -12,4 +13,5 @@ __all__ = [
     "show_modal_with_overlay",
     "TabSwitcher",
     "NormalTabSwitcher",
+    "SelectInput",
 ]

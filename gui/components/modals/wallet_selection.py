@@ -13,47 +13,12 @@ from gui.theme import BitSOTATheme
 
 
 class WalletListItem(QPushButton):
-    """Wallet list item component."""
+    """Wallet list item component.
     
-    @staticmethod
-    def get_stylesheet():
-        """Get the stylesheet for WalletListItem component."""
-        return f"""
-            QPushButton#wallet_list_item {{
-                background-color: transparent;
-                border: 1px solid {BitSOTATheme.COLOR1_12};
-                border-radius: 8px;
-                padding: 0px;
-                text-align: left;
-            }}
-            
-            QPushButton#wallet_list_item:hover {{
-                background-color: {BitSOTATheme.COLOR1_04};
-                border: 1px solid {BitSOTATheme.COLOR1_20};
-            }}
-            
-            QPushButton#wallet_list_item_selected {{
-                background-color: {BitSOTATheme.COLOR1_04};
-                border: 1px solid {BitSOTATheme.COLOR2};
-                border-radius: 8px;
-                padding: 0px;
-                text-align: left;
-            }}
-            
-            QPushButton#wallet_list_item QLabel {{
-                background: transparent;
-                border: none;
-                color: {BitSOTATheme.COLOR1};
-                font-weight: 500;
-            }}
-            
-            QPushButton#wallet_list_item_selected QLabel {{
-                background: transparent;
-                border: none;
-                color: {BitSOTATheme.COLOR2};
-                font-weight: 500;
-            }}
-        """
+    Button styles are defined in theme.py (QPushButton#wallet_list_item / 
+    QPushButton#wallet_list_item_selected). Child QLabel colors are set
+    via inline styles in set_selected() to avoid stylesheet cascading issues.
+    """
     
     def __init__(self, wallet_name: str, hotkey_name: str, source: str = "bitsota", parent=None):
         super().__init__(parent)
@@ -64,8 +29,6 @@ class WalletListItem(QPushButton):
         
         self.setObjectName("wallet_list_item")
         self.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.setStyleSheet(self.get_stylesheet())
-        
         self.setup_ui(wallet_name, hotkey_name)
 
     def setup_ui(self, wallet_name: str, hotkey_name: str):
@@ -84,6 +47,7 @@ class WalletListItem(QPushButton):
         info_layout.setSpacing(4)
 
         self.wallet_label = QLabel(f"{wallet_name}...{hotkey_name[-4:]}")
+        self.wallet_label.setStyleSheet("background: transparent; border: none;")
         info_layout.addWidget(self.wallet_label)
 
         layout.addLayout(info_layout)
@@ -96,11 +60,23 @@ class WalletListItem(QPushButton):
         if selected:
             self.setObjectName("wallet_list_item_selected")
             self.checkmark.setText("✓")
+            self.wallet_label.setStyleSheet(
+                f"background: transparent; border: none; color: {BitSOTATheme.COLOR2}; font-weight: 500;"
+            )
+            self.checkmark.setStyleSheet(
+                f"background: transparent; border: none; color: {BitSOTATheme.COLOR2}; font-weight: 500;"
+            )
         else:
             self.setObjectName("wallet_list_item")
             self.checkmark.setText("")
+            self.wallet_label.setStyleSheet(
+                f"background: transparent; border: none; color: {BitSOTATheme.COLOR1}; font-weight: 500;"
+            )
+            self.checkmark.setStyleSheet(
+                f"background: transparent; border: none; color: {BitSOTATheme.COLOR1}; font-weight: 500;"
+            )
         
-        # Refresh styles
+        # Refresh button styles
         self.style().unpolish(self)
         self.style().polish(self)
 

@@ -199,9 +199,8 @@ class MiningWindow(QMainWindow):
         self.modal_manager.show_user_guide()
 
     def _on_wallet_dropdown_clicked(self):
-        """Wallet dropdown click"""
-        # Can show wallet details or switch wallet modal here
-        pass
+        """Wallet dropdown click - show wallet selection modal"""
+        self.modal_manager.show_wallet_selection()
 
     def _on_wallet_loaded(
         self,

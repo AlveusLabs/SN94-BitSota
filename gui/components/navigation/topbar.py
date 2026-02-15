@@ -1,7 +1,17 @@
-from PySide6.QtCore import Qt, Signal
+from PySide6.QtCore import Qt, Signal, QPoint
 from PySide6.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QPushButton, QLabel
+from PySide6.QtGui import QDesktopServices, QCursor
+from PySide6.QtCore import QUrl
 from PySide6.QtSvgWidgets import QSvgWidget
 from gui.resource_path import resource_path
+
+# Social links
+SOCIAL_LINKS = [
+    ("X.svg", "Twitter", "https://x.com/bitsota_"),
+    ("Discord.svg", "Discord", "https://discord.gg/bitsota"),
+    ("Github.svg", "Github", "https://github.com/hivetensor"),
+    ("Website.svg", "Website", "https://bitsota.com"),
+]
 
 
 class NavTab:
@@ -102,6 +112,73 @@ class IconButton(QWidget):
     def mousePressEvent(self, event):
         self.clicked.emit()
         super().mousePressEvent(event)
+
+
+class SocialsPopupItem(QWidget):
+    """Single item in the socials popup menu."""
+    clicked = Signal()
+
+    def __init__(self, icon_name: str, label: str, parent=None):
+        super().__init__(parent)
+        self.setObjectName("socials_item")
+        self.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.setFixedHeight(48)
+        self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
+        self.setStyleSheet(
+            "QWidget#socials_item { border-radius: 4px; }"
+            "QWidget#socials_item:hover { background-color: rgba(12, 0, 41, 0.04); }"
+            "QLabel { background: transparent; }"
+        )
+
+        layout = QHBoxLayout(self)
+        layout.setContentsMargins(16, 8, 16, 8)
+        layout.setSpacing(8)
+
+        icon = QSvgWidget(resource_path(f"gui/images/{icon_name}"))
+        icon.setFixedSize(20, 20)
+        layout.addWidget(icon)
+
+        text = QLabel(label)
+        text.setStyleSheet(
+            "color: rgba(12, 0, 41, 0.8); font-size: 16px; font-weight: 400;"
+            "background: transparent;"
+        )
+        layout.addWidget(text)
+        layout.addStretch()
+
+    def mousePressEvent(self, event):
+        self.clicked.emit()
+        super().mousePressEvent(event)
+
+
+class SocialsPopup(QWidget):
+    """Popup menu with social media links (Twitter, Discord, Github, Website)."""
+
+    def __init__(self, parent=None):
+        super().__init__(parent, Qt.WindowType.Popup)
+        self.setFixedWidth(200)
+        self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
+        self.setStyleSheet(
+            "SocialsPopup {"
+            "  background-color: #FFFFFF;"
+            "  border: 1px solid rgba(12, 0, 41, 0.04);"
+            "  border-radius: 4px;"
+            "}"
+        )
+
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(8, 8, 8, 8)
+        layout.setSpacing(4)
+
+        for icon_name, label, url in SOCIAL_LINKS:
+            item = SocialsPopupItem(icon_name, label)
+            item.clicked.connect(lambda u=url: self._open_link(u))
+            layout.addWidget(item)
+
+    def _open_link(self, url: str):
+        """Open the social link in the default browser."""
+        QDesktopServices.openUrl(QUrl(url))
+        self.close()
 
 
 class WalletDropdown(QWidget):
@@ -219,9 +296,10 @@ class TopBar(QWidget):
         right_container = QHBoxLayout()
         right_container.setSpacing(8)
 
-        # Chat icon
-        chat_btn = IconButton(resource_path("gui/images/logo/chat.svg"))
-        right_container.addWidget(chat_btn)
+        # Chat icon (opens socials popup)
+        self.chat_btn = IconButton(resource_path("gui/images/logo/chat.svg"))
+        self.chat_btn.clicked.connect(self._show_socials_popup)
+        right_container.addWidget(self.chat_btn)
 
         # Help/User guide icon
         self.user_guide_btn = IconButton(resource_path("gui/images/logo/guide-info.svg"))
@@ -241,6 +319,15 @@ class TopBar(QWidget):
         right_container.addWidget(self.wallet_not_connected_btn)
 
         layout.addLayout(right_container)
+
+    def _show_socials_popup(self):
+        """Show the social links popup below the chat button."""
+        popup = SocialsPopup(self)
+        # Position below the chat button, aligned to its right edge
+        btn_rect = self.chat_btn.rect()
+        global_pos = self.chat_btn.mapToGlobal(QPoint(btn_rect.right() - popup.width(), btn_rect.bottom() + 4))
+        popup.move(global_pos)
+        popup.show()
 
     def add_nav_tab(self, tab_id: str, label: str):
         """Add navigation tab"""
