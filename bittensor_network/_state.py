@@ -1,7 +1,5 @@
 import logging
 import threading
-
-import bittensor as bt
 import torch
 
 
