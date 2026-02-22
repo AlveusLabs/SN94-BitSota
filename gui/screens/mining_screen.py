@@ -383,6 +383,11 @@ class MiningScreen(QWidget):
         self.tasks_completed = 0
         self.successful_submissions = 0
         self.best_score = None
+        self._auto_start_enabled = self._env_flag("BITSOTA_AUTO_START_MINING")
+        self._auto_start_task_type = os.getenv("BITSOTA_AUTO_TASK_TYPE", "").strip()
+        self._auto_start_workers = os.getenv("BITSOTA_AUTO_WORKERS", "").strip()
+        self._auto_start_attempts = 0
+        self._auto_start_max_attempts = 30
         self.setup_ui()
         self._load_mining_stats()
 
@@ -391,6 +396,8 @@ class MiningScreen(QWidget):
 
         self.sidecar_poll_timer = QTimer()
         self.sidecar_poll_timer.timeout.connect(self._poll_sidecar)
+        if self._auto_start_enabled:
+            QTimer.singleShot(1200, self._maybe_autostart_from_env)
 
     def setup_ui(self):
         main_layout = QVBoxLayout(self)
@@ -797,6 +804,46 @@ class MiningScreen(QWidget):
         host = os.getenv("BITSOTA_SIDECAR_HOST", "127.0.0.1").strip() or "127.0.0.1"
         port = os.getenv("BITSOTA_SIDECAR_PORT", "8123").strip() or "8123"
         return f"http://{host}:{port}"
+
+    @staticmethod
+    def _env_flag(name: str) -> bool:
+        raw = os.getenv(name, "").strip().lower()
+        return raw in {"1", "true", "yes", "on"}
+
+    def _maybe_autostart_from_env(self) -> None:
+        if not self._auto_start_enabled or self.is_mining:
+            return
+
+        wallet = getattr(self.main_window, "wallet", None) if self.main_window else None
+        if wallet is None:
+            self._auto_start_attempts += 1
+            if self._auto_start_attempts < self._auto_start_max_attempts:
+                QTimer.singleShot(1000, self._maybe_autostart_from_env)
+            return
+
+        if self._auto_start_task_type:
+            self._set_task_type_by_value(self._auto_start_task_type)
+
+        if self._auto_start_workers:
+            try:
+                workers = max(1, int(self._auto_start_workers))
+                self.workers_combo.setCurrentText(str(workers))
+            except Exception:
+                pass
+
+        self._append_log(
+            f"Auto-start enabled via env (task={self._auto_start_task_type or 'default'})."
+        )
+        self._start_mining()
+
+    def _set_task_type_by_value(self, task_type: str) -> None:
+        wanted = str(task_type or "").strip().lower()
+        if not wanted:
+            return
+        for label, value in self.task_type_map.items():
+            if str(value).strip().lower() == wanted:
+                self.task_type_combo.setCurrentText(label)
+                return
 
     @staticmethod
     def _is_frozen() -> bool:

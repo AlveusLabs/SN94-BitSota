@@ -116,15 +116,21 @@ Pool miners earn through a reputation system that converts to RAO at epoch bound
 ### Reputation Accumulation
 
 **Evaluation Tasks:**
-- Base: 1.0 reputation per accurate evaluation
-- "Accurate" means within 10% of median consensus
-- Example: Evaluate 10 algorithms accurately = 10.0 reputation
+- Evaluator points are derived from agreement quality against strict consensus clusters.
+- Agreement/disagreement is measured with configurable tolerance (`tolerance_ratio`) and threshold (`consensus_threshold`).
+- Effective evaluator points follow `(agreements - disagreements) * evaluator_weight`.
 
 **Evolution Tasks:**
-- Base: 2.0 reputation points
-- Multiplied by consensus score if >= 0.7
-- Example: Your algorithm scores 0.85 in consensus = 2.0 × 0.85 = 1.7 reputation
-- Example: Your algorithm scores 0.65 = 0 reputation (below threshold)
+- Evolver points are based on verified improvement over a configured baseline mode:
+  - `sota` (global pre-window best)
+  - `genealogy` (direct parent)
+  - `local_evolver` (best scored local lease population + parent)
+- Effective evolver points follow `(total_improvement * evolver_weight) - repetition_penalty`.
+- Repeat penalties are optional and can be scoped by `miner`, `global`, or `both`.
+
+**Consensus gating for payout:**
+- Positive rewards require `in_consensus == true`.
+- Positive rewards also require minimum current-window activity (`min_reward_activity`).
 
 ### Epoch Conversion
 
@@ -194,12 +200,12 @@ Your rewards (both emissions and Capacitor) are in ALPHA stake. ALPHA stake can 
 - You run pool mining 24/7
 - You complete ~20 evaluation tasks per hour
 - You complete ~2 evolution tasks per hour
-- 90% evaluation accuracy
-- Average evolution score: 0.75
+- Your evaluations mostly agree with consensus clusters
+- Your evolutions show consistent positive verified improvements
 
-**Hourly reputation:**
-- Evaluations: 20 × 0.9 (accuracy) × 1.0 = 18 reputation
-- Evolutions: 2 × 2.0 × 0.75 = 3 reputation
+**Hourly reputation (illustrative):**
+- Net evaluator points after agreement/disagreement weighting: 18
+- Net evolver points after baseline comparison and penalties: 3
 - Total: 21 reputation/hour
 
 **Hourly earnings (assuming 5000 total pool reputation):**

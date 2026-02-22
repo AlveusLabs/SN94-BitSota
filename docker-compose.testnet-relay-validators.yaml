@@ -1,0 +1,98 @@
+name: bitsota-testnet-relay-validators
+
+services:
+  relay:
+    profiles: ["local-relay"]
+    build:
+      context: ${RELAY_SOURCE_DIR:-../BitSota}
+      dockerfile: ${RELAY_DOCKERFILE:-../current-sn-2/docker/relay.Dockerfile}
+    command:
+      [
+        "--test",
+        "--host",
+        "0.0.0.0",
+        "--port",
+        "8002",
+        "--database-url",
+        "sqlite:////data/bitsota_relay_test.db",
+      ]
+    environment:
+      SOTA_CONSENSUS_VOTES: ${SOTA_CONSENSUS_VOTES:-1}
+      SOTA_ALIGNMENT_MOD: ${SOTA_ALIGNMENT_MOD:-1}
+      ADMIN_AUTH_TOKEN: ${ADMIN_AUTH_TOKEN:-dev}
+      BITSOTA_TEST_INVITE_CODE: ${BITSOTA_TEST_INVITE_CODE:-TESTTEST1}
+    ports:
+      - "${RELAY_PORT:-8002}:8002"
+    volumes:
+      - relay_data:/data
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "python -c \"import urllib.request; urllib.request.urlopen('http://127.0.0.1:8002/health', timeout=3).read()\"",
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 20
+    restart: unless-stopped
+
+  validator_1:
+    build:
+      context: .
+      dockerfile: docker/validator-node.Dockerfile
+    environment:
+      VALIDATOR_WALLET_NAME: ${VALIDATOR_1_WALLET_NAME:-validator_1}
+      VALIDATOR_WALLET_HOTKEY: ${VALIDATOR_1_WALLET_HOTKEY:-validator_1_hot}
+      VALIDATOR_LOG_FILE: /data/validator_1.log
+      RELAY_URL: ${RELAY_URL:-https://relay.bitsota.com}
+      NETUID: ${NETUID:-94}
+      SUBTENSOR_NETWORK: ${SUBTENSOR_NETWORK:-test}
+      SUBTENSOR_CHAIN_ENDPOINT: ${SUBTENSOR_CHAIN_ENDPOINT:-wss://test.finney.opentensor.ai:443}
+      RELAY_POLL_INTERVAL_SECONDS: ${RELAY_POLL_INTERVAL_SECONDS:-60}
+      WEIGHT_POLL_INTERVAL_S: ${WEIGHT_POLL_INTERVAL_S:-6.0}
+      WEIGHT_RETRY_INTERVAL_S: ${WEIGHT_RETRY_INTERVAL_S:-5.0}
+      EPOCH_LENGTH: ${EPOCH_LENGTH:-360}
+      WINNER_SOURCE: ${WINNER_SOURCE:-relay}
+      BURN_HOTKEY: ${BURN_HOTKEY:-5Ef5EsPQoMVmJ8rYectQ26BEvscvATEGm365bcQjo1Y6bxGr}
+      BURN_SHARE: ${BURN_SHARE:-0.9}
+      APPLY_WEIGHTS_INLINE: ${APPLY_WEIGHTS_INLINE:-true}
+      SUBMIT_SOTA_VOTES: ${SUBMIT_SOTA_VOTES:-true}
+      BLACKLIST_CUTOFF_PERCENTAGE: ${BLACKLIST_CUTOFF_PERCENTAGE:-0.1}
+      VALIDATOR_LOG_LEVEL: ${VALIDATOR_LOG_LEVEL:-INFO}
+    volumes:
+      - ${HOME}/.bittensor/wallets:/wallets:ro
+      - validator_1_data:/data
+    restart: unless-stopped
+
+  validator_2:
+    build:
+      context: .
+      dockerfile: docker/validator-node.Dockerfile
+    environment:
+      VALIDATOR_WALLET_NAME: ${VALIDATOR_2_WALLET_NAME:-validator_2}
+      VALIDATOR_WALLET_HOTKEY: ${VALIDATOR_2_WALLET_HOTKEY:-validator_2_hot}
+      VALIDATOR_LOG_FILE: /data/validator_2.log
+      RELAY_URL: ${RELAY_URL:-https://relay.bitsota.com}
+      NETUID: ${NETUID:-94}
+      SUBTENSOR_NETWORK: ${SUBTENSOR_NETWORK:-test}
+      SUBTENSOR_CHAIN_ENDPOINT: ${SUBTENSOR_CHAIN_ENDPOINT:-wss://test.finney.opentensor.ai:443}
+      RELAY_POLL_INTERVAL_SECONDS: ${RELAY_POLL_INTERVAL_SECONDS:-60}
+      WEIGHT_POLL_INTERVAL_S: ${WEIGHT_POLL_INTERVAL_S:-6.0}
+      WEIGHT_RETRY_INTERVAL_S: ${WEIGHT_RETRY_INTERVAL_S:-5.0}
+      EPOCH_LENGTH: ${EPOCH_LENGTH:-360}
+      WINNER_SOURCE: ${WINNER_SOURCE:-relay}
+      BURN_HOTKEY: ${BURN_HOTKEY:-5Ef5EsPQoMVmJ8rYectQ26BEvscvATEGm365bcQjo1Y6bxGr}
+      BURN_SHARE: ${BURN_SHARE:-0.9}
+      APPLY_WEIGHTS_INLINE: ${APPLY_WEIGHTS_INLINE:-true}
+      SUBMIT_SOTA_VOTES: ${SUBMIT_SOTA_VOTES:-true}
+      BLACKLIST_CUTOFF_PERCENTAGE: ${BLACKLIST_CUTOFF_PERCENTAGE:-0.1}
+      VALIDATOR_LOG_LEVEL: ${VALIDATOR_LOG_LEVEL:-INFO}
+    volumes:
+      - ${HOME}/.bittensor/wallets:/wallets:ro
+      - validator_2_data:/data
+    restart: unless-stopped
+
+volumes:
+  relay_data:
+  validator_1_data:
+  validator_2_data:

@@ -1,0 +1,12 @@
+name: bitsota-gui-build
+
+services:
+  gui_builder:
+    build:
+      context: ./current-sn-2
+      dockerfile: docker/gui-build.Dockerfile
+    command: >
+      bash -lc "pyinstaller bitsota.spec && ls -lah dist"
+    volumes:
+      - ./current-sn-2/build:/workspace/build
+      - ./current-sn-2/dist:/workspace/dist
