@@ -28,17 +28,28 @@ on:
         required: true
         type: string
         default: "internal-testnet-gui-latest"
+      target_platform:
+        description: "Choose which platform to build in this run"
+        required: true
+        type: choice
+        default: all
+        options:
+          - all
+          - windows-x64
+          - linux-x64
+          - macos-arm64
 
 permissions:
   contents: write
 
 concurrency:
-  group: testnet-gui-internal-${{ github.ref }}-${{ inputs.release_tag }}
+  group: testnet-gui-internal-${{ github.ref }}-${{ inputs.release_tag }}-${{ inputs.target_platform }}
   cancel-in-progress: true
 
 jobs:
   build:
     name: Build ${{ matrix.label }}
+    if: ${{ inputs.target_platform == 'all' || inputs.target_platform == matrix.platform }}
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
