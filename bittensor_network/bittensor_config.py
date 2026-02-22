@@ -70,6 +70,7 @@ class BittensorConfig:
             bt_config.wallet = bt.Config()  # Create empty config object
         setattr(bt_config.wallet, "name", y.get("wallet_name", "your_wallet"))
         setattr(bt_config.wallet, "hotkey", y.get("wallet_hotkey", "your_hotkey"))
+        setattr(bt_config.wallet, "path", y.get("path", "~/.bittensor/wallets/"))
         if not hasattr(bt_config, "subtensor") or bt_config.subtensor is None:
             bt_config.subtensor = bt.Config()  # Create empty config object
         setattr(bt_config.subtensor, "network", y.get("network", "finney"))

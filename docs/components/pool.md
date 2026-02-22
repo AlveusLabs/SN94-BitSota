@@ -50,7 +50,40 @@ The Pool supports two request styles:
   - an evolve budget
   - a small gossip packet for miner coordination
 
-Consensus is computed on the server side after enough evaluations exist for a candidate.
+Consensus and rewards are computed server-side:
+
+- Evaluation consensus is strict `k-of-n` agreement (configurable `consensus_threshold`) inside tolerance (`tolerance_ratio`), not median-by-default.
+- If no agreement cluster reaches threshold, that candidate has no consensus score for that window.
+- Positive rewards are gated by:
+  - `in_consensus == true`
+  - minimum current-window activity (`evaluations_considered + evolutions_considered >= min_reward_activity`)
+- Evolver scoring modes are supported in consensus:
+  - `sota` (global pre-window baseline)
+  - `genealogy` (parent baseline)
+  - `local_evolver` (best scored local lease population + parent)
+- Optional repetition penalties can be applied by hash (`miner`, `global`, or `both` scope).
+
+## Contracts used by the Pool
+
+Pool reward flow can run in two layers:
+
+1. Off-chain deterministic rewards:
+- `scripts/consensus_node.py` computes deterministic per-epoch payouts and Merkle root.
+- `scripts/merkle_claim_server.py` serves claim proofs and simulates claims locally.
+
+2. Optional on-chain ink Merkle distributor:
+- `scripts/consensus_daemon.py --mode publish` calls contract `publish_epoch`.
+- `scripts/consensus_daemon.py --mode verify` can call `challenge_epoch` on mismatches.
+
+For on-chain mode, configure:
+- `ONCHAIN_WS_URL`
+- `ONCHAIN_CONTRACT`
+- `ONCHAIN_METADATA`
+- `ONCHAIN_PUBLISHER_SURI`
+- `ONCHAIN_VERIFIER_1_SURI`
+- `ONCHAIN_VERIFIER_2_SURI`
+
+The contract enforces veto/challenge window and threshold.
 
 ## Functional testing and simulators
 

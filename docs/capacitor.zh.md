@@ -1,22 +1,22 @@
-# UltraSimplifiedMultiTrusteeDistributor — Test Playbook
+# UltraSimplifiedMultiTrusteeDistributor — 测试操作手册
 ---
 
-Note:
-- This page documents the EVM `UltraSimplifiedMultiTrusteeDistributor` flow.
-- The Pool server can also use an ink Merkle distributor flow (`publish_epoch` / `challenge_epoch`) through `Pool/scripts/consensus_daemon.py`.
-- For Pool server and bridge testing, see [Pool Functional Testing](guides/pool-functional-testing.md).
+说明：
+- 本页描述的是 EVM 版 `UltraSimplifiedMultiTrusteeDistributor` 流程。
+- Pool 服务端还可通过 `Pool/scripts/consensus_daemon.py` 使用 ink Merkle 分发流程（`publish_epoch` / `challenge_epoch`）。
+- Pool 服务端与桥接测试请参考 [矿池功能测试](guides/pool-functional-testing.md)。
 
-## ✅ Prerequisites
+## ✅ 前置条件
 
-* RPC access: `https://test.chain.opentensor.ai`
-* Foundry (`cast`) and `btcli` installed
-* Deployer funded and contract deployed
-* Contract’s hotkey, coldkey, and recipient coldkey in bytes32
-* Optionally: ss58 versions for `btcli`
+* RPC 访问：`https://test.chain.opentensor.ai`
+* 已安装 Foundry  `cast` 与 `btcli`
+* 部署者账户已注资，合约已部署
+* 合约的 hotkey、coldkey 与接收方 coldkey 的 bytes32
+* 可选：用于 `btcli` 的 ss58 版本
 
 ---
 
-## 🔧 Quick Env Setup
+## 🔧 快速环境变量设置
 
 ```bash
 export RPC_URL="https://test.chain.opentensor.ai"
@@ -37,9 +37,9 @@ export TRUSTEE3_PK=0x<hex>
 
 ---
 
-## 🧭 Foundry Flow
+## 🧭 Foundry 流程
 
-### 0) Sanity Checks
+### 0  健康检查
 
 ```bash
 cast call $CONTRACT "getDebugIdentity()(bytes32,bytes32,uint16)" --rpc-url $RPC_URL
@@ -49,7 +49,7 @@ cast call $CONTRACT "getTotalHotkeyStake()(uint256)" --rpc-url $RPC_URL
 
 ---
 
-### 1) Fund the Contract (optional)
+### 1  给合约注资  可选
 
 ```bash
 cast send $CONTRACT --value 10000000000wei --private-key $DEPLOYER_PK --rpc-url $RPC_URL
@@ -57,7 +57,7 @@ cast send $CONTRACT --value 10000000000wei --private-key $DEPLOYER_PK --rpc-url 
 
 ---
 
-### 1-optional) Register Hotkey
+### 1  可选  注册 hotkey
 
 ```bash
 cast send $CONTRACT "registerHotkey(uint16,bytes32)" $NETUID $HOTKEY32 \
@@ -68,7 +68,7 @@ cast send $CONTRACT "registerHotkey(uint16,bytes32)" $NETUID $HOTKEY32 \
 
 ---
 
-### 1-bis) Set Contract Coldkey
+### 1  bis  设置合约 coldkey
 
 ```bash
 cast send $CONTRACT "setContractColdkey(bytes32)" $COLDKEY32 \
@@ -77,7 +77,7 @@ cast send $CONTRACT "setContractColdkey(bytes32)" $COLDKEY32 \
 
 ---
 
-### 2) Stake to Contract Hotkey
+### 2  向合约 hotkey 质押
 
 ```bash
 btcli st add --subtensor.network test \
@@ -90,13 +90,13 @@ btcli st add --subtensor.network test \
 
 ---
 
-### 3) Transfer Stake to Contract Coldkey
+### 3  把 stake 转移到合约 coldkey
 
 ```bash
 btcli st transfer --subtensor.network test
 ```
 
-Verify:
+验证：
 
 ```bash
 cast call $STAKING "getStake(bytes32,bytes32,uint256)(uint256)" $HOTKEY32 $COLDKEY32 $NETUID --rpc-url $RPC_URL
@@ -105,7 +105,7 @@ cast call $CONTRACT "getOwnedStake()(uint256)" --rpc-url $RPC_URL
 
 ---
 
-### 4) Two Trustees Release Reward
+### 4  两个 trustee 释放奖励
 
 ```bash
 cast send $CONTRACT "releaseReward(bytes32,uint256)" $RECIPIENT_COLDKEY32 12345 \
@@ -116,7 +116,7 @@ cast send $CONTRACT "releaseReward(bytes32,uint256)" $RECIPIENT_COLDKEY32 12345 
 
 ---
 
-### 5) Verify Stake
+### 5  验证 stake
 
 ```bash
 cast call $CONTRACT "getOwnedStake()(uint256)" --rpc-url $RPC_URL
@@ -125,7 +125,7 @@ cast call $STAKING "getStake(bytes32,bytes32,uint256)(uint256)" $HOTKEY32 $RECIP
 
 ---
 
-### 6) Recipient Proves Ownership
+### 6  接收方证明所有权
 
 ```bash
 btcli st remove --subtensor.network test
@@ -133,42 +133,42 @@ btcli st remove --subtensor.network test
 
 ---
 
-## 🧩 Remix Testing Flow (RAO Units)
+## 🧩 Remix 测试流程  RAO 单位
 
-### 0) Connect Network
+### 0  连接网络
 
-Use Injected Provider (MetaMask) → Subtensor EVM (`https://test.chain.opentensor.ai`)
+使用注入式 Provider  MetaMask  → Subtensor EVM  `https://test.chain.opentensor.ai`
 
 ---
 
-### 1) Fund Contract
+### 1  给合约注资
 
-* “Low-level interactions”
-* Paste contract address
+* 低级交互
+* 粘贴合约地址
 * Value = `10000000000 wei`
-* Click Transact
+* 点击 Transact
 
 ---
 
-### 2) Register Hotkey
+### 2  注册 hotkey
 
-* Function: `registerHotkey(uint16,bytes32)`
+* 函数：`registerHotkey(uint16,bytes32)`
 * netuid = `94`
 * hotkey = `bytes32`
-* Value = `0 wei` (if funded)
+* Value = `0 wei`  若已注资
 * Transact
 
 ---
 
-### 3) Set Contract Coldkey
+### 3  设置合约 coldkey
 
-* Function: `setContractColdkey(bytes32)`
+* 函数：`setContractColdkey(bytes32)`
 * coldkey = `bytes32`
 * Transact
 
 ---
 
-### 4) Add Stake
+### 4  添加 stake
 
 ```bash
 btcli st add --subtensor.network test -n 94 -in <contract_hotkey_ss58> --amount 100000000 --tolerance 0.5 --allow-partial-stake
@@ -176,13 +176,13 @@ btcli st add --subtensor.network test -n 94 -in <contract_hotkey_ss58> --amount 
 
 ---
 
-### 5) Transfer Stake
+### 5  转移 stake
 
 ```bash
 btcli st transfer --subtensor.network test
 ```
 
-Check:
+检查：
 
 ```solidity
 getOwnedStake()
@@ -190,26 +190,26 @@ getOwnedStake()
 
 ---
 
-### 6) Two Trustees Release Reward
+### 6  两个 trustee 释放奖励
 
-Each trustee:
+每个 trustee：
 
-* Function: `releaseReward(bytes32,uint256)`
+* 函数：`releaseReward(bytes32,uint256)`
 * recipientColdkey = `bytes32`
 * newScore = `12345`
 * Value = `0 wei`
-* Transact twice from trustee1 and trustee2
+* 分别从 trustee1 与 trustee2 发送两次交易
 
 ---
 
-### 7) Verify Stake
+### 7  验证 stake
 
 `getOwnedStake()` → 0
 `getTotalHotkeyStake()` → updated
 
 ---
 
-### 8) Recipient Proves Ownership
+### 8  接收方证明所有权
 
 ```bash
 btcli st remove --subtensor.network test
@@ -217,7 +217,7 @@ btcli st remove --subtensor.network test
 
 ---
 
-### Remix Summary
+### Remix 总结
 
 | Step | Action           | In Remix? | Units              |
 | ---- | ---------------- | --------- | ------------------ |

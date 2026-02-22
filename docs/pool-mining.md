@@ -95,33 +95,31 @@ python3 -m scripts.pool_sidecar_driver --pool-url http://127.0.0.1:8434 --sideca
 ## Understanding Pool Tasks
 
 **Evolution Tasks:**
-You receive 2 seed algorithms and evolve them for 50 generations. You submit the best evolved algorithm back to the pool.
+In lease mode, you receive a local population context (evaluated + seed + gossip IDs), run local evolution, then submit your best candidate (bounded by lease `evolve_budget`).
 
 Rewards:
-- Base reward: 2.0 reputation points
-- Multiplied by consensus score if your algorithm scores >= 0.7
-- Example: If consensus determines your algorithm scored 0.85, you get 2.0 × 0.85 = 1.7 reputation
+- Evolver points are based on verified improvement against a baseline (`sota`, `genealogy`, or `local_evolver` mode).
+- Points are weighted by consensus config (`evolver_weight`) and can include repetition penalties.
 
 **Evaluation Tasks:**
 You receive a batch of algorithms evolved by other miners. You run each algorithm on the test dataset and report scores.
 
 Rewards:
-- Base reward: 1.0 reputation point per accurate evaluation
-- "Accurate" means your score is within 10% of the median consensus
-- Example: You evaluate 5 algorithms accurately, you get 5.0 reputation
+- Evaluator points are agreement-driven (`agreements - disagreements`) with `evaluator_weight`.
+- Agreement means your score is within tolerance of the strict consensus cluster.
 
 ## Consensus Mechanism
 
-The pool uses median consensus to prevent cheating:
+The pool uses strict `k-of-n` consensus to prevent cheating:
 
 1. Algorithm A needs evaluation
-2. Pool assigns it to miners X, Y, Z
-3. Miner X reports score: 0.92
-4. Miner Y reports score: 0.90
-5. Miner Z reports score: 0.91
-6. Median = 0.91
-7. Miners within 10% tolerance (X: 0.92 and Z: 0.91) get rewarded
-8. If Y had reported 0.50 (outlier), Y would not be rewarded
+2. Pool receives scores from multiple miners
+3. Server finds the tightest tolerance cluster with enough support (`consensus_threshold`)
+4. If the cluster size is below threshold, no consensus score is set
+5. Miners inside the cluster count as agreement; outside count as disagreement
+6. Positive payout is gated by:
+   - `in_consensus == true`
+   - minimum current-window activity (`min_reward_activity`)
 
 This prevents both:
 - Inflating scores (claiming 0.99 when algorithm scores 0.80)
@@ -134,8 +132,8 @@ The pool tracks reputation points throughout each epoch (typically 1 hour):
 **Reputation accumulation:**
 ```
 Epoch 1:
-- 10 accurate evaluations = 10.0 reputation
-- 2 successful evolutions = 2.0 × 0.8 + 2.0 × 0.75 = 3.1 reputation
+- evaluator points from agreements/disagreements = 10.0 reputation
+- evolver points from verified improvements (after penalties) = 3.1 reputation
 - Total: 13.1 reputation points
 ```
 
@@ -177,7 +175,7 @@ Pool GUI shows current balance and pending rewards.
 Track what percentage of your evaluations fall within consensus. Target 95%+ accuracy.
 
 **Evolution success rate:**
-Track how many of your evolved algorithms pass the 0.7 threshold for rewards.
+Track how many of your evolved algorithms achieve positive verified improvement and remain in consensus.
 
 **Reputation per hour:**
 Monitor your earning rate. Optimize by:

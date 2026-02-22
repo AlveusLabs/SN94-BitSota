@@ -1,0 +1,168 @@
+name: Build Testnet GUI (Internal)
+
+on:
+  workflow_dispatch:
+    inputs:
+      relay_endpoint:
+        description: "Relay URL baked into this testnet build"
+        required: true
+        type: string
+        default: "http://188.166.160.233:8002"
+      pool_endpoint:
+        description: "Pool API URL baked into this testnet build"
+        required: true
+        type: string
+        default: "http://188.166.160.233:8434"
+      update_manifest_url:
+        description: "Update manifest URL baked into this testnet build"
+        required: true
+        type: string
+        default: "http://188.166.160.233:8002/version.json"
+      test_invite_code:
+        description: "Invite code used by test mode"
+        required: true
+        type: string
+        default: "TESTTEST1"
+      release_tag:
+        description: "Public release tag to update"
+        required: true
+        type: string
+        default: "internal-testnet-gui-latest"
+
+permissions:
+  contents: write
+
+concurrency:
+  group: testnet-gui-internal-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-linux-testnet:
+    runs-on: ubuntu-latest
+    env:
+      RELAY_ENDPOINT: ${{ inputs.relay_endpoint }}
+      POOL_ENDPOINT: ${{ inputs.pool_endpoint }}
+      UPDATE_MANIFEST_URL: ${{ inputs.update_manifest_url }}
+      TEST_INVITE_CODE: ${{ inputs.test_invite_code }}
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Free up disk space
+        run: |
+          sudo rm -rf /usr/share/dotnet
+          sudo rm -rf /opt/ghc
+          sudo rm -rf /usr/local/share/boost
+          sudo rm -rf "$AGENT_TOOLSDIRECTORY"
+          df -h
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: "3.11"
+
+      - name: Bake testnet endpoints into GUI defaults
+        run: |
+          python3 - <<'PY'
+          import json
+          import os
+          import re
+          from pathlib import Path
+
+          path = Path("gui/app_config.py")
+          text = path.read_text(encoding="utf-8")
+
+          replacements = [
+              (r'relay_endpoint: str = "[^"]*"', f"relay_endpoint: str = {json.dumps(os.environ['RELAY_ENDPOINT'])}"),
+              (r'update_manifest_url: str = "[^"]*"', f"update_manifest_url: str = {json.dumps(os.environ['UPDATE_MANIFEST_URL'])}"),
+              (r'pool_endpoint: str = "[^"]*"', f"pool_endpoint: str = {json.dumps(os.environ['POOL_ENDPOINT'])}"),
+              (r"test_mode: bool = (True|False)", "test_mode: bool = True"),
+              (r'test_invite_code: str = "[^"]*"', f"test_invite_code: str = {json.dumps(os.environ['TEST_INVITE_CODE'])}"),
+          ]
+
+          for pattern, replacement in replacements:
+            updated, count = re.subn(pattern, replacement, text, count=1)
+            if count != 1:
+              raise SystemExit(f"Failed to patch app_config.py with pattern: {pattern}")
+            text = updated
+
+          path.write_text(text, encoding="utf-8")
+          print("Patched gui/app_config.py with testnet defaults.")
+          PY
+
+      - name: Install dependencies
+        run: |
+          pip install --no-cache-dir pyinstaller
+          pip install --no-cache-dir torch torchvision --index-url https://download.pytorch.org/whl/cpu
+          pip install --no-cache-dir -r requirements.txt
+
+      - name: Build app
+        run: |
+          pyinstaller bitsota.spec
+
+      - name: Package testnet build
+        id: package
+        run: |
+          BUILD_ID="${GITHUB_SHA::8}-$(date -u +%Y%m%d%H%M%S)"
+          PACKAGE_NAME="BitSota-testnet-linux-x64-${BUILD_ID}.tar.gz"
+          echo "package_name=${PACKAGE_NAME}" >> "$GITHUB_OUTPUT"
+
+          cat > dist/run-testnet-gui.sh <<'EOF'
+          #!/usr/bin/env bash
+          set -euo pipefail
+          SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+          export BITSOTA_TEST_MODE=1
+          export BITSOTA_AUTO_TASK_TYPE=pool_lease
+          exec "${SCRIPT_DIR}/BitSota/BitSota" "$@"
+          EOF
+          chmod +x dist/run-testnet-gui.sh
+
+          python3 - <<'PY'
+          import json
+          import os
+          from datetime import datetime, timezone
+          from pathlib import Path
+
+          payload = {
+              "built_at_utc": datetime.now(timezone.utc).isoformat(),
+              "relay_endpoint": os.environ["RELAY_ENDPOINT"],
+              "pool_endpoint": os.environ["POOL_ENDPOINT"],
+              "update_manifest_url": os.environ["UPDATE_MANIFEST_URL"],
+              "test_mode": True,
+              "test_invite_code": os.environ["TEST_INVITE_CODE"],
+              "auto_task_type": "pool_lease",
+          }
+          Path("dist/TESTNET_GUI_BUILD_INFO.json").write_text(
+              json.dumps(payload, indent=2),
+              encoding="utf-8",
+          )
+          PY
+
+          tar -czf "dist/${PACKAGE_NAME}" -C dist BitSota run-testnet-gui.sh TESTNET_GUI_BUILD_INFO.json
+          sha256sum "dist/${PACKAGE_NAME}" > "dist/${PACKAGE_NAME}.sha256"
+
+      - name: Publish public release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ inputs.release_tag }}
+          name: Internal Testnet GUI (Latest)
+          prerelease: true
+          make_latest: false
+          overwrite_files: true
+          files: |
+            dist/${{ steps.package.outputs.package_name }}
+            dist/${{ steps.package.outputs.package_name }}.sha256
+            dist/TESTNET_GUI_BUILD_INFO.json
+
+      - name: Post public links
+        run: |
+          RELEASE_URL="https://github.com/${GITHUB_REPOSITORY}/releases/tag/${{ inputs.release_tag }}"
+          ASSET_URL="https://github.com/${GITHUB_REPOSITORY}/releases/download/${{ inputs.release_tag }}/${{ steps.package.outputs.package_name }}"
+          {
+            echo "## Internal Testnet GUI Build"
+            echo ""
+            echo "- Release page: ${RELEASE_URL}"
+            echo "- Direct download: ${ASSET_URL}"
+            echo "- SHA256: ${ASSET_URL}.sha256"
+          } >> "${GITHUB_STEP_SUMMARY}"

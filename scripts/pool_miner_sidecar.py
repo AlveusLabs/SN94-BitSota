@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import argparse
+from datetime import datetime, timezone
 import hashlib
 import os
 import random
@@ -34,6 +35,38 @@ def _hash_to_unit_interval(text: str) -> float:
     digest = hashlib.sha256(text.encode("utf-8")).digest()
     n = int.from_bytes(digest[:8], byteorder="big")
     return n / float(2**64 - 1)
+
+
+def _as_float(value: Any) -> Optional[float]:
+    if value is None:
+        return None
+    if isinstance(value, (int, float)):
+        return float(value)
+    raw = str(value).strip()
+    if not raw:
+        return None
+    try:
+        return float(raw)
+    except Exception:
+        return None
+
+
+def _as_epoch_s(value: Any) -> Optional[float]:
+    direct = _as_float(value)
+    if direct is not None:
+        return direct
+    raw = str(value or "").strip()
+    if not raw:
+        return None
+    if raw.endswith("Z"):
+        raw = raw[:-1] + "+00:00"
+    try:
+        dt = datetime.fromisoformat(raw)
+    except Exception:
+        return None
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    return float(dt.timestamp())
 
 
 def _mock_score(algorithm_id: int, algorithm_dsl: str, *, salt: str) -> float:
@@ -169,6 +202,7 @@ def _run_worker(
     worker_id: str,
     poll_interval_s: float,
     lease_seconds: float,
+    lease_submit_buffer_s: float,
     mode: str,
     evolve_generations: int,
     lease_evolve_generations: int,
@@ -272,13 +306,28 @@ def _run_worker(
             elif kind == "lease":
                 eval_algorithms = payload.get("evaluate_algorithms") or payload.get("algorithms") or []
                 seed_algorithms = payload.get("seed_algorithms") or []
+                lease_timeout_at_s = _as_epoch_s(payload.get("lease_timeout_at_s"))
+                submit_deadline_s: Optional[float] = None
+                if lease_timeout_at_s is not None:
+                    submit_deadline_s = lease_timeout_at_s - max(0.0, float(lease_submit_buffer_s))
+
+                def _deadline_reached() -> bool:
+                    return submit_deadline_s is not None and _now_s() >= float(submit_deadline_s)
+
                 try:
                     evolve_budget = int(payload.get("evolve_budget") or 0)
                 except Exception:
                     evolve_budget = 0
 
                 evaluations: List[Dict[str, Any]] = []
+                lease_iterations = 0
                 for algo in eval_algorithms:
+                    if _deadline_reached():
+                        client.log(
+                            f"[pool-miner] lease deadline reached during evaluation job={job_id}; "
+                            f"submitting partial evals n={len(evaluations)}"
+                        )
+                        break
                     if not isinstance(algo, dict):
                         continue
                     try:
@@ -298,8 +347,15 @@ def _run_worker(
                         score = float(_mock_score(algo_id, dsl, salt=salt))
 
                     evaluations.append({"algorithm_id": algo_id, "score": score})
+                    lease_iterations += 1
 
                 evolutions: List[Dict[str, Any]] = []
+                if evolve_budget > 0:
+                    if _deadline_reached():
+                        client.log(
+                            f"[pool-miner] lease deadline reached before evolution job={job_id}; skipping evolution"
+                        )
+                        evolve_budget = 0
                 if evolve_budget > 0:
                     parents = seed_algorithms if seed_algorithms else eval_algorithms
                     parent_ids: List[int] = []
@@ -344,14 +400,31 @@ def _run_worker(
                                         engine._random_mutate(algo)  # type: ignore[attr-defined]
                                     except Exception:
                                         pass
-                            best_algo, _ = engine.evolve(generations=max(1, int(lease_evolve_generations)))
+                            gen_limit = max(1, int(lease_evolve_generations))
+                            gens_run = 0
+                            if submit_deadline_s is not None:
+                                while (not stop.is_set()) and gens_run < gen_limit and (not _deadline_reached()):
+                                    engine.evolve_generation()
+                                    gens_run += 1
+                                if gens_run < gen_limit:
+                                    client.log(
+                                        f"[pool-miner] lease evolve truncated job={job_id} "
+                                        f"gens={gens_run}/{gen_limit} (submit buffer={lease_submit_buffer_s:.1f}s)"
+                                    )
+                            else:
+                                engine.evolve(generations=gen_limit)
+                                gens_run = gen_limit
+                            best_algo = engine.best_algo
                             evolved_dsl = (
                                 DSLParser.to_dsl(best_algo)
                                 if best_algo is not None
                                 else _mock_evolve(parents, input_dim=input_dim, rng=rng)
                             )
+                            lease_iterations += max(0, int(gens_run))
                         else:
+                            gens_run = max(1, int(lease_evolve_generations))
                             evolved_dsl = _mock_evolve(parents, input_dim=input_dim, rng=rng)
+                            lease_iterations += max(0, int(gens_run))
 
                         evolutions.append(
                             {
@@ -360,9 +433,16 @@ def _run_worker(
                             }
                         )
 
-                result = {"evaluations": evaluations, "evolutions": evolutions}
+                result = {
+                    "evaluations": evaluations,
+                    "evolutions": evolutions,
+                    "iterations": int(lease_iterations),
+                }
                 client.submit_result(job_id, ok=True, result=result, error=None)
-                client.log(f"[pool-miner] lease job={job_id} eval_n={len(evaluations)} evo_n={len(evolutions)}")
+                client.log(
+                    f"[pool-miner] lease job={job_id} eval_n={len(evaluations)} "
+                    f"evo_n={len(evolutions)} iter_n={int(lease_iterations)}"
+                )
 
             else:
                 client.submit_result(job_id, ok=False, result={}, error=f"unknown kind: {kind}")
@@ -387,6 +467,11 @@ def parse_args(argv: Optional[List[str]] = None) -> argparse.Namespace:
     parser.add_argument("--workers", type=int, default=int(os.getenv("BITSOTA_POOL_MINER_WORKERS", "1")))
     parser.add_argument("--poll-interval-s", type=float, default=0.25)
     parser.add_argument("--lease-seconds", type=float, default=120.0)
+    parser.add_argument(
+        "--lease-submit-buffer-s",
+        type=float,
+        default=float(os.getenv("BITSOTA_POOL_LEASE_SUBMIT_BUFFER_S", "180")),
+    )
     env_mode = str(os.getenv("BITSOTA_POOL_MINER_MODE", "real") or "").strip().lower()
     if env_mode not in {"mock", "real"}:
         env_mode = "real"
@@ -407,6 +492,7 @@ def main(argv: Optional[List[str]] = None) -> int:
     workers = max(1, int(args.workers))
     poll_interval_s = max(0.01, float(args.poll_interval_s))
     lease_seconds = max(1.0, float(args.lease_seconds))
+    lease_submit_buffer_s = max(0.0, float(args.lease_submit_buffer_s))
     mode = str(args.mode)
     evolve_generations = max(1, int(args.evolve_generations))
     lease_evolve_generations = max(1, int(args.lease_evolve_generations))
@@ -423,6 +509,7 @@ def main(argv: Optional[List[str]] = None) -> int:
                 "worker_id": wid,
                 "poll_interval_s": poll_interval_s,
                 "lease_seconds": lease_seconds,
+                "lease_submit_buffer_s": lease_submit_buffer_s,
                 "mode": mode,
                 "evolve_generations": evolve_generations,
                 "lease_evolve_generations": lease_evolve_generations,

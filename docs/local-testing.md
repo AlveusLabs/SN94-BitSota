@@ -78,6 +78,7 @@ Admin dashboard:
 
 - `http://127.0.0.1:8002/admin/dashboard`
 - In `--test` mode the default credentials are `admin` / `dev`
+- JSON status: `curl -H "X-Auth-Token: dev" http://127.0.0.1:8002/admin/status`
 
 To reset relay state, delete the SQLite file you’re using (recommended: run with `--database-url "sqlite:///./bitsota_relay_test.db"` so it’s easy to remove):
 
