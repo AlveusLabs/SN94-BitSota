@@ -53,8 +53,8 @@ jobs:
             platform: windows-x64
             package_ext: zip
           - os: macos-14
-            label: macOS x64
-            platform: macos-x64
+            label: macOS arm64
+            platform: macos-arm64
             package_ext: tar.gz
 
     env:
@@ -160,6 +160,8 @@ jobs:
 
       - name: Build app
         shell: bash
+        env:
+          BUILD_ARCH: ${{ startsWith(matrix.os, 'macos') && 'arm64' || '' }}
         run: |
           pyinstaller bitsota.spec
 
