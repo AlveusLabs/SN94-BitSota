@@ -47,26 +47,42 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  select-platform:
+    name: Resolve target platform
+    runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.set-matrix.outputs.matrix }}
+    steps:
+      - id: set-matrix
+        shell: bash
+        run: |
+          case "${{ inputs.target_platform }}" in
+            windows-x64)
+              MATRIX='{"include":[{"os":"windows-latest","label":"Windows x64","platform":"windows-x64","package_ext":"zip"}]}'
+              ;;
+            linux-x64)
+              MATRIX='{"include":[{"os":"ubuntu-latest","label":"Linux x64","platform":"linux-x64","package_ext":"tar.xz"}]}'
+              ;;
+            macos-arm64)
+              MATRIX='{"include":[{"os":"macos-14","label":"macOS arm64","platform":"macos-arm64","package_ext":"tar.gz"}]}'
+              ;;
+            all)
+              MATRIX='{"include":[{"os":"ubuntu-latest","label":"Linux x64","platform":"linux-x64","package_ext":"tar.xz"},{"os":"windows-latest","label":"Windows x64","platform":"windows-x64","package_ext":"zip"},{"os":"macos-14","label":"macOS arm64","platform":"macos-arm64","package_ext":"tar.gz"}]}'
+              ;;
+            *)
+              echo "Unsupported target_platform: ${{ inputs.target_platform }}" >&2
+              exit 1
+              ;;
+          esac
+          echo "matrix=${MATRIX}" >> "$GITHUB_OUTPUT"
+
   build:
     name: Build ${{ matrix.label }}
-    if: ${{ inputs.target_platform == 'all' || inputs.target_platform == matrix.platform }}
+    needs: select-platform
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
-      matrix:
-        include:
-          - os: ubuntu-latest
-            label: Linux x64
-            platform: linux-x64
-            package_ext: tar.xz
-          - os: windows-latest
-            label: Windows x64
-            platform: windows-x64
-            package_ext: zip
-          - os: macos-14
-            label: macOS arm64
-            platform: macos-arm64
-            package_ext: tar.gz
+      matrix: ${{ fromJSON(needs.select-platform.outputs.matrix) }}
 
     env:
       RELAY_ENDPOINT: ${{ inputs.relay_endpoint }}
