@@ -4,10 +4,8 @@ services:
   relay:
     profiles: ["local-relay"]
     build:
-      context: ./current-sn-2
-      dockerfile: docker/relay.Dockerfile
-      args:
-        BITSOTA_GIT_REF: ${RELAY_GIT_REF:-main}
+      context: ${RELAY_SOURCE_DIR:-../BitSota}
+      dockerfile: ${RELAY_DOCKERFILE:-../current-sn-2/docker/relay.Dockerfile}
     command:
       [
         "--test",
@@ -40,7 +38,7 @@ services:
 
   validator_1:
     build:
-      context: ./current-sn-2
+      context: .
       dockerfile: docker/validator-node.Dockerfile
     environment:
       VALIDATOR_WALLET_NAME: ${VALIDATOR_1_WALLET_NAME:-validator_1}
@@ -68,7 +66,7 @@ services:
 
   validator_2:
     build:
-      context: ./current-sn-2
+      context: .
       dockerfile: docker/validator-node.Dockerfile
     environment:
       VALIDATOR_WALLET_NAME: ${VALIDATOR_2_WALLET_NAME:-validator_2}
