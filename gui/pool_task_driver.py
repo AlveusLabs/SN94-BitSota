@@ -8,6 +8,11 @@ from datetime import datetime, timezone
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
 import requests
+from core.cpp_dsl_compat import (
+    cpp_backend_enabled_from_env,
+    normalize_algorithm_batch_for_cpp,
+    normalize_algorithm_record_for_cpp,
+)
 
 
 def _now_s() -> float:
@@ -346,6 +351,8 @@ class PoolTaskCoordinator:
         self._evolve_streak = 0
         self._last_pool_error: Optional[str] = None
         self._last_pool_error_s: float = 0.0
+        self._cpp_backend = bool(cpp_backend_enabled_from_env())
+        self._cpp_task_type = str(os.getenv("BITSOTA_CPP_TASK_TYPE", "cifar10_binary") or "cifar10_binary").strip().lower()
 
     def _log_pool_error(self, message: str) -> None:
         now = _now_s()
@@ -393,6 +400,16 @@ class PoolTaskCoordinator:
                 parents = payload.get("algorithms") or []
                 parent_functions = [{"id": p.get("id")} for p in parents if isinstance(p, dict) and p.get("id") is not None]
                 if evolved:
+                    if self._cpp_backend:
+                        try:
+                            fallback_dim = int(payload.get("input_dim") or 16)
+                        except Exception:
+                            fallback_dim = 16
+                        evolved = normalize_algorithm_record_for_cpp(
+                            {"algorithm_dsl": str(evolved), "input_dim": fallback_dim},
+                            task_type=self._cpp_task_type,
+                            fallback_input_dim=fallback_dim,
+                        ).get("algorithm_dsl", str(evolved))
                     try:
                         ok = bool(
                             self.pool_client.submit_evolution(
@@ -449,9 +466,25 @@ class PoolTaskCoordinator:
         if kind not in {"evolve", "evaluate"}:
             return
 
-        payload: Dict[str, Any] = {"batch_id": assignment.batch_id, "algorithms": assignment.algorithms}
-        if isinstance(assignment.algorithms, list) and assignment.algorithms:
-            first = assignment.algorithms[0]
+        algorithms = assignment.algorithms
+        if self._cpp_backend and isinstance(algorithms, list):
+            fallback_dim = 16
+            if algorithms:
+                first = algorithms[0]
+                if isinstance(first, dict):
+                    try:
+                        fallback_dim = int(first.get("input_dim") or fallback_dim)
+                    except Exception:
+                        fallback_dim = 16
+            algorithms = normalize_algorithm_batch_for_cpp(
+                algorithms,
+                task_type=self._cpp_task_type,
+                fallback_input_dim=fallback_dim,
+            )
+
+        payload: Dict[str, Any] = {"batch_id": assignment.batch_id, "algorithms": algorithms}
+        if isinstance(algorithms, list) and algorithms:
+            first = algorithms[0]
             if isinstance(first, dict) and first.get("input_dim") is not None:
                 payload["input_dim"] = first.get("input_dim")
 
@@ -490,9 +523,13 @@ class PoolLeaseCoordinator:
         self._request_blocked_until_s: float = 0.0
         self._pending_submission: Optional[Dict[str, Any]] = None
         self._pending_retry_at_s: float = 0.0
-        self._lease_eval_batch_size = _env_int("BITSOTA_POOL_LEASE_EVAL_BATCH_SIZE", default=None, minimum=1)
-        self._lease_seed_batch_size = _env_int("BITSOTA_POOL_LEASE_SEED_BATCH_SIZE", default=None, minimum=1)
+        # Default to a bounded lease workload so real-task miners have runway to
+        # both evaluate and evolve before lease timeout.
+        self._lease_eval_batch_size = _env_int("BITSOTA_POOL_LEASE_EVAL_BATCH_SIZE", default=8, minimum=1)
+        self._lease_seed_batch_size = _env_int("BITSOTA_POOL_LEASE_SEED_BATCH_SIZE", default=8, minimum=1)
         self._lease_gossip_limit = _env_int("BITSOTA_POOL_LEASE_GOSSIP_LIMIT", default=0, minimum=0)
+        self._cpp_backend = bool(cpp_backend_enabled_from_env())
+        self._cpp_task_type = str(os.getenv("BITSOTA_CPP_TASK_TYPE", "cifar10_binary") or "cifar10_binary").strip().lower()
 
     def _log_pool_error(self, message: str) -> None:
         now = _now_s()
@@ -611,6 +648,29 @@ class PoolLeaseCoordinator:
 
             evaluations = result.get("evaluations") or []
             evolutions = result.get("evolutions") or []
+            if self._cpp_backend and isinstance(evolutions, list):
+                normalized_evolutions: List[Dict[str, Any]] = []
+                payload_input_dim = payload.get("input_dim")
+                for evo in evolutions:
+                    if not isinstance(evo, dict):
+                        continue
+                    raw_dsl = str(evo.get("algorithm_dsl") or "")
+                    if not raw_dsl.strip():
+                        normalized_evolutions.append(dict(evo))
+                        continue
+                    try:
+                        fallback_dim = int(payload_input_dim or 16)
+                    except Exception:
+                        fallback_dim = 16
+                    normalized = normalize_algorithm_record_for_cpp(
+                        {"algorithm_dsl": raw_dsl, "input_dim": fallback_dim},
+                        task_type=self._cpp_task_type,
+                        fallback_input_dim=fallback_dim,
+                    )
+                    patched = dict(evo)
+                    patched["algorithm_dsl"] = str(normalized.get("algorithm_dsl") or raw_dsl)
+                    normalized_evolutions.append(patched)
+                evolutions = normalized_evolutions
             try:
                 eval_n = len(evaluations) if isinstance(evaluations, list) else 0
             except Exception:
@@ -678,16 +738,41 @@ class PoolLeaseCoordinator:
         if assignment is None:
             return
 
+        evaluate_algorithms = assignment.evaluate_algorithms
+        seed_algorithms = assignment.seed_algorithms
+        if self._cpp_backend:
+            fallback_dim = 16
+            for src in (seed_algorithms, evaluate_algorithms):
+                if not src or not isinstance(src, list):
+                    continue
+                first = src[0]
+                if isinstance(first, dict) and first.get("input_dim") is not None:
+                    try:
+                        fallback_dim = int(first.get("input_dim"))
+                    except Exception:
+                        fallback_dim = 16
+                    break
+            evaluate_algorithms = normalize_algorithm_batch_for_cpp(
+                evaluate_algorithms,
+                task_type=self._cpp_task_type,
+                fallback_input_dim=fallback_dim,
+            )
+            seed_algorithms = normalize_algorithm_batch_for_cpp(
+                seed_algorithms,
+                task_type=self._cpp_task_type,
+                fallback_input_dim=fallback_dim,
+            )
+
         payload: Dict[str, Any] = {
             "lease_id": assignment.lease_id,
             "window_number": int(assignment.window_number),
-            "evaluate_algorithms": assignment.evaluate_algorithms,
-            "seed_algorithms": assignment.seed_algorithms,
+            "evaluate_algorithms": evaluate_algorithms,
+            "seed_algorithms": seed_algorithms,
             "evolve_budget": int(assignment.evolve_budget),
         }
         if assignment.timeout_at_s is not None:
             payload["lease_timeout_at_s"] = float(assignment.timeout_at_s)
-        for src in (assignment.seed_algorithms, assignment.evaluate_algorithms):
+        for src in (seed_algorithms, evaluate_algorithms):
             if not src or not isinstance(src, list):
                 continue
             first = src[0]

@@ -178,6 +178,8 @@ class DSLParser:
     @classmethod
     def _parse_line(cls, array_algo: AlgorithmArray, phase: str, line: str) -> None:
         """Parse a single DSL line and add to array"""
+        if re.match(r"noop\(\)\s*$", str(line).strip(), flags=re.IGNORECASE):
+            return
 
         # Arrow format: CONST 0.5 -> s0 or CONST_VEC -> v1
         if "->" in line:
@@ -351,15 +353,25 @@ class DSLParser:
             else:
                 return f"# Unknown operation: {op_name}"
 
+        phase_titles = {
+            "setup": "Setup",
+            "predict": "Predict",
+            "learn": "Learn",
+        }
         for phase in array_algo.get_phases():
-            lines.append(f"# {phase}")
+            lines.append(f"def {phase_titles.get(str(phase).lower(), str(phase).title())}():")
+            phase_lines = 0
             ops, arg1, arg2, dest, const1, const2 = array_algo.get_phase_ops(phase)
             for i in range(len(ops)):
                 if ops[i] != 0:  # Skip NOOP
                     lines.append(
-                        format_instruction(
+                        "  "
+                        + format_instruction(
                             ops[i], arg1[i], arg2[i], dest[i], const1[i], const2[i]
                         )
                     )
+                    phase_lines += 1
+            if phase_lines == 0:
+                lines.append("  NoOp()")
 
         return "\n".join(lines)
