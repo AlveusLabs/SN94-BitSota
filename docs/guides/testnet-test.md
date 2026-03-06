@@ -123,7 +123,7 @@ Deploy to testnet:
 ```bash
 export NETUID=402
 export CONTRACT_HOTKEY_SS58=5DhX66kX37LcACNbNPTwz93DMP9tbQs6xga3KUwjCPwcVVmX
-export PUBLISHER_SURI="say sorry flight era model roast income gap ramp aisle health lyrics"
+export PUBLISHER_SURI="<publisher_suri>"
 export ONCHAIN_GAS=50000000000
 export ONCHAIN_PROOF_SIZE=200000
 

@@ -12,3 +12,9 @@ venv/
 .venv/
 site/
 .mkdocs_cache/
+
+# Local secret/runtime artifacts
+.env.relay-validators
+validator_config_live.yaml
+.gui-test-runs/
+docs/guides/testnet-test.md-local
