@@ -67,7 +67,21 @@ Pool mode is typically driven by the GUI, but the same workflow can be exercised
 
 ### GUI mode
 
-Configure `gui_config.json` and set:
+Examples below assume all repos live under the same parent directory:
+
+```bash
+export BITSOTA_DEV_ROOT=~/bitsota-dev
+```
+
+Known-good local checklist:
+
+- `current-sn-2` on branch `testnet-new-gui-pool`
+- separate `Pool` checkout on branch `testnet-pool-v1`
+- `automl_zero_cpp` checkout available locally
+- Pool API reachable at `http://127.0.0.1:8434`
+- `Pool` is a separate checkout beside `current-sn-2`, not a folder inside this repo
+
+Create `gui_config.json` in the `current-sn-2` repo root and set:
 
 ```json
 {
@@ -75,11 +89,30 @@ Configure `gui_config.json` and set:
 }
 ```
 
+Start the local Pool API first if you are not using a compose stack:
+
+```bash
+cd "${BITSOTA_DEV_ROOT}/Pool"
+git switch testnet-pool-v1
+
+export PYENV_VERSION=automl_pool
+export POSTGRES_USER=pooler
+export POSTGRES_PASSWORD=test
+export POSTGRES_DB=mining_pool
+export POSTGRES_HOST=127.0.0.1
+export POSTGRES_PORT=5432
+export ENVIRONMENT=development
+export LEASE_MIN_ITERATIONS=0
+
+python -m uvicorn app.main:app --host 127.0.0.1 --port 8434
+```
+
 Then start the GUI with the C++ backend enabled:
 
 ```bash
+export PYENV_VERSION=automl_pool
 export BITSOTA_MINER_BACKEND=cpp
-export AUTOML_ZERO_CPP_ROOT=~/bitsota-dev/automl_zero_cpp/automl_zero
+export AUTOML_ZERO_CPP_ROOT="${BITSOTA_DEV_ROOT}/automl_zero_cpp/automl_zero"
 python3 -m gui
 ```
 
@@ -88,9 +121,31 @@ Use the current GUI flow:
 - Click `Join Pool` on `Lease Pool` for the recommended path.
 - Click `Start Mining` on the pool detail screen.
 
+What good looks like:
+
+- GUI log: `[pool] Registered with pool`
+- GUI log: `[pool] Enqueued job kind=lease lease_id=...`
+- GUI log: `[pool] submit_lease ok=True ...`
+- Pool API terminal: `register`, `lease`, and `submit_lease` all return `200`
+- Sidecar state: `successful_submissions > 0`
+
+Simple pass/fail check after you click `Start Mining`:
+
+```bash
+cd "${BITSOTA_DEV_ROOT}/current-sn-2"
+PYENV_VERSION=automl_pool python3 -m scripts.check_local_pool_stack \
+  --pool-url http://127.0.0.1:8434 \
+  --sidecar-url http://127.0.0.1:8123 \
+  --require-progress
+```
+
 `Task Pool` is still shown for the legacy task-batch path, but `Lease Pool` is the main sidecar + C++ worker flow to test.
 
 ### Headless mode with sidecar
+
+Use this if you want the same backend path as the GUI, but without opening the GUI.
+
+Open four terminals. Commands assume `export BITSOTA_DEV_ROOT=~/bitsota-dev`.
 
 This matches the GUI architecture:
 
@@ -98,16 +153,66 @@ This matches the GUI architecture:
 - one C++ compute worker (`scripts.miner_cpp_sidecar --cpp-mode lease`) that pulls jobs from sidecar
 - one driver that talks to the Pool API and submits results
 
+Terminal 0 (Pool API):
+
 ```bash
-cd ~/bitsota-dev
-git clone https://github.com/mekaneeky/automl_zero_cpp.git automl_zero_cpp
-cd ~/bitsota-dev/current-sn-2
-docker compose -f Pool/docker-compose.sim.yaml up -d db api
-python3 -m sidecar --host 127.0.0.1 --port 8123
+cd "${BITSOTA_DEV_ROOT}/Pool"
+git switch testnet-pool-v1
+
+export PYENV_VERSION=automl_pool
+export POSTGRES_USER=pooler
+export POSTGRES_PASSWORD=test
+export POSTGRES_DB=mining_pool
+export POSTGRES_HOST=127.0.0.1
+export POSTGRES_PORT=5432
+export ENVIRONMENT=development
+export LEASE_MIN_ITERATIONS=0
+
+python3 -m uvicorn app.main:app --host 127.0.0.1 --port 8434
+```
+
+Terminal 1 (sidecar):
+
+```bash
+cd "${BITSOTA_DEV_ROOT}/current-sn-2"
+PYENV_VERSION=automl_pool python3 -m sidecar --host 127.0.0.1 --port 8123
+```
+
+Terminal 2 (C++ worker):
+
+```bash
+cd "${BITSOTA_DEV_ROOT}/current-sn-2"
 export BITSOTA_MINER_BACKEND=cpp
-export AUTOML_ZERO_CPP_ROOT=~/bitsota-dev/automl_zero_cpp/automl_zero
-python3 -m scripts.miner_cpp_sidecar --cpp-mode lease --mode real --sidecar-url http://127.0.0.1:8123 --run-id pool_smoke --workers 1 --automl-root "${AUTOML_ZERO_CPP_ROOT}" --bitsota-root "$(pwd)"
-python3 -m scripts.pool_lease_sidecar_driver --pool-url http://127.0.0.1:8434 --sidecar-url http://127.0.0.1:8123 --run-id pool_smoke --duration-s 30
+export AUTOML_ZERO_CPP_ROOT="${BITSOTA_DEV_ROOT}/automl_zero_cpp/automl_zero"
+PYENV_VERSION=automl_pool python3 -m scripts.miner_cpp_sidecar \
+  --cpp-mode lease \
+  --mode real \
+  --sidecar-url http://127.0.0.1:8123 \
+  --run-id pool_smoke \
+  --workers 1 \
+  --automl-root "${AUTOML_ZERO_CPP_ROOT}" \
+  --bitsota-root "$(pwd)"
+```
+
+Terminal 3 (lease driver):
+
+```bash
+cd "${BITSOTA_DEV_ROOT}/current-sn-2"
+PYENV_VERSION=automl_pool python3 -m scripts.pool_lease_sidecar_driver \
+  --pool-url http://127.0.0.1:8434 \
+  --sidecar-url http://127.0.0.1:8123 \
+  --run-id pool_smoke \
+  --duration-s 30
+```
+
+Smoke-check:
+
+```bash
+cd "${BITSOTA_DEV_ROOT}/current-sn-2"
+PYENV_VERSION=automl_pool python3 -m scripts.check_local_pool_stack \
+  --pool-url http://127.0.0.1:8434 \
+  --sidecar-url http://127.0.0.1:8123 \
+  --require-progress
 ```
 
 ## Understanding Pool Tasks

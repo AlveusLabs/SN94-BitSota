@@ -14,11 +14,14 @@ mkdir -p ~/bitsota-dev
 cd ~/bitsota-dev
 git clone https://github.com/AlveusLabs/SN94-BitSota.git current-sn-2
 git clone https://github.com/AlveusLabs/Relay.git Relay
+git clone https://github.com/AlveusLabs/Pool.git Pool
 # Needed for the C++ sidecar worker flow used by the new GUI and section 7 below.
 git clone https://github.com/mekaneeky/automl_zero_cpp.git automl_zero_cpp
 cd current-sn-2
 git fetch origin
 git switch testnet-new-gui-pool
+git -C ../Pool fetch origin
+git -C ../Pool switch testnet-pool-v1
 test -f ../automl_zero_cpp/automl_zero/tools/baseline_sidecar_bridge.py
 ```
 
@@ -248,19 +251,51 @@ This path uses the lease coordinator and C++ backend only.
 
 It is also the same backend path used by the new GUI when you open `Pool Mining`, click `Join Pool` on `Lease Pool`, and then click `Start Mining` with `BITSOTA_MINER_BACKEND=cpp`.
 
+Set a common workspace root first so every command below uses the same paths:
+
+```bash
+export BITSOTA_DEV_ROOT=~/bitsota-dev
+```
+
+If Docker is unavailable in your WSL or local dev environment, use this verified direct Pool API path first:
+
+Terminal 0 (Pool API):
+
+```bash
+cd "${BITSOTA_DEV_ROOT}/Pool"
+git switch testnet-pool-v1
+
+export PYENV_VERSION=automl_pool
+export POSTGRES_USER=pooler
+export POSTGRES_PASSWORD=test
+export POSTGRES_DB=mining_pool
+export POSTGRES_HOST=127.0.0.1
+export POSTGRES_PORT=5432
+export ENVIRONMENT=development
+export LEASE_MIN_ITERATIONS=0
+
+python -m uvicorn app.main:app --host 127.0.0.1 --port 8434
+```
+
+Quick check:
+
+```bash
+curl -sS http://127.0.0.1:8434/health
+```
+
 Terminal A (sidecar):
 
 ```bash
-cd ~/bitsota-dev/current-sn-2
-PYENV_VERSION=automl python3 -m sidecar --host 127.0.0.1 --port 8123
+cd "${BITSOTA_DEV_ROOT}/current-sn-2"
+PYENV_VERSION=automl_pool python3 -m sidecar --host 127.0.0.1 --port 8123
 ```
 
 Terminal B (C++ worker bridge, real mode):
 
 ```bash
-cd ~/bitsota-dev/current-sn-2
-export AUTOML_ZERO_CPP_ROOT=~/bitsota-dev/automl_zero_cpp/automl_zero
-PYENV_VERSION=automl python3 -m scripts.miner_cpp_sidecar \
+cd "${BITSOTA_DEV_ROOT}/current-sn-2"
+export AUTOML_ZERO_CPP_ROOT="${BITSOTA_DEV_ROOT}/automl_zero_cpp/automl_zero"
+PYENV_VERSION=automl_pool python3 -m scripts.miner_cpp_sidecar \
   --cpp-mode lease \
   --mode real \
   --sidecar-url http://127.0.0.1:8123 \
@@ -274,8 +309,8 @@ PYENV_VERSION=automl python3 -m scripts.miner_cpp_sidecar \
 Terminal C (lease coordinator driver, real pool leases):
 
 ```bash
-cd ~/bitsota-dev/current-sn-2
-PYENV_VERSION=automl BITSOTA_CPP_BACKEND=1 python3 -m scripts.pool_lease_sidecar_driver \
+cd "${BITSOTA_DEV_ROOT}/current-sn-2"
+PYENV_VERSION=automl_pool BITSOTA_CPP_BACKEND=1 python3 -m scripts.pool_lease_sidecar_driver \
   --pool-url http://127.0.0.1:8434 \
   --sidecar-url http://127.0.0.1:8123 \
   --run-id pool_smoke \
@@ -284,7 +319,20 @@ PYENV_VERSION=automl BITSOTA_CPP_BACKEND=1 python3 -m scripts.pool_lease_sidecar
 
 Expected signal in Terminal C:
 
-- `submit_lease ok=True ... iter_n=40`
+- `submit_lease ok=True ...`
+- `Enqueued lease ...`
+
+If you see repeated register failures or the GUI looks idle, check the Pool API terminal first. The most common local issue is running the right Pool branch against the wrong old database schema.
+
+Simple pass/fail check after Terminal C starts submitting work:
+
+```bash
+cd "${BITSOTA_DEV_ROOT}/current-sn-2"
+PYENV_VERSION=automl_pool python3 -m scripts.check_local_pool_stack \
+  --pool-url http://127.0.0.1:8434 \
+  --sidecar-url http://127.0.0.1:8123 \
+  --require-progress
+```
 
 Verify pool published a non-zero payout epoch:
 

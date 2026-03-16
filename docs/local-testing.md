@@ -180,39 +180,96 @@ Pool mode reuses the same sidecar, but with an added local job queue:
 - GUI (or a headless driver) talks to the Pool API and enqueues work into sidecar.
 - A C++ compute worker process (`scripts.miner_cpp_sidecar --cpp-mode lease`) pulls jobs from sidecar and returns results.
 
-### Start the Pool API (local)
+### Start the Pool API (local, known-good path)
 
-This starts Postgres + the Pool API on `http://127.0.0.1:8434`:
+Examples below assume all three repos live under the same parent directory. Set that once:
 
 ```bash
-docker compose -f Pool/docker-compose.sim.yaml up -d db api
+export BITSOTA_DEV_ROOT=~/bitsota-dev
+```
+
+Use this checklist first:
+
+- `current-sn-2` checkout on branch `testnet-new-gui-pool`
+- separate `Pool` checkout on branch `testnet-pool-v1`
+- `automl_zero_cpp` checkout with `automl_zero/tools/baseline_sidecar_bridge.py`
+- GUI and Pool API both running from `PYENV_VERSION=automl_pool`
+- the `Pool` checkout is a separate repo beside `current-sn-2`; it is not vendored into this repo
+
+If you already have a working compose stack for Pool, you can keep using it. If not, this direct `uvicorn` path is the verified local flow:
+
+```bash
+cd "${BITSOTA_DEV_ROOT}/Pool"
+git switch testnet-pool-v1
+
+export PYENV_VERSION=automl_pool
+export POSTGRES_USER=pooler
+export POSTGRES_PASSWORD=test
+export POSTGRES_DB=mining_pool
+export POSTGRES_HOST=127.0.0.1
+export POSTGRES_PORT=5432
+export ENVIRONMENT=development
+
+# Local smoke-test workaround: current C++ lease bridge can submit
+# `iterations: 0` during bootstrap, so allow that in local dev.
+export LEASE_MIN_ITERATIONS=0
+
+python -m uvicorn app.main:app --host 127.0.0.1 --port 8434
+```
+
+Health check:
+
+```bash
 curl -sS http://127.0.0.1:8434/health
 ```
+
+Expected response shape:
+
+```json
+{"status":"healthy","window_number":0,"current_block":0,"time_remaining_s":3840}
+```
+
+If you previously ran a different Pool branch against the same `mining_pool` database and registration fails with schema errors such as `column "miner_hotkey" does not exist`, reset the local dev schema once:
+
+```bash
+PGPASSWORD=test psql -h 127.0.0.1 -U pooler -d mining_pool <<'SQL'
+DROP TABLE IF EXISTS alpha_transactions CASCADE;
+DROP TABLE IF EXISTS alpha_balances CASCADE;
+DROP TABLE IF EXISTS evaluations CASCADE;
+DROP TABLE IF EXISTS assignments CASCADE;
+DROP TABLE IF EXISTS components CASCADE;
+DROP TABLE IF EXISTS miners CASCADE;
+DROP TYPE IF EXISTS task_status CASCADE;
+DROP TYPE IF EXISTS task_type CASCADE;
+SQL
+```
+
+Then restart the Pool API command above.
 
 ### Start the sidecar + pool compute worker
 
 If you have not cloned the C++ backend checkout yet, do that once beside `current-sn-2`:
 
 ```bash
-cd ~/bitsota-dev
+cd "${BITSOTA_DEV_ROOT}"
 git clone https://github.com/mekaneeky/automl_zero_cpp.git automl_zero_cpp
-test -f ~/bitsota-dev/automl_zero_cpp/automl_zero/tools/baseline_sidecar_bridge.py
-cd ~/bitsota-dev/current-sn-2
+test -f "${BITSOTA_DEV_ROOT}/automl_zero_cpp/automl_zero/tools/baseline_sidecar_bridge.py"
+cd "${BITSOTA_DEV_ROOT}/current-sn-2"
 ```
 
 Replace the clone URL above if you use a different `automl_zero_cpp` fork internally.
 
 ```bash
-PYENV_VERSION=automl python3 -m sidecar --host 127.0.0.1 --port ${BITSOTA_SIDECAR_PORT:-8123}
+PYENV_VERSION=automl_pool python3 -m sidecar --host 127.0.0.1 --port ${BITSOTA_SIDECAR_PORT:-8123}
 ```
 
 In a second terminal:
 
 ```bash
 export BITSOTA_MINER_BACKEND=cpp
-export AUTOML_ZERO_CPP_ROOT=~/bitsota-dev/automl_zero_cpp/automl_zero
+export AUTOML_ZERO_CPP_ROOT="${BITSOTA_DEV_ROOT}/automl_zero_cpp/automl_zero"
 
-PYENV_VERSION=automl python3 -m scripts.miner_cpp_sidecar \
+PYENV_VERSION=automl_pool python3 -m scripts.miner_cpp_sidecar \
   --cpp-mode lease \
   --mode real \
   --sidecar-url http://127.0.0.1:${BITSOTA_SIDECAR_PORT:-8123} \
@@ -228,7 +285,7 @@ This headless driver signs Pool requests with a generated SR25519 hotkey, reques
 
 ```bash
 export BITSOTA_MINER_BACKEND=cpp
-PYENV_VERSION=automl python3 -m scripts.pool_lease_sidecar_driver \
+PYENV_VERSION=automl_pool python3 -m scripts.pool_lease_sidecar_driver \
   --pool-url http://127.0.0.1:8434 \
   --sidecar-url http://127.0.0.1:${BITSOTA_SIDECAR_PORT:-8123} \
   --run-id pool_smoke \
@@ -239,17 +296,20 @@ You should see log lines like:
 - `[pool] Enqueued lease ...`
 - `[pool] submit_lease ok=True ...`
 
-### Monitor the pool (retro terminal)
+### Smoke-check the stack
 
-In another terminal:
+After you click `Start Mining` in the GUI, or after you start the headless driver above, run this pass/fail check:
 
 ```bash
-python3 -m scripts.pool_monitor --pool-url http://127.0.0.1:8434 --task-type cifar10_binary
+PYENV_VERSION=automl_pool python3 -m scripts.check_local_pool_stack \
+  --pool-url http://127.0.0.1:8434 \
+  --sidecar-url http://127.0.0.1:${BITSOTA_SIDECAR_PORT:-8123} \
+  --require-progress
 ```
 
 ### Use the GUI (optional)
 
-Point the GUI at the local pool by setting `pool_endpoint` in `gui_config.json`:
+If `gui_config.json` does not exist in the repo root yet, create it and point the GUI at the local pool:
 
 ```json
 {
@@ -260,8 +320,9 @@ Point the GUI at the local pool by setting `pool_endpoint` in `gui_config.json`:
 Then start the GUI with the C++ backend enabled:
 
 ```bash
+export PYENV_VERSION=automl_pool
 export BITSOTA_MINER_BACKEND=cpp
-export AUTOML_ZERO_CPP_ROOT=~/bitsota-dev/automl_zero_cpp/automl_zero
+export AUTOML_ZERO_CPP_ROOT="${BITSOTA_DEV_ROOT}/automl_zero_cpp/automl_zero"
 python3 -m gui
 ```
 
@@ -269,6 +330,29 @@ Use the current GUI flow:
 - Open the `Pool Mining` tab.
 - Click `Join Pool` on `Lease Pool` for the recommended lease path.
 - Click `Start Mining` on the pool detail screen.
+
+What good looks like:
+
+- GUI log shows `[pool] Registered with pool`
+- GUI log shows `[pool] Enqueued job kind=lease lease_id=...`
+- Pool API terminal shows:
+  - `POST /api/v1/miners/register` → `200`
+  - `POST /api/v1/tasks/lease` → `200`
+  - `POST /api/v1/tasks/<lease_id>/submit_lease` → `200`
+- Sidecar state shows `successful_submissions > 0`
+
+Quick checks if the GUI looks idle:
+
+```bash
+PYENV_VERSION=automl_pool python3 -m scripts.check_local_pool_stack \
+  --pool-url http://127.0.0.1:8434 \
+  --sidecar-url http://127.0.0.1:${BITSOTA_SIDECAR_PORT:-8123}
+curl -sS http://127.0.0.1:8123/state
+curl -sS 'http://127.0.0.1:8123/logs?cursor=0&limit=50'
+curl -sS 'http://127.0.0.1:8123/jobs/results?cursor=0&limit=20'
+```
+
+If registration keeps retrying, read the Pool API terminal first. The most common local problem is a schema mismatch from reusing an old `mining_pool` database with a newer Pool branch.
 
 Current GUI behavior:
 - The GUI starts or reuses one local sidecar.
