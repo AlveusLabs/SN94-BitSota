@@ -6,11 +6,20 @@ from datetime import datetime, timezone
 import hashlib
 import os
 import random
+import sys
 import threading
 import time
 from typing import Any, Dict, List, Optional
 
 import requests
+
+
+if __package__ in {None, ""}:
+    # Allow running as `python scripts/pool_miner_sidecar.py` in addition to
+    # module mode (`python -m scripts.pool_miner_sidecar`).
+    _repo_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    if _repo_root not in sys.path:
+        sys.path.insert(0, _repo_root)
 
 
 def _default_sidecar_url() -> str:
@@ -67,6 +76,25 @@ def _as_epoch_s(value: Any) -> Optional[float]:
     if dt.tzinfo is None:
         dt = dt.replace(tzinfo=timezone.utc)
     return float(dt.timestamp())
+
+
+def _effective_submit_buffer_s(
+    configured_buffer_s: float,
+    *,
+    lease_timeout_at_s: Optional[float],
+    now_s: Optional[float] = None,
+) -> float:
+    """Clamp submit buffer so lease mode still has time to evolve."""
+    base = max(0.0, float(configured_buffer_s))
+    if lease_timeout_at_s is None:
+        return base
+    now = _now_s() if now_s is None else float(now_s)
+    remaining_s = max(0.0, float(lease_timeout_at_s) - now)
+    if remaining_s <= 0.0:
+        return 0.0
+    # Keep enough runway for submission retries, but do not starve evolution.
+    dynamic_cap_s = max(10.0, min(60.0, remaining_s * 0.33))
+    return min(base, dynamic_cap_s)
 
 
 def _mock_score(algorithm_id: int, algorithm_dsl: str, *, salt: str) -> float:
@@ -203,6 +231,7 @@ def _run_worker(
     poll_interval_s: float,
     lease_seconds: float,
     lease_submit_buffer_s: float,
+    lease_evolve_reserve_s: float,
     mode: str,
     evolve_generations: int,
     lease_evolve_generations: int,
@@ -308,8 +337,22 @@ def _run_worker(
                 seed_algorithms = payload.get("seed_algorithms") or []
                 lease_timeout_at_s = _as_epoch_s(payload.get("lease_timeout_at_s"))
                 submit_deadline_s: Optional[float] = None
+                effective_submit_buffer_s = max(0.0, float(lease_submit_buffer_s))
                 if lease_timeout_at_s is not None:
-                    submit_deadline_s = lease_timeout_at_s - max(0.0, float(lease_submit_buffer_s))
+                    now_for_deadline = _now_s()
+                    effective_submit_buffer_s = _effective_submit_buffer_s(
+                        lease_submit_buffer_s,
+                        lease_timeout_at_s=lease_timeout_at_s,
+                        now_s=now_for_deadline,
+                    )
+                    submit_deadline_s = lease_timeout_at_s - effective_submit_buffer_s
+                    if effective_submit_buffer_s + 1e-6 < max(0.0, float(lease_submit_buffer_s)):
+                        remaining_s = max(0.0, float(lease_timeout_at_s) - now_for_deadline)
+                        client.log(
+                            f"[pool-miner] lease submit buffer clamped "
+                            f"{float(lease_submit_buffer_s):.1f}s->{effective_submit_buffer_s:.1f}s "
+                            f"(remaining={remaining_s:.1f}s)"
+                        )
 
                 def _deadline_reached() -> bool:
                     return submit_deadline_s is not None and _now_s() >= float(submit_deadline_s)
@@ -318,10 +361,43 @@ def _run_worker(
                     evolve_budget = int(payload.get("evolve_budget") or 0)
                 except Exception:
                     evolve_budget = 0
+                effective_evolve_reserve_s = max(0.0, float(lease_evolve_reserve_s))
+                if (
+                    evolve_budget > 0
+                    and submit_deadline_s is not None
+                    and effective_evolve_reserve_s > 0.0
+                ):
+                    now_for_reserve = _now_s()
+                    remaining_until_deadline_s = max(
+                        0.0, float(submit_deadline_s) - now_for_reserve
+                    )
+                    reserve_cap_s = max(0.0, remaining_until_deadline_s * 0.8)
+                    capped_reserve_s = min(effective_evolve_reserve_s, reserve_cap_s)
+                    if capped_reserve_s + 1e-6 < effective_evolve_reserve_s:
+                        client.log(
+                            f"[pool-miner] lease evolve reserve clamped "
+                            f"{effective_evolve_reserve_s:.1f}s->{capped_reserve_s:.1f}s "
+                            f"(remaining_to_deadline={remaining_until_deadline_s:.1f}s)"
+                        )
+                    effective_evolve_reserve_s = capped_reserve_s
+
+                def _eval_window_exhausted() -> bool:
+                    if evolve_budget <= 0 or submit_deadline_s is None:
+                        return False
+                    if effective_evolve_reserve_s <= 0.0:
+                        return False
+                    return _now_s() >= float(submit_deadline_s) - float(effective_evolve_reserve_s)
 
                 evaluations: List[Dict[str, Any]] = []
                 lease_iterations = 0
                 for algo in eval_algorithms:
+                    if _eval_window_exhausted():
+                        client.log(
+                            f"[pool-miner] lease evaluation stopped early job={job_id}; "
+                            f"reserving {effective_evolve_reserve_s:.1f}s for evolution "
+                            f"(eval_n={len(evaluations)})"
+                        )
+                        break
                     if _deadline_reached():
                         client.log(
                             f"[pool-miner] lease deadline reached during evaluation job={job_id}; "
@@ -349,6 +425,32 @@ def _run_worker(
                     evaluations.append({"algorithm_id": algo_id, "score": score})
                     lease_iterations += 1
 
+                # Prefer evolving from the same batch that was just evaluated so
+                # child-vs-batch-best comparisons are apples-to-apples.
+                eval_algo_by_id: Dict[int, Dict[str, Any]] = {}
+                for algo in eval_algorithms:
+                    if not isinstance(algo, dict):
+                        continue
+                    try:
+                        aid = int(algo.get("id"))
+                    except Exception:
+                        continue
+                    eval_algo_by_id[aid] = algo
+                ranked_eval_parents: List[Dict[str, Any]] = []
+                for ev in sorted(evaluations, key=lambda row: float(row.get("score", 0.0)), reverse=True):
+                    try:
+                        aid = int(ev.get("algorithm_id"))
+                    except Exception:
+                        continue
+                    algo = eval_algo_by_id.get(aid)
+                    if algo is not None:
+                        ranked_eval_parents.append(algo)
+                parent_pool = ranked_eval_parents[: max(2, min(8, len(ranked_eval_parents)))]
+                if not parent_pool:
+                    parent_pool = [a for a in eval_algorithms if isinstance(a, dict)]
+                if not parent_pool:
+                    parent_pool = [a for a in seed_algorithms if isinstance(a, dict)]
+
                 evolutions: List[Dict[str, Any]] = []
                 if evolve_budget > 0:
                     if _deadline_reached():
@@ -357,7 +459,8 @@ def _run_worker(
                         )
                         evolve_budget = 0
                 if evolve_budget > 0:
-                    parents = seed_algorithms if seed_algorithms else eval_algorithms
+                    target_evolutions = max(0, int(evolve_budget))
+                    parents = parent_pool
                     parent_ids: List[int] = []
                     for p in parents:
                         if not isinstance(p, dict) or p.get("id") is None:
@@ -366,7 +469,7 @@ def _run_worker(
                             parent_ids.append(int(p.get("id")))
                         except Exception:
                             continue
-                    if parent_ids:
+                    if parent_ids and target_evolutions > 0:
                         try:
                             input_dim = int(payload.get("input_dim") or 16)
                         except Exception:
@@ -385,6 +488,7 @@ def _run_worker(
                             task = CIFAR10BinaryTask()
                             task.load_data(task_id=0)
                             engine = ArchiveAwareBaselineEvolution(task=task, pop_size=5, verbose=False)
+                            seed_population: List[Any] = []
                             for parent in parents:
                                 if not isinstance(parent, dict):
                                     continue
@@ -395,43 +499,140 @@ def _run_worker(
                                     algo = DSLParser.from_dsl(dsl, input_dim)
                                 except Exception:
                                     continue
+                                seed_population.append(algo)
                                 for _ in range(2):
                                     try:
-                                        engine._random_mutate(algo)  # type: ignore[attr-defined]
+                                        algo = engine._random_mutate(algo)  # type: ignore[attr-defined]
+                                        seed_population.append(algo)
                                     except Exception:
                                         pass
+                            if seed_population:
+                                rng.shuffle(seed_population)
+                                engine.population = list(
+                                    seed_population[: max(1, int(getattr(engine, "pop_size", 5)))]
+                                )
                             gen_limit = max(1, int(lease_evolve_generations))
                             gens_run = 0
+                            seen_dsl: set[str] = set()
+                            checkpoint = max(1, gen_limit // max(1, target_evolutions))
                             if submit_deadline_s is not None:
                                 while (not stop.is_set()) and gens_run < gen_limit and (not _deadline_reached()):
                                     engine.evolve_generation()
                                     gens_run += 1
+                                    should_snapshot = (
+                                        gens_run == 1
+                                        or (gens_run % checkpoint) == 0
+                                        or gens_run >= gen_limit
+                                    )
+                                    if not should_snapshot:
+                                        continue
+                                    best_algo = engine.best_algo
+                                    if best_algo is None:
+                                        continue
+                                    try:
+                                        evolved_dsl = DSLParser.to_dsl(best_algo)
+                                    except Exception:
+                                        continue
+                                    if not evolved_dsl.strip() or evolved_dsl in seen_dsl:
+                                        continue
+                                    evolutions.append(
+                                        {
+                                            "parent_algorithm_ids": parent_ids,
+                                            "algorithm_dsl": str(evolved_dsl),
+                                        }
+                                    )
+                                    seen_dsl.add(evolved_dsl)
+                                    if len(evolutions) >= target_evolutions:
+                                        break
                                 if gens_run < gen_limit:
                                     client.log(
                                         f"[pool-miner] lease evolve truncated job={job_id} "
-                                        f"gens={gens_run}/{gen_limit} (submit buffer={lease_submit_buffer_s:.1f}s)"
+                                        f"gens={gens_run}/{gen_limit} "
+                                        f"(submit buffer={effective_submit_buffer_s:.1f}s)"
                                     )
                             else:
-                                engine.evolve(generations=gen_limit)
-                                gens_run = gen_limit
-                            best_algo = engine.best_algo
-                            evolved_dsl = (
-                                DSLParser.to_dsl(best_algo)
-                                if best_algo is not None
-                                else _mock_evolve(parents, input_dim=input_dim, rng=rng)
-                            )
+                                while (not stop.is_set()) and gens_run < gen_limit:
+                                    engine.evolve_generation()
+                                    gens_run += 1
+                                    should_snapshot = (
+                                        gens_run == 1
+                                        or (gens_run % checkpoint) == 0
+                                        or gens_run >= gen_limit
+                                    )
+                                    if not should_snapshot:
+                                        continue
+                                    best_algo = engine.best_algo
+                                    if best_algo is None:
+                                        continue
+                                    try:
+                                        evolved_dsl = DSLParser.to_dsl(best_algo)
+                                    except Exception:
+                                        continue
+                                    if not evolved_dsl.strip() or evolved_dsl in seen_dsl:
+                                        continue
+                                    evolutions.append(
+                                        {
+                                            "parent_algorithm_ids": parent_ids,
+                                            "algorithm_dsl": str(evolved_dsl),
+                                        }
+                                    )
+                                    seen_dsl.add(evolved_dsl)
+                                    if len(evolutions) >= target_evolutions:
+                                        break
+
+                            # If best snapshots did not produce enough unique DSLs,
+                            # mutate evaluated parents directly to fill remaining budget.
+                            attempts = 0
+                            max_attempts = max(20, target_evolutions * 20)
+                            while (
+                                len(evolutions) < target_evolutions
+                                and (not _deadline_reached())
+                                and attempts < max_attempts
+                            ):
+                                attempts += 1
+                                parent = rng.choice(parents) if parents else None
+                                if not isinstance(parent, dict):
+                                    break
+                                parent_dsl = str(parent.get("algorithm_dsl") or "")
+                                if not parent_dsl.strip():
+                                    continue
+                                try:
+                                    algo = DSLParser.from_dsl(parent_dsl, input_dim)
+                                except Exception:
+                                    continue
+                                for _ in range(3):
+                                    try:
+                                        algo = engine._random_mutate(algo)  # type: ignore[attr-defined]
+                                    except Exception:
+                                        pass
+                                try:
+                                    evolved_dsl = DSLParser.to_dsl(algo)
+                                except Exception:
+                                    continue
+                                if not evolved_dsl.strip() or evolved_dsl in seen_dsl:
+                                    continue
+                                evolutions.append(
+                                    {
+                                        "parent_algorithm_ids": parent_ids,
+                                        "algorithm_dsl": str(evolved_dsl),
+                                    }
+                                )
+                                seen_dsl.add(evolved_dsl)
+
                             lease_iterations += max(0, int(gens_run))
                         else:
                             gens_run = max(1, int(lease_evolve_generations))
-                            evolved_dsl = _mock_evolve(parents, input_dim=input_dim, rng=rng)
                             lease_iterations += max(0, int(gens_run))
-
-                        evolutions.append(
-                            {
-                                "parent_algorithm_ids": parent_ids,
-                                "algorithm_dsl": str(evolved_dsl),
-                            }
-                        )
+                            for _ in range(target_evolutions):
+                                if _deadline_reached():
+                                    break
+                                evolved_dsl = _mock_evolve(parents, input_dim=input_dim, rng=rng)
+                                evolutions.append(
+                                    {
+                                        "parent_algorithm_ids": parent_ids,
+                                        "algorithm_dsl": str(evolved_dsl),
+                                    }
+                                )
 
                 result = {
                     "evaluations": evaluations,
@@ -470,14 +671,19 @@ def parse_args(argv: Optional[List[str]] = None) -> argparse.Namespace:
     parser.add_argument(
         "--lease-submit-buffer-s",
         type=float,
-        default=float(os.getenv("BITSOTA_POOL_LEASE_SUBMIT_BUFFER_S", "180")),
+        default=float(os.getenv("BITSOTA_POOL_LEASE_SUBMIT_BUFFER_S", "45")),
+    )
+    parser.add_argument(
+        "--lease-evolve-reserve-s",
+        type=float,
+        default=float(os.getenv("BITSOTA_POOL_LEASE_EVOLVE_RESERVE_S", "90")),
     )
     env_mode = str(os.getenv("BITSOTA_POOL_MINER_MODE", "real") or "").strip().lower()
     if env_mode not in {"mock", "real"}:
         env_mode = "real"
     parser.add_argument("--mode", choices=["mock", "real"], default=env_mode)
     parser.add_argument("--evolve-generations", type=int, default=5)
-    parser.add_argument("--lease-evolve-generations", type=int, default=1000)
+    parser.add_argument("--lease-evolve-generations", type=int, default=160)
     parser.add_argument("--seed", type=int, default=None)
     return parser.parse_args(argv)
 
@@ -493,6 +699,7 @@ def main(argv: Optional[List[str]] = None) -> int:
     poll_interval_s = max(0.01, float(args.poll_interval_s))
     lease_seconds = max(1.0, float(args.lease_seconds))
     lease_submit_buffer_s = max(0.0, float(args.lease_submit_buffer_s))
+    lease_evolve_reserve_s = max(0.0, float(args.lease_evolve_reserve_s))
     mode = str(args.mode)
     evolve_generations = max(1, int(args.evolve_generations))
     lease_evolve_generations = max(1, int(args.lease_evolve_generations))
@@ -510,6 +717,7 @@ def main(argv: Optional[List[str]] = None) -> int:
                 "poll_interval_s": poll_interval_s,
                 "lease_seconds": lease_seconds,
                 "lease_submit_buffer_s": lease_submit_buffer_s,
+                "lease_evolve_reserve_s": lease_evolve_reserve_s,
                 "mode": mode,
                 "evolve_generations": evolve_generations,
                 "lease_evolve_generations": lease_evolve_generations,

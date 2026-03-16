@@ -2,37 +2,44 @@ from __future__ import annotations
 
 from typing import Any, Dict, List, Optional
 
-from core.cpp_dsl_compat import normalize_algorithm_dsl_for_cpp
+import pytest
+
+from core.cpp_dsl_compat import CppDslComplianceError, normalize_algorithm_dsl_for_cpp
 from core.dsl_parser import DSLParser
 from gui.pool_task_driver import PoolLeaseAssignment, PoolLeaseCoordinator
 
 
-def test_normalize_algorithm_dsl_for_cpp_enforces_profile_and_ops():
+def test_normalize_algorithm_dsl_for_cpp_rejects_non_cpp_ops():
     dsl = """
 # meta: scalar_count=20 vector_count=10 matrix_count=5 vector_dim=16
 def Setup():
   s10 = 1.0
-  s1 = gaussian(0.0, 1.0)
 def Predict():
-  s8 = s7
-  v12 = matmul(m7, v11)
   s3 = s1 / s2
-  s4 = dot(v13, v14)
 def Learn():
-  m9 = outer(v12, v13)
   s5 = tan(s1)
 """
-    normalized = normalize_algorithm_dsl_for_cpp(
-        dsl,
-        input_dim=16,
-        task_type="cifar10_binary",
-    )
+    with pytest.raises(CppDslComplianceError):
+        normalize_algorithm_dsl_for_cpp(
+            dsl,
+            input_dim=16,
+            task_type="cifar10_binary",
+        )
 
-    assert "def Setup():" in normalized
-    assert "def Predict():" in normalized
-    assert "def Learn():" in normalized
-    assert " tan(" not in normalized
-    assert " / " not in normalized
+
+def test_normalize_algorithm_dsl_for_cpp_accepts_valid_cpp_subset():
+    dsl = """
+# meta: scalar_count=5 vector_count=9 matrix_count=2 vector_dim=16
+def Setup():
+  s1 = gaussian(0.0, 1.0)
+def Predict():
+  v2 = dot(m0, v0)
+  v3 = maximum(v2, v1)
+  s0 = dot(v3, v0)
+def Learn():
+  m1 = outer(v2, v3)
+"""
+    normalized = normalize_algorithm_dsl_for_cpp(dsl, input_dim=16, task_type="cifar10_binary")
 
     parsed = DSLParser.from_dsl(normalized, 16)
     assert parsed.scalar_count == 5
@@ -108,6 +115,11 @@ def test_pool_lease_coordinator_normalizes_payload_when_cpp_backend(monkeypatch)
             {
                 "id": 10,
                 "input_dim": 16,
+                "algorithm_dsl": "def Predict():\n  v2 = dot(m0, v0)\n",
+            },
+            {
+                "id": 12,
+                "input_dim": 16,
                 "algorithm_dsl": "def Predict():\n  s9 = s8 / s7\n",
             }
         ],
@@ -136,6 +148,8 @@ def test_pool_lease_coordinator_normalizes_payload_when_cpp_backend(monkeypatch)
     payload = sidecar.enqueued[0]["payload"]
     eval_algos = payload.get("evaluate_algorithms") or []
     seed_algos = payload.get("seed_algorithms") or []
-    assert eval_algos and seed_algos
-    assert " / " not in str(eval_algos[0].get("algorithm_dsl") or "")
-    assert " = " in str(seed_algos[0].get("algorithm_dsl") or "")
+    assert eval_algos
+    assert len(eval_algos) == 1
+    assert int(eval_algos[0].get("id")) == 10
+    # COPY-only seed is non-compliant and should be dropped.
+    assert seed_algos == []

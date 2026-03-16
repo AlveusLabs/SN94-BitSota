@@ -8,7 +8,6 @@ from core.algorithm_array import (
     ADDR_MATRICES,
     ADDR_SCALARS,
     ADDR_VECTORS,
-    OPCODE_METADATA,
     AlgorithmArray,
     OPCODES,
 )
@@ -23,6 +22,11 @@ def cpp_backend_enabled_from_env() -> bool:
     return backend in CPP_BACKEND_ENV_VALUES
 
 
+def cpp_allow_any_phase_ops_from_env() -> bool:
+    raw = str(os.environ.get("BITSOTA_CPP_ALLOW_ANY_PHASE_OPS", "") or "").strip().lower()
+    return raw in {"1", "true", "yes", "on"}
+
+
 @dataclass(frozen=True)
 class CppDslProfile:
     scalar_count: int
@@ -31,6 +35,10 @@ class CppDslProfile:
     vector_dim: int
     phase_max_sizes: Mapping[str, int]
     allowed_ops_by_phase: Mapping[str, Sequence[str]]
+
+
+class CppDslComplianceError(ValueError):
+    """Raised when a DSL program is not compliant with the C++ backend profile."""
 
 
 _CIFAR_BASELINE_PROFILE = CppDslProfile(
@@ -42,8 +50,12 @@ _CIFAR_BASELINE_PROFILE = CppDslProfile(
     allowed_ops_by_phase={
         # Mirrors run_baseline.sh setup ops under pool op names.
         "setup": ("CONST", "GAUSSIAN", "UNIFORM"),
-        # Includes arithmetic ops needed for algebraic max-rewrites.
-        "predict": ("ADD", "SUB", "MUL", "ABS", "MATMUL", "DOT", "NORM", "MEAN", "STD", "HEAVISIDE"),
+        # run_baseline.sh predict ops:
+        # SCALAR_SUM_OP, MATRIX_VECTOR_PRODUCT_OP, VECTOR_MAX_OP, VECTOR_INNER_PRODUCT_OP, VECTOR_SUM_OP
+        "predict": ("ADD", "MATMUL", "MAX", "DOT"),
+        # run_baseline.sh learn ops:
+        # SCALAR_SUM_OP, SCALAR_DIFF_OP, SCALAR_PRODUCT_OP, SCALAR_VECTOR_PRODUCT_OP,
+        # VECTOR_SUM_OP, VECTOR_HEAVISIDE_OP, VECTOR_PRODUCT_OP, VECTOR_OUTER_PRODUCT_OP, MATRIX_SUM_OP
         "learn": ("ADD", "SUB", "MUL", "HEAVISIDE", "OUTER"),
     },
 )
@@ -78,49 +90,6 @@ def profile_for_task(task_type: str, *, input_dim: int) -> CppDslProfile:
     )
 
 
-def _normalize_addr(addr: int, *, profile: CppDslProfile, expected_kind: str | None = None) -> int:
-    if int(addr) < 0:
-        return -1
-    value = int(addr)
-    kind = str(expected_kind or "").strip().lower()
-    if kind in {"s", "v", "m"}:
-        if kind == "s":
-            base = ADDR_SCALARS
-            count = max(1, int(profile.scalar_count))
-        elif kind == "v":
-            base = ADDR_VECTORS
-            count = max(1, int(profile.vector_count))
-        else:
-            base = ADDR_MATRICES
-            count = max(1, int(profile.matrix_count))
-
-        idx = value - base
-        if idx < 0:
-            if value < ADDR_VECTORS:
-                idx = value - ADDR_SCALARS
-            elif value < ADDR_MATRICES:
-                idx = value - ADDR_VECTORS
-            else:
-                idx = value - ADDR_MATRICES
-        return base + (idx % count)
-
-    if value < ADDR_VECTORS:
-        idx = value - ADDR_SCALARS
-        count = max(1, int(profile.scalar_count))
-        return ADDR_SCALARS + (idx % count)
-    if value < ADDR_MATRICES:
-        idx = value - ADDR_VECTORS
-        count = max(1, int(profile.vector_count))
-        return ADDR_VECTORS + (idx % count)
-    idx = value - ADDR_MATRICES
-    count = max(1, int(profile.matrix_count))
-    return ADDR_MATRICES + (idx % count)
-
-
-def _is_scalar_addr(addr: int) -> bool:
-    return 0 <= int(addr) < ADDR_VECTORS
-
-
 def _build_cpp_style_empty(input_dim: int, profile: CppDslProfile) -> AlgorithmArray:
     phases = ["setup", "predict", "learn"]
     return AlgorithmArray.create_empty(
@@ -141,78 +110,172 @@ def normalize_algorithm_dsl_for_cpp(
     task_type: str = "cifar10_binary",
 ) -> str:
     profile = profile_for_task(task_type, input_dim=int(input_dim))
+    allow_any_phase_ops = bool(cpp_allow_any_phase_ops_from_env())
+    raw = str(algorithm_dsl or "").strip()
+    if not raw:
+        raise CppDslComplianceError("algorithm_dsl is empty")
     try:
-        parsed = DSLParser.from_dsl(str(algorithm_dsl or ""), max(1, int(input_dim)))
-    except Exception:
-        return DSLParser.to_dsl(_build_cpp_style_empty(max(1, int(input_dim)), profile))
+        parsed = DSLParser.from_dsl(raw, max(1, int(input_dim)), strict=True)
+    except Exception as e:
+        raise CppDslComplianceError(f"DSL parse failed: {e}") from e
 
-    opcode_to_name = {int(code): str(name) for name, code in OPCODES.items()}
-    zero_scalar_addr = ADDR_SCALARS + max(0, int(profile.scalar_count) - 1)
-    phase_instr: Dict[str, List[tuple[str, int, int, int, float, float]]] = {
-        "setup": [],
-        "predict": [],
-        "learn": [],
+    allowed_by_phase = {
+        phase: {str(name).upper() for name in profile.allowed_ops_by_phase.get(phase, ())}
+        for phase in ("setup", "predict", "learn")
     }
-    needs_zero_scalar = False
+    opcode_to_name = {int(code): str(name).upper() for name, code in OPCODES.items()}
 
-    for raw_phase in parsed.get_phases():
-        phase = str(raw_phase).lower().strip()
-        if phase not in phase_instr:
-            phase = "predict"
-        allowed = {str(name).upper() for name in profile.allowed_ops_by_phase.get(phase, ())}
-        ops, arg1s, arg2s, dests, const1s, const2s = parsed.get_phase_ops(raw_phase)
-        for i in range(len(ops)):
-            op_name = opcode_to_name.get(int(ops[i]), "")
-            if not op_name or op_name == "NOOP":
-                continue
+    def _addr_kind(addr: int) -> str:
+        value = int(addr)
+        if value < 0:
+            return "none"
+        if value < ADDR_VECTORS:
+            return "s"
+        if value < ADDR_MATRICES:
+            return "v"
+        return "m"
 
-            metadata = OPCODE_METADATA.get(op_name, {})
-            a1 = _normalize_addr(int(arg1s[i]), profile=profile, expected_kind=metadata.get("arg1"))
-            a2 = _normalize_addr(int(arg2s[i]), profile=profile, expected_kind=metadata.get("arg2"))
-            d = _normalize_addr(int(dests[i]), profile=profile, expected_kind=metadata.get("dest"))
-            c1 = float(const1s[i])
-            c2 = float(const2s[i])
-
-            if op_name == "COPY":
-                # C++ readable style does not have an explicit COPY op. Lower scalar copy
-                # into an ADD with a dedicated zero scalar register.
-                if not (_is_scalar_addr(a1) and _is_scalar_addr(d)):
-                    continue
-                needs_zero_scalar = True
-                op_name = "ADD"
-                a2 = int(zero_scalar_addr)
-
-            if op_name == "CONST_VEC":
-                # Drop element-wise vector constants; C++ baseline profile does not use them.
-                continue
-            if op_name not in allowed:
-                continue
-
-            phase_instr[phase].append((op_name, a1, a2, d, c1, c2))
-
-    if needs_zero_scalar:
-        setup_allowed = {str(name).upper() for name in profile.allowed_ops_by_phase.get("setup", ())}
-        if "CONST" in setup_allowed:
-            already_has_zero = any(
-                op == "CONST" and int(dest) == int(zero_scalar_addr) and abs(float(c1)) <= 1e-12
-                for (op, _a1, _a2, dest, c1, _c2) in phase_instr["setup"]
-            )
-            if not already_has_zero:
-                phase_instr["setup"].insert(0, ("CONST", -1, -1, int(zero_scalar_addr), 0.0, 0.0))
+    def _addr_in_profile(kind: str, addr: int) -> bool:
+        value = int(addr)
+        if kind == "s":
+            return ADDR_SCALARS <= value < (ADDR_SCALARS + int(profile.scalar_count))
+        if kind == "v":
+            return ADDR_VECTORS <= value < (ADDR_VECTORS + int(profile.vector_count))
+        if kind == "m":
+            return ADDR_MATRICES <= value < (ADDR_MATRICES + int(profile.matrix_count))
+        return value < 0
 
     out = _build_cpp_style_empty(max(1, int(input_dim)), profile)
-    for phase in ("setup", "predict", "learn"):
+    for raw_phase in parsed.get_phases():
+        phase = str(raw_phase).lower().strip()
+        if phase not in {"setup", "predict", "learn"}:
+            raise CppDslComplianceError(f"unsupported phase '{raw_phase}'")
         cap = max(0, int(profile.phase_max_sizes.get(phase, 0)))
-        for op_name, a1, a2, d, c1, c2 in phase_instr.get(phase, [])[:cap]:
-            out.add_instruction(
-                phase=phase,
-                op=op_name,
-                arg1=int(a1),
-                arg2=int(a2),
-                dest=int(d),
-                const1=float(c1),
-                const2=float(c2),
+        allowed = allowed_by_phase.get(phase, set())
+
+        ops, arg1s, arg2s, dests, const1s, const2s = parsed.get_phase_ops(raw_phase)
+        if len(ops) > cap:
+            raise CppDslComplianceError(
+                f"phase '{phase}' has {len(ops)} ops but cap is {cap}"
             )
+
+        for i in range(len(ops)):
+            op_code = int(ops[i])
+            op_name = opcode_to_name.get(op_code, "")
+            if not op_name or op_name == "NOOP":
+                continue
+            if (not allow_any_phase_ops) and op_name not in allowed:
+                raise CppDslComplianceError(
+                    f"op '{op_name}' is not allowed in phase '{phase}' for C++ profile"
+                )
+            if op_name in {"COPY", "CONST_VEC"}:
+                raise CppDslComplianceError(f"op '{op_name}' is not supported by C++ backend")
+
+            arg1 = int(arg1s[i])
+            arg2 = int(arg2s[i])
+            dest = int(dests[i])
+            def _require_addr(label: str, addr: int, expected_kind: str | None = None) -> str:
+                if int(addr) < 0:
+                    raise CppDslComplianceError(f"{phase}[{i}] {op_name}: {label} missing")
+                actual_kind = _addr_kind(addr)
+                if expected_kind is not None and actual_kind != expected_kind:
+                    raise CppDslComplianceError(
+                        f"{phase}[{i}] {op_name}: {label} kind '{actual_kind}' != '{expected_kind}'"
+                    )
+                if not _addr_in_profile(actual_kind, addr):
+                    raise CppDslComplianceError(
+                        f"{phase}[{i}] {op_name}: {label} address out of C++ profile bounds"
+                    )
+                return actual_kind
+
+            if op_name in {"CONST", "GAUSSIAN", "UNIFORM"}:
+                if arg1 != -1 or arg2 != -1:
+                    raise CppDslComplianceError(
+                        f"{phase}[{i}] {op_name}: constants/noise ops must not set arg1/arg2"
+                    )
+                _require_addr("dest", dest)
+            elif op_name in {"ABS", "HEAVISIDE", "SIN", "COS", "TAN", "EXP", "LOG"}:
+                k1 = _require_addr("arg1", arg1)
+                if arg2 != -1:
+                    raise CppDslComplianceError(f"{phase}[{i}] {op_name}: arg2 must be none")
+                kd = _require_addr("dest", dest)
+                if kd != k1:
+                    raise CppDslComplianceError(
+                        f"{phase}[{i}] {op_name}: dest kind '{kd}' != arg1 kind '{k1}'"
+                    )
+            elif op_name in {"ADD", "SUB", "DIV", "MIN", "MAX"}:
+                k1 = _require_addr("arg1", arg1)
+                k2 = _require_addr("arg2", arg2)
+                kd = _require_addr("dest", dest)
+                if not (k1 == k2 == kd):
+                    raise CppDslComplianceError(
+                        f"{phase}[{i}] {op_name}: requires same-kind arg1/arg2/dest"
+                    )
+            elif op_name == "MUL":
+                k1 = _require_addr("arg1", arg1)
+                k2 = _require_addr("arg2", arg2)
+                kd = _require_addr("dest", dest)
+                ok = (
+                    (k1 == k2 == kd)
+                    or (k1 == "s" and k2 == "v" and kd == "v")
+                    or (k1 == "v" and k2 == "s" and kd == "v")
+                    or (k1 == "s" and k2 == "m" and kd == "m")
+                    or (k1 == "m" and k2 == "s" and kd == "m")
+                )
+                if not ok:
+                    raise CppDslComplianceError(
+                        f"{phase}[{i}] {op_name}: unsupported kind signature ({k1},{k2})->{kd}"
+                    )
+            elif op_name == "DOT":
+                _require_addr("arg1", arg1, "v")
+                _require_addr("arg2", arg2, "v")
+                _require_addr("dest", dest, "s")
+            elif op_name == "MATMUL":
+                _require_addr("arg1", arg1, "m")
+                k2 = _require_addr("arg2", arg2)
+                kd = _require_addr("dest", dest)
+                if not ((k2 == "v" and kd == "v") or (k2 == "m" and kd == "m")):
+                    raise CppDslComplianceError(
+                        f"{phase}[{i}] MATMUL: requires (m,v)->v or (m,m)->m"
+                    )
+            elif op_name == "OUTER":
+                _require_addr("arg1", arg1, "v")
+                _require_addr("arg2", arg2, "v")
+                _require_addr("dest", dest, "m")
+            elif op_name in {"NORM", "MEAN", "STD"}:
+                k1 = _require_addr("arg1", arg1)
+                if arg2 != -1:
+                    raise CppDslComplianceError(f"{phase}[{i}] {op_name}: arg2 must be none")
+                kd = _require_addr("dest", dest)
+                if op_name == "NORM":
+                    ok = (k1 in {"v", "m"}) and kd == "s"
+                else:
+                    ok = (k1 == "v" and kd == "s") or (k1 == "m" and kd in {"s", "v"})
+                if not ok:
+                    raise CppDslComplianceError(
+                        f"{phase}[{i}] {op_name}: unsupported kind signature ({k1})->{kd}"
+                    )
+            else:
+                raise CppDslComplianceError(f"{phase}[{i}] unsupported opcode '{op_name}'")
+
+            try:
+                out.add_instruction(
+                    phase=phase,
+                    op=op_name,
+                    arg1=arg1,
+                    arg2=arg2,
+                    dest=dest,
+                    const1=float(const1s[i]),
+                    const2=float(const2s[i]),
+                )
+            except Exception as e:
+                raise CppDslComplianceError(
+                    f"{phase}[{i}] {op_name}: failed to add instruction: {e}"
+                ) from e
+
+    errors = out.validate_addresses()
+    if errors:
+        raise CppDslComplianceError(str(errors[0]))
     return DSLParser.to_dsl(out)
 
 

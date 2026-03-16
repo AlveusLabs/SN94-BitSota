@@ -27,7 +27,7 @@ class AppConfig:
     miner_workers: int = 1
     miner_seed: Optional[int] = None
     miner_migration_generations: int = 0
-    pool_lease_evolve_generations: int = 1000
+    pool_lease_evolve_generations: int = 160
 
 
 def is_frozen() -> bool:

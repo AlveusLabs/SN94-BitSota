@@ -9,5 +9,18 @@ from .invite_code_modal import InviteCodeModal
 from .coldkey_address_modal import ColdkeyAddressModal
 from .coming_soon_modal import ComingSoonModal
 from .update_modal import UpdateAvailableModal
+from .common.select_input import SelectInput
 
-__all__ = ["PrimaryButton", "SecondaryButton", "Sidebar", "TabSwitcher", "ConfirmationModal", "UserGuideModal", "InviteCodeModal", "ColdkeyAddressModal", "ComingSoonModal", "UpdateAvailableModal"]
+__all__ = [
+    "PrimaryButton",
+    "SecondaryButton",
+    "Sidebar",
+    "TabSwitcher",
+    "ConfirmationModal",
+    "UserGuideModal",
+    "InviteCodeModal",
+    "ColdkeyAddressModal",
+    "ComingSoonModal",
+    "UpdateAvailableModal",
+    "SelectInput",
+]

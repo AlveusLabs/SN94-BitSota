@@ -9,8 +9,8 @@ from typing import Any, Callable, Dict, List, Optional, Tuple
 
 import requests
 from core.cpp_dsl_compat import (
+    CppDslComplianceError,
     cpp_backend_enabled_from_env,
-    normalize_algorithm_batch_for_cpp,
     normalize_algorithm_record_for_cpp,
 )
 
@@ -405,19 +405,28 @@ class PoolTaskCoordinator:
                             fallback_dim = int(payload.get("input_dim") or 16)
                         except Exception:
                             fallback_dim = 16
-                        evolved = normalize_algorithm_record_for_cpp(
-                            {"algorithm_dsl": str(evolved), "input_dim": fallback_dim},
-                            task_type=self._cpp_task_type,
-                            fallback_input_dim=fallback_dim,
-                        ).get("algorithm_dsl", str(evolved))
-                    try:
-                        ok = bool(
-                            self.pool_client.submit_evolution(
-                                batch_id=batch_id,
-                                evolved_function=str(evolved),
-                                parent_functions=parent_functions,
+                        try:
+                            evolved = normalize_algorithm_record_for_cpp(
+                                {"algorithm_dsl": str(evolved), "input_dim": fallback_dim},
+                                task_type=self._cpp_task_type,
+                                fallback_input_dim=fallback_dim,
+                            ).get("algorithm_dsl", str(evolved))
+                        except CppDslComplianceError as e:
+                            self._log_pool_error(
+                                f"[pool] evolved DSL rejected by C++ profile for batch_id={batch_id}: {e}"
                             )
-                        )
+                            evolved = ""
+                    try:
+                        if evolved:
+                            ok = bool(
+                                self.pool_client.submit_evolution(
+                                    batch_id=batch_id,
+                                    evolved_function=str(evolved),
+                                    parent_functions=parent_functions,
+                                )
+                            )
+                        else:
+                            ok = False
                     except Exception as e:
                         ok = False
                         self._log_pool_error(f"[pool] submit_evolution failed batch_id={batch_id}: {e}")
@@ -476,11 +485,29 @@ class PoolTaskCoordinator:
                         fallback_dim = int(first.get("input_dim") or fallback_dim)
                     except Exception:
                         fallback_dim = 16
-            algorithms = normalize_algorithm_batch_for_cpp(
-                algorithms,
-                task_type=self._cpp_task_type,
-                fallback_input_dim=fallback_dim,
-            )
+            normalized_algorithms: List[Dict[str, Any]] = []
+            for algorithm in algorithms:
+                if not isinstance(algorithm, dict):
+                    continue
+                try:
+                    normalized_algorithms.append(
+                        normalize_algorithm_record_for_cpp(
+                            algorithm,
+                            task_type=self._cpp_task_type,
+                            fallback_input_dim=fallback_dim,
+                        )
+                    )
+                except CppDslComplianceError as e:
+                    aid = algorithm.get("id")
+                    self._log_pool_error(
+                        f"[pool] dropping non-C++ DSL algorithm id={aid}: {e}"
+                    )
+            algorithms = normalized_algorithms
+            if not algorithms:
+                self._log_pool_error(
+                    f"[pool] no compliant algorithms in batch_id={assignment.batch_id}; skipping"
+                )
+                return
 
         payload: Dict[str, Any] = {"batch_id": assignment.batch_id, "algorithms": algorithms}
         if isinstance(algorithms, list) and algorithms:
@@ -525,9 +552,12 @@ class PoolLeaseCoordinator:
         self._pending_retry_at_s: float = 0.0
         # Default to a bounded lease workload so real-task miners have runway to
         # both evaluate and evolve before lease timeout.
-        self._lease_eval_batch_size = _env_int("BITSOTA_POOL_LEASE_EVAL_BATCH_SIZE", default=8, minimum=1)
+        self._lease_eval_batch_size = _env_int("BITSOTA_POOL_LEASE_EVAL_BATCH_SIZE", default=8, minimum=0)
         self._lease_seed_batch_size = _env_int("BITSOTA_POOL_LEASE_SEED_BATCH_SIZE", default=8, minimum=1)
         self._lease_gossip_limit = _env_int("BITSOTA_POOL_LEASE_GOSSIP_LIMIT", default=0, minimum=0)
+        self._lease_window_retry_backoff_s = float(
+            _env_int("BITSOTA_POOL_LEASE_WINDOW_BACKOFF_S", default=20, minimum=1) or 20
+        )
         self._cpp_backend = bool(cpp_backend_enabled_from_env())
         self._cpp_task_type = str(os.getenv("BITSOTA_CPP_TASK_TYPE", "cifar10_binary") or "cifar10_binary").strip().lower()
 
@@ -662,11 +692,17 @@ class PoolLeaseCoordinator:
                         fallback_dim = int(payload_input_dim or 16)
                     except Exception:
                         fallback_dim = 16
-                    normalized = normalize_algorithm_record_for_cpp(
-                        {"algorithm_dsl": raw_dsl, "input_dim": fallback_dim},
-                        task_type=self._cpp_task_type,
-                        fallback_input_dim=fallback_dim,
-                    )
+                    try:
+                        normalized = normalize_algorithm_record_for_cpp(
+                            {"algorithm_dsl": raw_dsl, "input_dim": fallback_dim},
+                            task_type=self._cpp_task_type,
+                            fallback_input_dim=fallback_dim,
+                        )
+                    except CppDslComplianceError as e:
+                        self._log_pool_error(
+                            f"[pool] dropping non-C++ evolved DSL for lease_id={lease_id}: {e}"
+                        )
+                        continue
                     patched = dict(evo)
                     patched["algorithm_dsl"] = str(normalized.get("algorithm_dsl") or raw_dsl)
                     normalized_evolutions.append(patched)
@@ -732,6 +768,12 @@ class PoolLeaseCoordinator:
             if "HTTP 400" in msg and "Miner already has active task" in msg:
                 self._request_blocked_until_s = max(self._request_blocked_until_s, _now_s() + 5.0)
                 self._log_pool_error("[pool] request_lease blocked: miner already has active task; retrying in 5s")
+            elif "HTTP 400" in msg and "Lease already issued for this window" in msg:
+                wait_s = max(1.0, float(self._lease_window_retry_backoff_s))
+                self._request_blocked_until_s = max(self._request_blocked_until_s, _now_s() + wait_s)
+                self._log_pool_error(
+                    f"[pool] request_lease blocked: lease already issued for current window; retrying in {wait_s:.0f}s"
+                )
             else:
                 self._log_pool_error(f"[pool] request_lease failed: {e}")
             assignment = None
@@ -740,8 +782,8 @@ class PoolLeaseCoordinator:
 
         evaluate_algorithms = assignment.evaluate_algorithms
         seed_algorithms = assignment.seed_algorithms
+        fallback_dim = 16
         if self._cpp_backend:
-            fallback_dim = 16
             for src in (seed_algorithms, evaluate_algorithms):
                 if not src or not isinstance(src, list):
                     continue
@@ -752,16 +794,51 @@ class PoolLeaseCoordinator:
                     except Exception:
                         fallback_dim = 16
                     break
-            evaluate_algorithms = normalize_algorithm_batch_for_cpp(
-                evaluate_algorithms,
-                task_type=self._cpp_task_type,
-                fallback_input_dim=fallback_dim,
-            )
-            seed_algorithms = normalize_algorithm_batch_for_cpp(
-                seed_algorithms,
-                task_type=self._cpp_task_type,
-                fallback_input_dim=fallback_dim,
-            )
+            normalized_eval: List[Dict[str, Any]] = []
+            for algorithm in evaluate_algorithms if isinstance(evaluate_algorithms, list) else []:
+                if not isinstance(algorithm, dict):
+                    continue
+                try:
+                    normalized_eval.append(
+                        normalize_algorithm_record_for_cpp(
+                            algorithm,
+                            task_type=self._cpp_task_type,
+                            fallback_input_dim=fallback_dim,
+                        )
+                    )
+                except CppDslComplianceError as e:
+                    aid = algorithm.get("id")
+                    self._log_pool_error(
+                        f"[pool] dropping non-C++ eval algorithm id={aid} lease_id={assignment.lease_id}: {e}"
+                    )
+            normalized_seed: List[Dict[str, Any]] = []
+            for algorithm in seed_algorithms if isinstance(seed_algorithms, list) else []:
+                if not isinstance(algorithm, dict):
+                    continue
+                try:
+                    normalized_seed.append(
+                        normalize_algorithm_record_for_cpp(
+                            algorithm,
+                            task_type=self._cpp_task_type,
+                            fallback_input_dim=fallback_dim,
+                        )
+                    )
+                except CppDslComplianceError as e:
+                    aid = algorithm.get("id")
+                    self._log_pool_error(
+                        f"[pool] dropping non-C++ seed algorithm id={aid} lease_id={assignment.lease_id}: {e}"
+                    )
+            evaluate_algorithms = normalized_eval
+            seed_algorithms = normalized_seed
+            if not evaluate_algorithms and not seed_algorithms:
+                if int(assignment.evolve_budget) <= 0:
+                    self._log_pool_error(
+                        f"[pool] lease_id={assignment.lease_id} has no C++ compliant algorithms; skipping"
+                    )
+                    return
+                self.log(
+                    f"[pool] lease_id={assignment.lease_id} has no C++ compliant algorithms; bootstrapping evolution from empty seed set"
+                )
 
         payload: Dict[str, Any] = {
             "lease_id": assignment.lease_id,
@@ -770,6 +847,8 @@ class PoolLeaseCoordinator:
             "seed_algorithms": seed_algorithms,
             "evolve_budget": int(assignment.evolve_budget),
         }
+        if not isinstance(evaluate_algorithms, list) or len(evaluate_algorithms) == 0:
+            payload["bootstrap_population_size"] = int(max(1, self._lease_eval_batch_size or 1))
         if assignment.timeout_at_s is not None:
             payload["lease_timeout_at_s"] = float(assignment.timeout_at_s)
         for src in (seed_algorithms, evaluate_algorithms):
@@ -779,6 +858,8 @@ class PoolLeaseCoordinator:
             if isinstance(first, dict) and first.get("input_dim") is not None:
                 payload["input_dim"] = first.get("input_dim")
                 break
+        if self._cpp_backend and payload.get("input_dim") is None:
+            payload["input_dim"] = int(fallback_dim)
 
         job_id = self.sidecar_jobs.enqueue(kind="lease", payload=payload)
         if not job_id:

@@ -905,6 +905,9 @@ class MiningScreen(QWidget):
         ]
 
     def _miner_launch_prefix(self, *, pool: bool) -> list[str]:
+        backend = str(os.getenv("BITSOTA_MINER_BACKEND", "") or "").strip().lower()
+        use_cpp_backend = backend in {"cpp", "cpp_baseline", "automl_zero_cpp"}
+
         if self._is_frozen():
             miner_name = "BitSotaPoolMiner" if pool else "BitSotaMiner"
             miner_bin = self._resolve_bundled_executable(
@@ -916,7 +919,11 @@ class MiningScreen(QWidget):
             return [miner_bin]
 
         if pool:
+            if use_cpp_backend:
+                return [sys.executable, "-m", "scripts.miner_cpp_sidecar", "--cpp-mode", "lease"]
             return [sys.executable, "-m", "scripts.pool_miner_sidecar"]
+        if use_cpp_backend:
+            return [sys.executable, "-m", "scripts.miner_cpp_sidecar", "--cpp-mode", "direct"]
         return [sys.executable, "-m", "scripts.miner_local_og_sidecar"]
 
     def _ensure_sidecar_running(self) -> str:
@@ -996,7 +1003,7 @@ class MiningScreen(QWidget):
             "--mode",
             "real",
             "--lease-evolve-generations",
-            str(int(max(1, getattr(cfg, "pool_lease_evolve_generations", 1000)))),
+            str(int(max(1, getattr(cfg, "pool_lease_evolve_generations", 160)))),
         ]
         self.miner_process = subprocess.Popen(
             cmd,

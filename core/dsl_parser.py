@@ -21,6 +21,29 @@ class DSLParser:
     }
 
     @staticmethod
+    def _split_args(args_str: str) -> list[str]:
+        """Split function-call arguments while respecting nested parentheses."""
+        items: list[str] = []
+        buf: list[str] = []
+        depth = 0
+        for ch in str(args_str or ""):
+            if ch == "," and depth == 0:
+                token = "".join(buf).strip()
+                if token:
+                    items.append(token)
+                buf = []
+                continue
+            if ch == "(":
+                depth += 1
+            elif ch == ")" and depth > 0:
+                depth -= 1
+            buf.append(ch)
+        token = "".join(buf).strip()
+        if token:
+            items.append(token)
+        return items
+
+    @staticmethod
     def parse_address(addr: str) -> int:
         """Convert address string to integer index"""
         if addr is None:
@@ -59,7 +82,7 @@ class DSLParser:
             return f"m{addr - ADDR_MATRICES}"
 
     @classmethod
-    def from_dsl(cls, dsl_str: str, input_dim: int) -> AlgorithmArray:
+    def from_dsl(cls, dsl_str: str, input_dim: int, *, strict: bool = False) -> AlgorithmArray:
         """Parse DSL string into AlgorithmArray"""
         raw_lines = dsl_str.splitlines()
         lines: list[str] = []
@@ -171,6 +194,8 @@ class DSLParser:
             try:
                 cls._parse_line(array_algo, current_phase, line)
             except Exception as e:
+                if strict:
+                    raise ValueError(f"couldn't parse line '{line}': {e}") from e
                 print(f"Warning: Could not parse line '{line}': {e}")
 
         return array_algo
@@ -248,25 +273,50 @@ class DSLParser:
             array_algo.add_instruction(phase, op, arg1, arg2, dest, 0.0, 0.0)
 
         # function calls: s0 = sin(s1), v1 = dot(v0, v2)
-        elif re.match(r"[svm]\d+\s*=\s*\w+\([^)]+\)", line):
-            match = re.match(r"([svm]\d+)\s*=\s*(\w+)\(([^)]+)\)", line)
+        elif re.match(r"[svm]\d+\s*=\s*\w+\(.*\)\s*$", line, flags=re.IGNORECASE):
+            match = re.match(r"([svm]\d+)\s*=\s*(\w+)\((.*)\)\s*$", line, flags=re.IGNORECASE)
             dest = cls.parse_address(match.group(1))
-            op = match.group(2).upper()
+            op_raw = match.group(2).strip().lower()
             args_str = match.group(3)
 
             # parse arguments
-            args = [arg.strip() for arg in args_str.split(",")]
+            args = cls._split_args(args_str)
 
-            if op in ["GAUSSIAN", "UNIFORM"]:
+            if op_raw in {"gaussian", "uniform"}:
                 # uses constants
                 const1 = float(args[0]) if len(args) > 0 else 0
                 const2 = float(args[1]) if len(args) > 1 else 1
-                array_algo.add_instruction(phase, op, -1, -1, dest, const1, const2)
+                array_algo.add_instruction(phase, op_raw.upper(), -1, -1, dest, const1, const2)
+            elif op_raw == "minimum":
+                arg1 = cls.parse_address(args[0]) if len(args) > 0 else -1
+                arg2 = cls.parse_address(args[1]) if len(args) > 1 else -1
+                array_algo.add_instruction(phase, "MIN", arg1, arg2, dest, 0.0, 0.0)
+            elif op_raw == "maximum":
+                arg1 = cls.parse_address(args[0]) if len(args) > 0 else -1
+                arg2 = cls.parse_address(args[1]) if len(args) > 1 else -1
+                array_algo.add_instruction(phase, "MAX", arg1, arg2, dest, 0.0, 0.0)
+            elif op_raw == "dot":
+                arg1 = cls.parse_address(args[0]) if len(args) > 0 else -1
+                arg2 = cls.parse_address(args[1]) if len(args) > 1 else -1
+                a1_raw = str(args[0]).strip().lower() if len(args) > 0 else ""
+                a2_raw = str(args[1]).strip().lower() if len(args) > 1 else ""
+                if a1_raw.startswith("m") and (a2_raw.startswith("v") or a2_raw.startswith("m")):
+                    # C++ readable uses dot(m, v) for matrix-vector products.
+                    array_algo.add_instruction(phase, "MATMUL", arg1, arg2, dest, 0.0, 0.0)
+                else:
+                    array_algo.add_instruction(phase, "DOT", arg1, arg2, dest, 0.0, 0.0)
+            elif op_raw == "heaviside":
+                # C++ readable prints heaviside(x, 1.0) but runtime semantics are
+                # threshold-at-zero; keep the second argument for syntactic compatibility.
+                arg1 = cls.parse_address(args[0]) if len(args) > 0 else -1
+                array_algo.add_instruction(phase, "HEAVISIDE", arg1, -1, dest, 0.0, 0.0)
             else:
                 # uses args
                 arg1 = cls.parse_address(args[0]) if len(args) > 0 else -1
                 arg2 = cls.parse_address(args[1]) if len(args) > 1 else -1
-                array_algo.add_instruction(phase, op, arg1, arg2, dest, 0.0, 0.0)
+                array_algo.add_instruction(phase, op_raw.upper(), arg1, arg2, dest, 0.0, 0.0)
+        else:
+            raise ValueError(f"couldn't parse: {line}")
 
     @classmethod
     def to_dsl(cls, array_algo: AlgorithmArray) -> str:
@@ -330,7 +380,6 @@ class DSLParser:
                 "SIN",
                 "COS",
                 "TAN",
-                "HEAVISIDE",
                 "NORM",
                 "MEAN",
                 "STD",
@@ -339,11 +388,38 @@ class DSLParser:
                 arg1_str = cls.address_to_string(arg1)
                 return f"{dest_str} = {op_name.lower()}({arg1_str})"
 
-            elif op_name in ["DOT", "MATMUL", "OUTER"]:
+            elif op_name == "HEAVISIDE":
+                dest_str = cls.address_to_string(dest)
+                arg1_str = cls.address_to_string(arg1)
+                return f"{dest_str} = heaviside({arg1_str}, 1.0)"
+
+            elif op_name in ["MIN", "MAX"]:
                 dest_str = cls.address_to_string(dest)
                 arg1_str = cls.address_to_string(arg1)
                 arg2_str = cls.address_to_string(arg2)
-                return f"{dest_str} = {op_name.lower()}({arg1_str}, {arg2_str})"
+                fn = "minimum" if op_name == "MIN" else "maximum"
+                return f"{dest_str} = {fn}({arg1_str}, {arg2_str})"
+
+            elif op_name == "DOT":
+                dest_str = cls.address_to_string(dest)
+                arg1_str = cls.address_to_string(arg1)
+                arg2_str = cls.address_to_string(arg2)
+                return f"{dest_str} = dot({arg1_str}, {arg2_str})"
+
+            elif op_name == "MATMUL":
+                dest_str = cls.address_to_string(dest)
+                arg1_str = cls.address_to_string(arg1)
+                arg2_str = cls.address_to_string(arg2)
+                if arg1_str.startswith("m") and arg2_str.startswith("v"):
+                    # Match C++ readable output convention for matrix-vector product.
+                    return f"{dest_str} = dot({arg1_str}, {arg2_str})"
+                return f"{dest_str} = matmul({arg1_str}, {arg2_str})"
+
+            elif op_name == "OUTER":
+                dest_str = cls.address_to_string(dest)
+                arg1_str = cls.address_to_string(arg1)
+                arg2_str = cls.address_to_string(arg2)
+                return f"{dest_str} = outer({arg1_str}, {arg2_str})"
 
             elif op_name == "COPY":
                 dest_str = cls.address_to_string(dest)

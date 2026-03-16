@@ -280,6 +280,8 @@ class ArrayExecutor:
             OPCODES["SUB"],
             OPCODES["MUL"],
             OPCODES["DIV"],
+            OPCODES["MIN"],
+            OPCODES["MAX"],
             OPCODES["DOT"],
             OPCODES["MATMUL"],
             OPCODES["OUTER"],
@@ -406,7 +408,14 @@ class ArrayExecutor:
                 dest_before = np.array(dest_view[trace_sample_idx], copy=True)
 
             # --- Universal Operations (broadcasts per-sample across vectors/matrices) ---
-            if op in (OPCODES["ADD"], OPCODES["SUB"], OPCODES["MUL"], OPCODES["DIV"]):
+            if op in (
+                OPCODES["ADD"],
+                OPCODES["SUB"],
+                OPCODES["MUL"],
+                OPCODES["DIV"],
+                OPCODES["MIN"],
+                OPCODES["MAX"],
+            ):
                 if mem_a1 is None or mem_a2 is None:
                     emit(
                         ip=i,
@@ -450,8 +459,12 @@ class ArrayExecutor:
                     result = lhs - rhs
                 elif op == OPCODES["MUL"]:
                     result = lhs * rhs
-                else:
+                elif op == OPCODES["DIV"]:
                     result = lhs / (rhs + 1e-8)
+                elif op == OPCODES["MIN"]:
+                    result = np.minimum(lhs, rhs)
+                else:  # MAX
+                    result = np.maximum(lhs, rhs)
                 assign(dest_view, result)
 
             # --- Unary Operations ---
@@ -603,7 +616,7 @@ class ArrayExecutor:
                 assign(dest_view, result)
 
             elif op == OPCODES["MATMUL"]:
-                if addr_type(a1) != "m" or addr_type(a2) != "v":
+                if addr_type(a1) != "m":
                     emit(
                         ip=i,
                         op=op,
@@ -613,7 +626,7 @@ class ArrayExecutor:
                         c1=c1,
                         c2=c2,
                         executed=False,
-                        reason="operands are not matrix/vector",
+                        reason="arg1 is not a matrix",
                         dest_kind=addr_type(d),
                         dest_index=int(idx_d),
                         before=dest_before,
@@ -621,9 +634,31 @@ class ArrayExecutor:
                     )
                     continue
                 mat = matrices[:, idx_a1]
-                vec = vectors[:, idx_a2]
-                result = np.einsum("bij,bj->bi", mat, vec)
-                assign(dest_view, result)
+                if addr_type(a2) == "v" and addr_type(d) == "v":
+                    vec = vectors[:, idx_a2]
+                    result = np.einsum("bij,bj->bi", mat, vec)
+                    assign(dest_view, result)
+                elif addr_type(a2) == "m" and addr_type(d) == "m":
+                    mat2 = matrices[:, idx_a2]
+                    result = np.einsum("bij,bjk->bik", mat, mat2)
+                    assign(dest_view, result)
+                else:
+                    emit(
+                        ip=i,
+                        op=op,
+                        a1=a1,
+                        a2=a2,
+                        d=d,
+                        c1=c1,
+                        c2=c2,
+                        executed=False,
+                        reason="invalid MATMUL operand/dest types",
+                        dest_kind=addr_type(d),
+                        dest_index=int(idx_d),
+                        before=dest_before,
+                        after=dest_before,
+                    )
+                    continue
 
             elif op == OPCODES["OUTER"]:
                 if addr_type(a1) != "v" or addr_type(a2) != "v":
@@ -649,7 +684,8 @@ class ArrayExecutor:
                 assign(dest_view, result)
 
             elif op == OPCODES["NORM"]:
-                if addr_type(a1) != "v":
+                src_kind = addr_type(a1)
+                if src_kind not in {"v", "m"}:
                     emit(
                         ip=i,
                         op=op,
@@ -659,18 +695,22 @@ class ArrayExecutor:
                         c1=c1,
                         c2=c2,
                         executed=False,
-                        reason="operand is not a vector",
+                        reason="operand is not vector/matrix",
                         dest_kind=addr_type(d),
                         dest_index=int(idx_d),
                         before=dest_before,
                         after=dest_before,
                     )
                     continue
-                result = np.linalg.norm(vectors[:, idx_a1], axis=1)
+                if src_kind == "v":
+                    result = np.linalg.norm(vectors[:, idx_a1], axis=1)
+                else:
+                    result = np.linalg.norm(matrices[:, idx_a1], axis=(1, 2))
                 assign(dest_view, result)
 
             elif op == OPCODES["MEAN"]:
-                if addr_type(a1) != "v":
+                src_kind = addr_type(a1)
+                if src_kind not in {"v", "m"}:
                     emit(
                         ip=i,
                         op=op,
@@ -680,18 +720,22 @@ class ArrayExecutor:
                         c1=c1,
                         c2=c2,
                         executed=False,
-                        reason="operand is not a vector",
+                        reason="operand is not vector/matrix",
                         dest_kind=addr_type(d),
                         dest_index=int(idx_d),
                         before=dest_before,
                         after=dest_before,
                     )
                     continue
-                result = np.mean(vectors[:, idx_a1], axis=1)
+                if src_kind == "v":
+                    result = np.mean(vectors[:, idx_a1], axis=1)
+                else:
+                    result = np.mean(matrices[:, idx_a1], axis=(1, 2))
                 assign(dest_view, result)
 
             elif op == OPCODES["STD"]:
-                if addr_type(a1) != "v":
+                src_kind = addr_type(a1)
+                if src_kind not in {"v", "m"}:
                     emit(
                         ip=i,
                         op=op,
@@ -701,14 +745,17 @@ class ArrayExecutor:
                         c1=c1,
                         c2=c2,
                         executed=False,
-                        reason="operand is not a vector",
+                        reason="operand is not vector/matrix",
                         dest_kind=addr_type(d),
                         dest_index=int(idx_d),
                         before=dest_before,
                         after=dest_before,
                     )
                     continue
-                result = np.std(vectors[:, idx_a1], axis=1)
+                if src_kind == "v":
+                    result = np.std(vectors[:, idx_a1], axis=1)
+                else:
+                    result = np.std(matrices[:, idx_a1], axis=(1, 2))
                 assign(dest_view, result)
 
             if trace is not None:

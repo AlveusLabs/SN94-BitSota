@@ -28,6 +28,8 @@ OPCODES = {
     "MEAN": 20,
     "STD": 21,
     "COPY": 22,
+    "MIN": 23,
+    "MAX": 24,
 }
 
 # Address space encoding
@@ -41,17 +43,17 @@ OPCODE_METADATA = {
     "NOOP": {"arg1": "none", "arg2": "none", "dest": "none"},
     "CONST": {"arg1": "none", "arg2": "none", "dest": "s"},
     "CONST_VEC": {"arg1": "none", "arg2": "none", "dest": "v"},
-    "ADD": {"arg1": "s", "arg2": "s", "dest": "s"},
-    "SUB": {"arg1": "s", "arg2": "s", "dest": "s"},
-    "MUL": {"arg1": "s", "arg2": "s", "dest": "s"},
-    "DIV": {"arg1": "s", "arg2": "s", "dest": "s"},
-    "ABS": {"arg1": "s", "arg2": "none", "dest": "s"},
-    "EXP": {"arg1": "s", "arg2": "none", "dest": "s"},
-    "LOG": {"arg1": "s", "arg2": "none", "dest": "s"},
-    "SIN": {"arg1": "s", "arg2": "none", "dest": "s"},
-    "COS": {"arg1": "s", "arg2": "none", "dest": "s"},
-    "TAN": {"arg1": "s", "arg2": "none", "dest": "s"},
-    "HEAVISIDE": {"arg1": "s", "arg2": "none", "dest": "s"},
+    "ADD": {"arg1": "any", "arg2": "any", "dest": "same", "arg2_same_as_arg1": True},
+    "SUB": {"arg1": "any", "arg2": "any", "dest": "same", "arg2_same_as_arg1": True},
+    "MUL": {"arg1": "any", "arg2": "any", "dest": "same", "arg2_same_as_arg1": True},
+    "DIV": {"arg1": "any", "arg2": "any", "dest": "same", "arg2_same_as_arg1": True},
+    "ABS": {"arg1": "any", "arg2": "none", "dest": "same"},
+    "EXP": {"arg1": "any", "arg2": "none", "dest": "same"},
+    "LOG": {"arg1": "any", "arg2": "none", "dest": "same"},
+    "SIN": {"arg1": "any", "arg2": "none", "dest": "same"},
+    "COS": {"arg1": "any", "arg2": "none", "dest": "same"},
+    "TAN": {"arg1": "any", "arg2": "none", "dest": "same"},
+    "HEAVISIDE": {"arg1": "any", "arg2": "none", "dest": "same"},
     "GAUSSIAN": {"arg1": "none", "arg2": "none", "dest": "s"},
     "UNIFORM": {"arg1": "none", "arg2": "none", "dest": "s"},
     "DOT": {"arg1": "v", "arg2": "v", "dest": "s"},
@@ -60,7 +62,9 @@ OPCODE_METADATA = {
     "NORM": {"arg1": "v", "arg2": "none", "dest": "s"},
     "MEAN": {"arg1": "v", "arg2": "none", "dest": "s"},
     "STD": {"arg1": "v", "arg2": "none", "dest": "s"},
-    "COPY": {"arg1": "s", "arg2": "none", "dest": "s"},
+    "COPY": {"arg1": "any", "arg2": "none", "dest": "same"},
+    "MIN": {"arg1": "any", "arg2": "any", "dest": "same", "arg2_same_as_arg1": True},
+    "MAX": {"arg1": "any", "arg2": "any", "dest": "same", "arg2_same_as_arg1": True},
 }
 
 
@@ -257,18 +261,36 @@ class AlgorithmArray:
                         return "v"
                     return "m"
 
+                def _matches(expected: str, actual: str) -> bool:
+                    if expected in {"any", "same"}:
+                        return True
+                    return expected == actual
+
                 # Check arg1
-                if meta["arg1"] != "none" and meta["arg1"] != get_type(arg1s[i]):
+                arg1_type = get_type(arg1s[i])
+                arg2_type = get_type(arg2s[i])
+                dest_type = get_type(dests[i])
+
+                if meta["arg1"] != "none" and not _matches(meta["arg1"], arg1_type):
                     errors.append(
                         f"Phase {phase}, op {i} ({op_name}): arg1 type mismatch"
                     )
                 # Check arg2
-                if meta["arg2"] != "none" and meta["arg2"] != get_type(arg2s[i]):
+                if meta["arg2"] != "none" and not _matches(meta["arg2"], arg2_type):
                     errors.append(
                         f"Phase {phase}, op {i} ({op_name}): arg2 type mismatch"
                     )
+                if bool(meta.get("arg2_same_as_arg1")) and arg1_type != arg2_type:
+                    errors.append(
+                        f"Phase {phase}, op {i} ({op_name}): arg2 type must match arg1"
+                    )
                 # Check dest
-                if meta["dest"] != "none" and meta["dest"] != get_type(dests[i]):
+                if meta["dest"] == "same":
+                    if arg1_type != dest_type:
+                        errors.append(
+                            f"Phase {phase}, op {i} ({op_name}): dest type must match arg1"
+                        )
+                elif meta["dest"] != "none" and not _matches(meta["dest"], dest_type):
                     errors.append(
                         f"Phase {phase}, op {i} ({op_name}): dest type mismatch"
                     )

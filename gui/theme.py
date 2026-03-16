@@ -7,6 +7,7 @@ class BitSOTATheme:
 
     COLOR1 = "#150049"
     COLOR2 = "#8EFBFF"
+    BLACK100 = COLOR1
 
     SECONDARY_BUTTON_BG = "#D0CCDB"
 
@@ -199,6 +200,15 @@ class BitSOTATheme:
             border-radius: 8px;
         }}
 
+        QWidget#logs_box {{
+            background-color: {BitSOTATheme.COLOR1_04};
+            border-radius: 8px;
+        }}
+
+        QWidget#stat_divider {{
+            background-color: {BitSOTATheme.BORDER_12};
+        }}
+
         QLabel#stat_label {{
             color: {BitSOTATheme.COLOR1};
             font-family: "Geist", -apple-system, BlinkMacSystemFont, sans-serif;
@@ -387,6 +397,92 @@ class BitSOTATheme:
             font-family: "Geist", -apple-system, BlinkMacSystemFont, sans-serif;
             font-size: 14px;
             font-weight: 400;
+        }}
+
+        QLabel#logs_title {{
+            color: {BitSOTATheme.COLOR1};
+            font-family: "Geist", -apple-system, BlinkMacSystemFont, sans-serif;
+            font-size: 16px;
+            font-weight: 500;
+        }}
+
+        QWidget#status_dot_idle {{
+            background-color: rgba(21, 0, 73, 0.24);
+            border-radius: 4px;
+        }}
+
+        QWidget#status_dot_running {{
+            background-color: #51CF66;
+            border-radius: 4px;
+        }}
+
+        QWidget#status_dot_connected {{
+            background-color: #51CF66;
+            border-radius: 4px;
+        }}
+
+        QWidget#status_dot_disconnected {{
+            background-color: #D02533;
+            border-radius: 4px;
+        }}
+
+        QLabel#status_text_idle {{
+            color: rgba(21, 0, 73, 0.65);
+        }}
+
+        QLabel#status_text_running {{
+            color: #2B8A3E;
+            font-weight: 500;
+        }}
+
+        QLabel#status_text_connected {{
+            color: #2B8A3E;
+            font-weight: 500;
+        }}
+
+        QLabel#status_text_disconnected {{
+            color: #C92A2A;
+            font-weight: 500;
+        }}
+
+        QWidget#pool_card {{
+            background-color: {BitSOTATheme.COLOR1_04};
+            border-radius: 8px;
+            border: 1px solid {BitSOTATheme.BORDER_8};
+        }}
+
+        QPushButton#pool_join_btn {{
+            background-color: {BitSOTATheme.COLOR1};
+            color: {BitSOTATheme.COLOR2};
+            border: none;
+            border-radius: 4px;
+            font-size: 16px;
+            font-weight: 500;
+        }}
+
+        QPushButton#pool_join_btn:hover {{
+            background-color: rgba(21, 0, 73, 0.9);
+        }}
+
+        QLabel#pool_recommended_badge {{
+            background-color: rgba(142, 251, 255, 0.22);
+            color: {BitSOTATheme.COLOR1};
+            border-radius: 10px;
+            padding: 2px 8px;
+            font-size: 12px;
+            font-weight: 500;
+        }}
+
+        QWidget#pool_display {{
+            background-color: {BitSOTATheme.CONTENT_BOX_BG};
+            border: 1px solid {BitSOTATheme.BORDER_12};
+            border-radius: 4px;
+        }}
+
+        QLabel#pool_display_name {{
+            color: {BitSOTATheme.COLOR1};
+            font-size: 14px;
+            font-weight: 500;
         }}
 
         QLabel {{

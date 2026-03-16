@@ -5,14 +5,24 @@ COUNT="${1:-3}"
 START_PORT="${START_PORT:-8123}"
 RELAY_ENDPOINT="${RELAY_ENDPOINT:-http://127.0.0.1:8002}"
 POOL_ENDPOINT="${POOL_ENDPOINT:-http://127.0.0.1:8434}"
-LEASE_EVAL_BATCH_SIZE="${LEASE_EVAL_BATCH_SIZE:-6}"
-LEASE_SEED_BATCH_SIZE="${LEASE_SEED_BATCH_SIZE:-6}"
-LEASE_EVOLVE_GENERATIONS="${LEASE_EVOLVE_GENERATIONS:-100000}"
-LEASE_SUBMIT_BUFFER_S="${LEASE_SUBMIT_BUFFER_S:-180}"
+LEASE_EVAL_BATCH_SIZE="${LEASE_EVAL_BATCH_SIZE:-8}"
+LEASE_SEED_BATCH_SIZE="${LEASE_SEED_BATCH_SIZE:-8}"
+LEASE_EVOLVE_GENERATIONS="${LEASE_EVOLVE_GENERATIONS:-160}"
+LEASE_EVOLVE_RESERVE_S="${LEASE_EVOLVE_RESERVE_S:-90}"
+LEASE_SUBMIT_BUFFER_S="${LEASE_SUBMIT_BUFFER_S:-45}"
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 RUNTIME_DIR="${RUNTIME_DIR:-${ROOT_DIR}/.gui-test-runs}"
 CONFIG_PATH="${RUNTIME_DIR}/gui_test_config.json"
 ORIGINAL_HOME="${HOME:-}"
+if [[ -n "${ORIGINAL_HOME}" ]]; then
+  SHARED_CACHE_DIR="${SHARED_CACHE_DIR:-${ORIGINAL_HOME}/.cache}"
+  SHARED_XDG_DATA_HOME="${SHARED_XDG_DATA_HOME:-${ORIGINAL_HOME}/.local/share}"
+else
+  SHARED_CACHE_DIR="${SHARED_CACHE_DIR:-${RUNTIME_DIR}/shared-cache}"
+  SHARED_XDG_DATA_HOME="${SHARED_XDG_DATA_HOME:-${RUNTIME_DIR}/shared-local-share}"
+fi
+SHARED_SCIKIT_LEARN_DATA="${SHARED_SCIKIT_LEARN_DATA:-${SHARED_CACHE_DIR}/scikit_learn}"
+SHARED_TFDS_DATA_DIR="${SHARED_TFDS_DATA_DIR:-${SHARED_XDG_DATA_HOME}/tensorflow_datasets}"
 if [[ -n "${XAUTHORITY:-}" ]]; then
   XAUTH_FILE="${XAUTHORITY}"
 elif [[ -n "${ORIGINAL_HOME}" ]]; then
@@ -47,6 +57,7 @@ if [[ -z "${DISPLAY:-}" && -z "${WAYLAND_DISPLAY:-}" ]]; then
 fi
 
 mkdir -p "${RUNTIME_DIR}"
+mkdir -p "${SHARED_CACHE_DIR}" "${SHARED_XDG_DATA_HOME}" "${SHARED_SCIKIT_LEARN_DATA}" "${SHARED_TFDS_DATA_DIR}"
 
 cat > "${CONFIG_PATH}" <<JSON
 {
@@ -70,6 +81,11 @@ launch_one() {
   local pid_file="${run_dir}/gui.pid"
 
   mkdir -p "${run_dir}" "${home_dir}"
+  rm -rf "${home_dir}/.cache"
+  ln -s "${SHARED_CACHE_DIR}" "${home_dir}/.cache"
+  mkdir -p "${home_dir}/.local"
+  rm -rf "${home_dir}/.local/share"
+  ln -s "${SHARED_XDG_DATA_HOME}" "${home_dir}/.local/share"
 
   HOME="${home_dir}" "${PYTHON_BIN}" - <<'PY' > "${wallet_info}"
 import importlib.util
@@ -142,7 +158,12 @@ PY
       "BITSOTA_SIDECAR_PORT=${port}"
       "BITSOTA_POOL_LEASE_EVAL_BATCH_SIZE=${LEASE_EVAL_BATCH_SIZE}"
       "BITSOTA_POOL_LEASE_SEED_BATCH_SIZE=${LEASE_SEED_BATCH_SIZE}"
+      "BITSOTA_POOL_LEASE_EVOLVE_RESERVE_S=${LEASE_EVOLVE_RESERVE_S}"
       "BITSOTA_POOL_LEASE_SUBMIT_BUFFER_S=${LEASE_SUBMIT_BUFFER_S}"
+      "XDG_CACHE_HOME=${SHARED_CACHE_DIR}"
+      "SCIKIT_LEARN_DATA=${SHARED_SCIKIT_LEARN_DATA}"
+      "XDG_DATA_HOME=${SHARED_XDG_DATA_HOME}"
+      "TFDS_DATA_DIR=${SHARED_TFDS_DATA_DIR}"
       "LD_LIBRARY_PATH=${QT_LIB_DIR}${LD_LIBRARY_PATH:+:${LD_LIBRARY_PATH}}"
     )
     if [[ -n "${XAUTH_FILE}" ]]; then
@@ -212,5 +233,9 @@ echo "All GUI launch requests submitted."
 echo "Python: ${PYTHON_BIN}"
 echo "Qt libs: ${QT_LIB_DIR}"
 echo "Runtime dir: ${RUNTIME_DIR}"
+echo "Shared cache dir: ${SHARED_CACHE_DIR}"
+echo "Shared scikit cache: ${SHARED_SCIKIT_LEARN_DATA}"
+echo "Shared data dir: ${SHARED_XDG_DATA_HOME}"
+echo "Shared TFDS dir: ${SHARED_TFDS_DATA_DIR}"
 echo "Stop all launched GUIs:"
 echo "  for f in ${RUNTIME_DIR}/gui-*/gui.pid; do kill \"\$(cat \"\$f\")\"; done"

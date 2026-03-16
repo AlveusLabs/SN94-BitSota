@@ -8,6 +8,7 @@ from typing import Any, Dict, Optional, Tuple
 import numpy as np
 
 from core.dsl_parser import DSLParser
+from core.cpp_dsl_compat import CppDslComplianceError, normalize_algorithm_dsl_for_cpp
 from core.hyperparams import get_validator_hyperparams
 from core.tasks.cifar10 import CIFAR10BinaryTask
 from core.tasks.mnist import MNISTBinaryTask
@@ -241,7 +242,15 @@ def verify_solution_quality(
                 input_dim = DEFAULT_CIFAR_INPUT_DIM
 
         try:
-            algorithm = DSLParser.from_dsl(algorithm_dsl, input_dim)
+            algorithm_dsl = normalize_algorithm_dsl_for_cpp(
+                str(algorithm_dsl),
+                input_dim=int(input_dim),
+                task_type=task_type,
+            )
+            algorithm = DSLParser.from_dsl(algorithm_dsl, input_dim, strict=True)
+        except CppDslComplianceError as e:
+            logger.warning("Rejected non-C++ DSL: %s", e)
+            return False, -np.inf
         except Exception as e:
             logger.warning("Failed to parse algorithm DSL: %s", e)
             return False, -np.inf
@@ -455,7 +464,15 @@ def score_algorithm_on_eval_suite(
             dim = DEFAULT_CIFAR_INPUT_DIM
     task = _load_cifar_task(dim, preload=False)
     try:
-        algorithm = DSLParser.from_dsl(algorithm_dsl, dim)
+        algorithm_dsl = normalize_algorithm_dsl_for_cpp(
+            str(algorithm_dsl),
+            input_dim=int(dim),
+            task_type="cifar10_binary",
+        )
+        algorithm = DSLParser.from_dsl(algorithm_dsl, dim, strict=True)
+    except CppDslComplianceError as e:
+        logger.warning("Rejected non-C++ DSL: %s", e)
+        return -np.inf
     except Exception as e:
         logger.warning("Failed to parse algorithm DSL: %s", e)
         return -np.inf
@@ -500,7 +517,12 @@ def evaluate_algorithm_on_task(
         task = _load_cifar_task(input_dim)
         actual_dim = input_dim or task.input_dim
 
-        algorithm = DSLParser.from_dsl(algorithm_dsl, actual_dim)
+        algorithm_dsl = normalize_algorithm_dsl_for_cpp(
+            str(algorithm_dsl),
+            input_dim=int(actual_dim),
+            task_type=task_type,
+        )
+        algorithm = DSLParser.from_dsl(algorithm_dsl, actual_dim, strict=True)
         score = task.evaluate_algorithm(algorithm, epochs=1)
         baseline = task.get_baseline_fitness()
 
