@@ -17,6 +17,8 @@ git clone https://github.com/AlveusLabs/Relay.git Relay
 # Needed for the C++ sidecar worker flow used by the new GUI and section 7 below.
 git clone https://github.com/mekaneeky/automl_zero_cpp.git automl_zero_cpp
 cd current-sn-2
+git fetch origin
+git switch testnet-new-gui-pool
 test -f ../automl_zero_cpp/automl_zero/tools/baseline_sidecar_bridge.py
 ```
 
