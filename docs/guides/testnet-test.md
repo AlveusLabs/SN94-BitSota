@@ -5,6 +5,23 @@ This guide adds Docker recipes for:
 - testnet relay + validators
 - GUI build packaging
 
+## 0) Fresh clone layout (recommended)
+
+`SN94-BitSota` does not vendor relay source. For local relay mode, clone both repos side-by-side:
+
+```bash
+mkdir -p ~/bitsota-dev
+cd ~/bitsota-dev
+git clone https://github.com/AlveusLabs/SN94-BitSota.git current-sn-2
+git clone https://github.com/AlveusLabs/Relay.git Relay
+# Needed for the C++ sidecar worker flow used by the new GUI and section 7 below.
+git clone https://github.com/mekaneeky/automl_zero_cpp.git automl_zero_cpp
+cd current-sn-2
+test -f ../automl_zero_cpp/automl_zero/tools/baseline_sidecar_bridge.py
+```
+
+If you only use hosted relay mode, `SN94-BitSota` alone is enough.
+
 ## 1) Relay + Validators
 
 Files:
@@ -34,7 +51,10 @@ Optional local relay profile:
 cp .env.relay-validators.example .env.relay-validators
 # set wallet names/hotkeys, relay target, and local relay source path
 echo "RELAY_URL=http://relay:8002" >> .env.relay-validators
-echo "RELAY_SOURCE_DIR=../BitSota" >> .env.relay-validators
+echo "RELAY_SOURCE_DIR=../Relay" >> .env.relay-validators
+
+# relay source must exist in a separate Relay checkout
+test -f ../Relay/relay/main.py
 
 # start relay first (separate command)
 docker compose --env-file .env.relay-validators -f docker-compose.testnet-relay-validators.yaml --profile local-relay up -d --build relay
@@ -49,7 +69,7 @@ You can still start all three together with one command:
 docker compose --env-file .env.relay-validators -f docker-compose.testnet-relay-validators.yaml --profile local-relay up -d --build
 ```
 
-`local-relay` builds from `RELAY_SOURCE_DIR` (default `../BitSota`).
+`local-relay` builds from `RELAY_SOURCE_DIR` (default `../Relay`).
 
 If relay image build fails with:
 
@@ -61,7 +81,8 @@ set `RELAY_SOURCE_DIR` to the actual checkout path, or clone beside `current-sn-
 
 ```bash
 cd ..
-git clone https://github.com/AlveusLabs/BitSota.git
+git clone https://github.com/AlveusLabs/Relay.git Relay
+cd current-sn-2
 ```
 
 or run hosted relay mode (no local `relay` service build, no `BitSota` checkout required).
@@ -217,4 +238,65 @@ MONITOR_LOG_FULL_JSON=false
 MONITOR_STALE_FINALIZED_S=3600
 MONITOR_STALE_RELAY_EVENT_S=3600
 MONITOR_SUBMISSION_BACKLOG_WARN_S=1200
+```
+
+## 7) C++-Only Lease Flow (Pool + Contract Payout Smoke)
+
+This path uses the lease coordinator and C++ backend only.
+
+It is also the same backend path used by the new GUI when you open `Pool Mining`, click `Join Pool` on `Lease Pool`, and then click `Start Mining` with `BITSOTA_MINER_BACKEND=cpp`.
+
+Terminal A (sidecar):
+
+```bash
+cd ~/bitsota-dev/current-sn-2
+PYENV_VERSION=automl python3 -m sidecar --host 127.0.0.1 --port 8123
+```
+
+Terminal B (C++ worker bridge, real mode):
+
+```bash
+cd ~/bitsota-dev/current-sn-2
+export AUTOML_ZERO_CPP_ROOT=~/bitsota-dev/automl_zero_cpp/automl_zero
+PYENV_VERSION=automl python3 -m scripts.miner_cpp_sidecar \
+  --cpp-mode lease \
+  --mode real \
+  --sidecar-url http://127.0.0.1:8123 \
+  --run-id pool_smoke \
+  --workers 1 \
+  --lease-evolve-generations 40 \
+  --automl-root "${AUTOML_ZERO_CPP_ROOT}" \
+  --bitsota-root "$(pwd)"
+```
+
+Terminal C (lease coordinator driver, real pool leases):
+
+```bash
+cd ~/bitsota-dev/current-sn-2
+PYENV_VERSION=automl BITSOTA_CPP_BACKEND=1 python3 -m scripts.pool_lease_sidecar_driver \
+  --pool-url http://127.0.0.1:8434 \
+  --sidecar-url http://127.0.0.1:8123 \
+  --run-id pool_smoke \
+  --duration-s 120
+```
+
+Expected signal in Terminal C:
+
+- `submit_lease ok=True ... iter_n=40`
+
+Verify pool published a non-zero payout epoch:
+
+```bash
+docker logs --since=30m pool-testnet-pool-v1-consensus_publisher-1 2>&1 | rg "onchain publish epoch="
+```
+
+Look for at least one line like:
+
+- `onchain publish epoch=<n> ok root=0x... total_rao=...`
+
+Check claim proof package for a miner hotkey in that epoch:
+
+```bash
+curl -sS http://127.0.0.1:8844/epoch/<epoch_number> | jq
+curl -sS http://127.0.0.1:8844/epoch/<epoch_number>/claim/<miner_hotkey> | jq
 ```

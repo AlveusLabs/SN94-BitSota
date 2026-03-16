@@ -4,6 +4,10 @@ This guide runs a full local loop on one machine:
 
 `GUI → Local Sidecar (FastAPI) → Local Miner → Local Sidecar → GUI → Local Relay (FastAPI) → Local Validator (polls relay + votes)`
 
+Important:
+- This `SN94-BitSota` repo does not include relay source.
+- For local relay mode, keep a separate `BitSota` checkout (for example `../BitSota`) and run `python3 -m relay` there.
+
 Key behavior:
 - The GUI does **not** run mining in-process anymore.
 - Clicking “Start Mining” in the GUI spawns:
@@ -23,14 +27,24 @@ flowchart LR
 
 ## 0) Install (dev environment)
 
-From the repo root:
+From `current-sn-2` repo root:
 
 ```bash
 python3 -m venv .venv
 source .venv/bin/activate
 python3 -m pip install -U pip
+python3 -m pip install -r requirements.txt
+python3 -m pip install -e .
+```
+
+For local relay mode, install relay dependencies in your separate `BitSota` checkout:
+
+```bash
+cd ../BitSota
+python3 -m pip install -U pip
 python3 -m pip install -r requirements.txt -r relay/requirements.txt
 python3 -m pip install -e .
+cd ../current-sn-2
 ```
 
 ## 1a) Sidecar defaults (local only)
@@ -55,12 +69,14 @@ Relay test mode:
 Run:
 
 ```bash
+cd ../BitSota
 SOTA_CONSENSUS_VOTES=1 SOTA_ALIGNMENT_MOD=1 python3 -m relay --test --host 127.0.0.1 --port 8002
 ```
 
 If you hit `sqlite3.OperationalError: attempt to write a readonly database`, force the DB path to somewhere you own:
 
 ```bash
+cd ../BitSota
 SOTA_CONSENSUS_VOTES=1 SOTA_ALIGNMENT_MOD=1 python3 -m relay --test \
   --database-url "sqlite:///./bitsota_relay_test.db" \
   --host 127.0.0.1 --port 8002
@@ -162,7 +178,7 @@ Important: there is still only **one** sidecar process (`python3 -m sidecar`).
 
 Pool mode reuses the same sidecar, but with an added local job queue:
 - GUI (or a headless driver) talks to the Pool API and enqueues work into sidecar.
-- A compute-only worker process (`scripts.pool_miner_sidecar`) pulls jobs from sidecar and returns results.
+- A C++ compute worker process (`scripts.miner_cpp_sidecar --cpp-mode lease`) pulls jobs from sidecar and returns results.
 
 ### Start the Pool API (local)
 
@@ -175,6 +191,17 @@ curl -sS http://127.0.0.1:8434/health
 
 ### Start the sidecar + pool compute worker
 
+If you have not cloned the C++ backend checkout yet, do that once beside `current-sn-2`:
+
+```bash
+cd ~/bitsota-dev
+git clone https://github.com/mekaneeky/automl_zero_cpp.git automl_zero_cpp
+test -f ~/bitsota-dev/automl_zero_cpp/automl_zero/tools/baseline_sidecar_bridge.py
+cd ~/bitsota-dev/current-sn-2
+```
+
+Replace the clone URL above if you use a different `automl_zero_cpp` fork internally.
+
 ```bash
 PYENV_VERSION=automl python3 -m sidecar --host 127.0.0.1 --port ${BITSOTA_SIDECAR_PORT:-8123}
 ```
@@ -182,10 +209,17 @@ PYENV_VERSION=automl python3 -m sidecar --host 127.0.0.1 --port ${BITSOTA_SIDECA
 In a second terminal:
 
 ```bash
-PYENV_VERSION=automl python3 -m scripts.pool_miner_sidecar \
+export BITSOTA_MINER_BACKEND=cpp
+export AUTOML_ZERO_CPP_ROOT=~/bitsota-dev/automl_zero_cpp/automl_zero
+
+PYENV_VERSION=automl python3 -m scripts.miner_cpp_sidecar \
+  --cpp-mode lease \
+  --mode real \
   --sidecar-url http://127.0.0.1:${BITSOTA_SIDECAR_PORT:-8123} \
   --run-id pool_smoke \
-  --workers 1
+  --workers 1 \
+  --automl-root "${AUTOML_ZERO_CPP_ROOT}" \
+  --bitsota-root "$(pwd)"
 ```
 
 ### Drive tasks without the GUI (smoke test)
@@ -193,7 +227,8 @@ PYENV_VERSION=automl python3 -m scripts.pool_miner_sidecar \
 This headless driver signs Pool requests with a generated SR25519 hotkey, requests Pool tasks, and submits results after the worker finishes.
 
 ```bash
-PYENV_VERSION=automl python3 -m scripts.pool_sidecar_driver \
+export BITSOTA_MINER_BACKEND=cpp
+PYENV_VERSION=automl python3 -m scripts.pool_lease_sidecar_driver \
   --pool-url http://127.0.0.1:8434 \
   --sidecar-url http://127.0.0.1:${BITSOTA_SIDECAR_PORT:-8123} \
   --run-id pool_smoke \
@@ -201,9 +236,8 @@ PYENV_VERSION=automl python3 -m scripts.pool_sidecar_driver \
 ```
 
 You should see log lines like:
-- `[pool] Enqueued job kind=evolve ...`
-- `[pool] submit_evolution ok=True ...`
-- `[pool] submit_evaluation ok=True ...`
+- `[pool] Enqueued lease ...`
+- `[pool] submit_lease ok=True ...`
 
 ### Monitor the pool (retro terminal)
 
@@ -223,9 +257,24 @@ Point the GUI at the local pool by setting `pool_endpoint` in `gui_config.json`:
 }
 ```
 
-Then start the GUI and select `Pool` in the Task dropdown. The GUI stays a thin wrapper:
-- It talks to the Pool API and enqueues sidecar jobs.
-- The pool worker does the compute via sidecar.
+Then start the GUI with the C++ backend enabled:
+
+```bash
+export BITSOTA_MINER_BACKEND=cpp
+export AUTOML_ZERO_CPP_ROOT=~/bitsota-dev/automl_zero_cpp/automl_zero
+python3 -m gui
+```
+
+Use the current GUI flow:
+- Open the `Pool Mining` tab.
+- Click `Join Pool` on `Lease Pool` for the recommended lease path.
+- Click `Start Mining` on the pool detail screen.
+
+Current GUI behavior:
+- The GUI starts or reuses one local sidecar.
+- The GUI launches the C++ pool worker bridge (`scripts.miner_cpp_sidecar --cpp-mode lease`).
+- The GUI runs the lease coordinator against `pool_endpoint`.
+- `Task Pool` is still available as the legacy non-lease path, but `Lease Pool` is the path to test first.
 
 ## 3) Start a local validator (poll + verify + vote)
 

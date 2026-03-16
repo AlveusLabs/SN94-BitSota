@@ -1,49 +1,70 @@
-# Full local loop with Docker Compose relay + validator + local GUI miners
+# Full local loop with Docker Compose relay + validators + local GUI miners
 
 This setup runs:
-- Relay (FastAPI) in Docker, in `--test` mode
-- Local validator (polls relay + votes) in Docker
-- 3 GUI miners locally on your host (each spawns its own sidecar + local miner process)
+- Relay (FastAPI) in Docker, in `--test` mode (built from a separate `BitSota` checkout)
+- Local validators in Docker (`validator_1`, `validator_2`)
+- GUI miners locally on your host (each spawns its own sidecar + local miner process)
 
-## 0) Prereqs
+## 0) Repo layout (required)
+
+`SN94-BitSota` does not contain relay source. Keep both repos side-by-side:
+
+```bash
+mkdir -p ~/bitsota-dev
+cd ~/bitsota-dev
+git clone https://github.com/AlveusLabs/SN94-BitSota.git current-sn-2
+git clone https://github.com/AlveusLabs/BitSota.git BitSota
+git clone https://github.com/mekaneeky/automl_zero_cpp.git automl_zero_cpp
+cd current-sn-2
+test -f ../automl_zero_cpp/automl_zero/tools/baseline_sidecar_bridge.py
+```
+
+## 1) Prereqs
 
 - Docker + Docker Compose working: `docker ps` and `docker compose version`
-- Host Python env for the GUI miners (see `docs/local-testing.md` for full setup)
-- A validator wallet hotkey on the host (mounted into the validator container)
-
-## 1) Create a validator wallet hotkey on the host
-
-If you don’t already have one:
+- Host Python env for GUI miners (see `docs/local-testing.md`)
+- Validator wallet hotkeys on host at `${HOME}/.bittensor/wallets`
+- If you want the C++ backend path in the GUI, export:
 
 ```bash
-btcli wallet new_coldkey --wallet.name local_val
-btcli wallet new_hotkey --wallet.name local_val --wallet.hotkey local_val_hot
+export BITSOTA_MINER_BACKEND=cpp
+export AUTOML_ZERO_CPP_ROOT=~/bitsota-dev/automl_zero_cpp/automl_zero
 ```
 
-The compose file mounts your host wallets from:
-- `${HOME}/.bittensor/wallets` → `/wallets` in the validator container
-
-Defaults used by the compose file:
-- `VALIDATOR_WALLET_NAME=local_val`
-- `VALIDATOR_WALLET_HOTKEY=local_val_hot`
-
-Override these when starting compose if you want different names:
+## 2) Configure relay + validator compose env
 
 ```bash
-export VALIDATOR_WALLET_NAME=local_val
-export VALIDATOR_WALLET_HOTKEY=local_val_hot
+cp .env.relay-validators.example .env.relay-validators
 ```
 
-## 2) Start relay + validator with Docker Compose
-
-From the repo root:
+Set or confirm these in `.env.relay-validators`:
 
 ```bash
-docker compose -f docker-compose.full-test.yaml up -d --build
-docker compose -f docker-compose.full-test.yaml ps
+RELAY_URL=http://relay:8002
+RELAY_SOURCE_DIR=../BitSota
+VALIDATOR_1_WALLET_NAME=<wallet_name>
+VALIDATOR_1_WALLET_HOTKEY=<hotkey_name>
+VALIDATOR_2_WALLET_NAME=<wallet_name>
+VALIDATOR_2_WALLET_HOTKEY=<hotkey_name>
+NETUID=402
 ```
 
-Quick relay checks from the host:
+Sanity check relay source path:
+
+```bash
+test -f ../BitSota/relay/main.py
+```
+
+## 3) Start relay + validators
+
+From `current-sn-2` repo root:
+
+```bash
+docker compose --env-file .env.relay-validators -f docker-compose.testnet-relay-validators.yaml --profile local-relay up -d --build relay validator_1 validator_2
+docker compose --env-file .env.relay-validators -f docker-compose.testnet-relay-validators.yaml ps
+```
+
+Quick relay checks from host:
 
 ```bash
 curl http://127.0.0.1:8002/health
@@ -51,9 +72,9 @@ curl http://127.0.0.1:8002/sota_threshold
 curl "http://127.0.0.1:8002/sota-events?page=1&page_size=10"
 ```
 
-## 3) Configure the GUI to point at the local relay
+## 4) Configure GUI to point at local relay
 
-Create (or update) `gui_config.json` in the repo root:
+Create or update `gui_config.json` in `current-sn-2` root:
 
 ```json
 {
@@ -72,11 +93,9 @@ Then ensure you have a problem config:
 cp -n problem_config.json.example problem_config.json
 ```
 
-Important: `test_mode: true` disables the GUI single-instance lock, so you can run 3 GUI miners at once.
+## 5) Run 3 local GUI miners in test mode
 
-## 4) Run 3 local GUI miners in test mode
-
-You must use a different sidecar port per GUI instance.
+Use a different sidecar port per GUI instance.
 
 Terminal 1:
 
@@ -100,69 +119,47 @@ python3 -m gui
 ```
 
 In each GUI window:
-- Select a wallet hotkey for that miner (use different hotkeys if you want them to be distinct miners)
-- Click “Start Mining”
+- Select a wallet hotkey for that miner
+- For direct mining, stay on `Direct Mining` and click `Start Mining`.
+- For pool lease testing, open `Pool Mining`, click `Join Pool` on `Lease Pool`, then click `Start Mining`.
 
-## 5) Viewing logs and basic monitoring
+## 6) Logs and monitoring
 
-### Docker logs
-
-Relay:
-
-```bash
-docker compose -f docker-compose.full-test.yaml logs -f relay
-```
-
-Validator:
+Relay logs:
 
 ```bash
-docker compose -f docker-compose.full-test.yaml logs -f validator
+docker compose --env-file .env.relay-validators -f docker-compose.testnet-relay-validators.yaml logs -f relay
 ```
 
-Both:
+Validator logs:
 
 ```bash
-docker compose -f docker-compose.full-test.yaml logs -f
+docker compose --env-file .env.relay-validators -f docker-compose.testnet-relay-validators.yaml logs -f validator_1
+docker compose --env-file .env.relay-validators -f docker-compose.testnet-relay-validators.yaml logs -f validator_2
 ```
 
-### Validator metrics file
-
-The validator writes JSONL metrics to `/data/local_validator_metrics.log` inside its container.
-
-Tail it:
+All logs:
 
 ```bash
-docker compose -f docker-compose.full-test.yaml exec validator tail -f /data/local_validator_metrics.log
+docker compose --env-file .env.relay-validators -f docker-compose.testnet-relay-validators.yaml logs -f
 ```
 
-Disable metrics logging by setting:
-
-```bash
-export VALIDATOR_METRICS_LOG=""
-docker compose -f docker-compose.full-test.yaml up -d --build --force-recreate
-```
-
-### GUI logs
-
-Each GUI run writes a debug log under:
-- `~/.bitsota/logs/`
-
-## 6) Stopping and cleanup
+## 7) Stop and cleanup
 
 Stop containers:
 
 ```bash
-docker compose -f docker-compose.full-test.yaml down
+docker compose --env-file .env.relay-validators -f docker-compose.testnet-relay-validators.yaml down
 ```
 
-Also remove the validator data volume (clears cached datasets and metrics log):
+Also remove volumes (clears relay DB and validator data):
 
 ```bash
-docker compose -f docker-compose.full-test.yaml down -v
+docker compose --env-file .env.relay-validators -f docker-compose.testnet-relay-validators.yaml down -v
 ```
 
 ## Troubleshooting
 
-- Validator can’t find wallet files: confirm `${HOME}/.bittensor/wallets` exists on the host and contains the wallet name and hotkey you configured.
-- Relay is up but validator errors on startup: check `docker compose -f docker-compose.full-test.yaml logs validator` for the exact exception.
-- Multiple GUI miners fail to start: ensure each has a unique `BITSOTA_SIDECAR_PORT` and `test_mode: true` is set in the GUI config.
+- `unable to prepare context` for relay build: `RELAY_SOURCE_DIR` is wrong or `../BitSota` is missing.
+- Validator can't find wallet files: confirm `${HOME}/.bittensor/wallets` contains configured names/hotkeys.
+- Multiple GUI miners fail to start: each GUI needs a unique `BITSOTA_SIDECAR_PORT` and `test_mode: true`.

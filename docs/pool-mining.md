@@ -75,21 +75,39 @@ Configure `gui_config.json` and set:
 }
 ```
 
-Then start the GUI with `python3 -m gui`, select Pool in the task dropdown, and start mining.
+Then start the GUI with the C++ backend enabled:
+
+```bash
+export BITSOTA_MINER_BACKEND=cpp
+export AUTOML_ZERO_CPP_ROOT=~/bitsota-dev/automl_zero_cpp/automl_zero
+python3 -m gui
+```
+
+Use the current GUI flow:
+- Open the `Pool Mining` tab.
+- Click `Join Pool` on `Lease Pool` for the recommended path.
+- Click `Start Mining` on the pool detail screen.
+
+`Task Pool` is still shown for the legacy task-batch path, but `Lease Pool` is the main sidecar + C++ worker flow to test.
 
 ### Headless mode with sidecar
 
 This matches the GUI architecture:
 
 - one sidecar process
-- one compute worker that pulls jobs from sidecar
+- one C++ compute worker (`scripts.miner_cpp_sidecar --cpp-mode lease`) that pulls jobs from sidecar
 - one driver that talks to the Pool API and submits results
 
 ```bash
+cd ~/bitsota-dev
+git clone https://github.com/mekaneeky/automl_zero_cpp.git automl_zero_cpp
+cd ~/bitsota-dev/current-sn-2
 docker compose -f Pool/docker-compose.sim.yaml up -d db api
 python3 -m sidecar --host 127.0.0.1 --port 8123
-python3 -m scripts.pool_miner_sidecar --sidecar-url http://127.0.0.1:8123 --run-id pool_smoke --workers 1
-python3 -m scripts.pool_sidecar_driver --pool-url http://127.0.0.1:8434 --sidecar-url http://127.0.0.1:8123 --run-id pool_smoke --duration-s 30
+export BITSOTA_MINER_BACKEND=cpp
+export AUTOML_ZERO_CPP_ROOT=~/bitsota-dev/automl_zero_cpp/automl_zero
+python3 -m scripts.miner_cpp_sidecar --cpp-mode lease --mode real --sidecar-url http://127.0.0.1:8123 --run-id pool_smoke --workers 1 --automl-root "${AUTOML_ZERO_CPP_ROOT}" --bitsota-root "$(pwd)"
+python3 -m scripts.pool_lease_sidecar_driver --pool-url http://127.0.0.1:8434 --sidecar-url http://127.0.0.1:8123 --run-id pool_smoke --duration-s 30
 ```
 
 ## Understanding Pool Tasks
