@@ -121,7 +121,10 @@ class PoolApiClient:
             json={},
             timeout=self.timeout_s,
         )
-        return r.status_code == 200
+        if r.status_code != 200:
+            detail = self._response_detail(r)
+            raise RuntimeError(f"Pool /miners/register failed: HTTP {r.status_code} ({detail})")
+        return True
 
     def request_task(self, *, task_type: Optional[str] = None) -> Optional[PoolTaskAssignment]:
         body: Dict[str, Any] = {}
@@ -367,8 +370,12 @@ class PoolTaskCoordinator:
         if not self._registered:
             try:
                 self._registered = bool(self.pool_client.register())
-            except Exception:
+            except Exception as e:
                 self._registered = False
+                self._log_pool_error(
+                    "[pool] register failed: "
+                    f"{e}. Check the pool API logs and confirm the pool branch/schema match this GUI build."
+                )
             if self._registered:
                 self.log("[pool] Registered with pool")
 
@@ -621,8 +628,12 @@ class PoolLeaseCoordinator:
         if not self._registered:
             try:
                 self._registered = bool(self.pool_client.register())
-            except Exception:
+            except Exception as e:
                 self._registered = False
+                self._log_pool_error(
+                    "[pool] register failed: "
+                    f"{e}. Check the pool API logs and confirm the pool branch/schema match this GUI build."
+                )
             if self._registered:
                 self.log("[pool] Registered with pool")
 
