@@ -743,12 +743,8 @@ def main(argv=None):
             f"🏆 Best submission: Miner {miner_hotkey[:8]} with score {highest_validator_score:.4f}"
         )
 
-        if highest_validator_score <= sota_score:
-            logging.info(
-                f"⚠️  Best score {highest_validator_score:.4f} not better than SOTA {sota_score:.4f}. Not voting."
-            )
-            return
-
+        # Local winner following should accept the current frontier winner even when
+        # this validator is not the one improving relay SOTA.
         _update_local_best(highest_validator_score, reason="best relay evaluation")
 
         # In capacitorless mode, optionally drive weights directly from local evaluation,
@@ -756,6 +752,7 @@ def main(argv=None):
         if (
             is_capacitorless
             and miner_hotkey
+            and highest_validator_score >= sota_score
             and str(cap_cfg.get("winner_source", "relay")).strip().lower() == "local"
             and hasattr(weight_manager, "update_local_winner")
         ):
@@ -771,6 +768,12 @@ def main(argv=None):
                     weight_manager.apply_once(force=True)
             except Exception as e:
                 logging.warning("Failed to update local winner in weight manager: %s", e)
+
+        if highest_validator_score <= sota_score:
+            logging.info(
+                f"⚠️  Best score {highest_validator_score:.4f} not better than SOTA {sota_score:.4f}. Not voting."
+            )
+            return
 
         seen_block = None
         if is_capacitorless:
