@@ -194,6 +194,12 @@ class CapacitorlessStickyBurnSplitWeightManager:
             _, hk = self._local_best
             return self._local_generation, hk
 
+    def get_local_winner_hotkey(self) -> Optional[str]:
+        with self.lock:
+            if self._local_best is None:
+                return None
+            return str(self._local_best[1])
+
     def _tick(self):
         now = time.time()
 

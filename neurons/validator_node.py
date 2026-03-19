@@ -22,6 +22,7 @@ from validator.relay_client import RelayClient
 from validator.relay_poller import RelayPoller
 from validator.submission_scheduler import SubmissionScheduler
 from validator.weight_manager import WeightManager
+from validator.winner_selection import TIE_EPSILON, select_best_result
 
 try:
     from validator.contract_manager import ContractManager
@@ -735,13 +736,71 @@ def main(argv=None):
             logging.info("No results passed validation and SOTA checks.")
             return
 
-        best_result = max(evaluated_results, key=lambda x: x["validator_score"])
-        highest_validator_score = best_result["validator_score"]
+        selection_kwargs = {}
+        if len(evaluated_results) > 1:
+            best_score = max(
+                float(result.get("validator_score", float("-inf")))
+                for result in evaluated_results
+            )
+            winner_source = str(cap_cfg.get("winner_source", "relay")).strip().lower()
+            if (
+                is_capacitorless
+                and winner_source == "local"
+                and hasattr(weight_manager, "get_local_winner_hotkey")
+            ):
+                try:
+                    current_local_winner_hotkey = weight_manager.get_local_winner_hotkey()
+                except Exception:
+                    current_local_winner_hotkey = None
+                if current_local_winner_hotkey:
+                    selection_kwargs["current_local_winner_hotkey"] = (
+                        current_local_winner_hotkey
+                    )
+
+            if relay_client is not None and abs(best_score - float(sota_score)) <= TIE_EPSILON:
+                try:
+                    latest_events = relay_client.get_sota_events(limit=1) or []
+                except Exception as e:
+                    latest_events = []
+                    logging.warning("Failed to fetch relay SOTA event tie-breaker: %s", e)
+                if latest_events:
+                    selection_kwargs["latest_sota_event"] = latest_events[0]
+
+        selection = select_best_result(
+            evaluated_results,
+            sota_score,
+            **selection_kwargs,
+        )
+        best_result = selection.result
+        highest_validator_score = selection.best_score
         miner_hotkey = best_result.get("miner_hotkey")
 
         logging.info(
             f"🏆 Best submission: Miner {miner_hotkey[:8]} with score {highest_validator_score:.4f}"
         )
+        if selection.tied_count > 1:
+            if selection.reason == "keep_local_winner":
+                logging.info(
+                    "Tie at top score %.4f across %d miners; keeping current local winner %s",
+                    highest_validator_score,
+                    selection.tied_count,
+                    miner_hotkey[:8],
+                )
+            elif selection.reason == "relay_frontier_winner":
+                logging.info(
+                    "Tie at frontier score %.4f across %d miners; preferring accepted relay winner %s",
+                    highest_validator_score,
+                    selection.tied_count,
+                    miner_hotkey[:8],
+                )
+            elif selection.reason == "oldest_submission":
+                logging.info(
+                    "Tie at top score %.4f across %d miners; preferring oldest submission %s (%s)",
+                    highest_validator_score,
+                    selection.tied_count,
+                    miner_hotkey[:8],
+                    str(best_result.get("timestamp") or "unknown"),
+                )
 
         # Local winner following should accept the current frontier winner even when
         # this validator is not the one improving relay SOTA.
