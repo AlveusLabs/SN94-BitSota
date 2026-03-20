@@ -4,6 +4,7 @@ There are two paths to run mining code:
 
 - Desktop GUI mode via sidecar
 - CLI mode via `neurons/miner.py`
+- Experimental coordinator-backed research-agent mode via `bitsota-research-agent`
 
 ## CLI entrypoint
 
@@ -21,3 +22,9 @@ See [Mining](../mining.md).
 ## Pool mining
 
 See [Pool Mining](../pool-mining.md) and [Pool](pool.md).
+
+## Research-agent mining
+
+This is a separate, additive miner for coordinator-backed research tasks. It uses an OpenAI-compatible API and supports `direct` and `pool` participation styles across `standard`, `centerless`, and `peer_evaluation` task modes.
+
+See [Research-Agent Mining](../research-agent-mining.md).
