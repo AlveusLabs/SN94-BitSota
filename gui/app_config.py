@@ -13,6 +13,10 @@ class AppConfig:
     relay_endpoint: str = "https://relay.bitsota.com"
     update_manifest_url: str = "https://relay.bitsota.com/version.json"
     pool_endpoint: str = "https://api.bitsota.com"
+    research_coordinator_endpoint: str = "http://127.0.0.1:8000"
+    research_llm_base_url: str = "http://127.0.0.1:11434/v1"
+    research_llm_model: str = ""
+    research_llm_api_key: str = ""
     cifar10_dataset_url: str = "https://cifar10.fra1.digitaloceanspaces.com/CIFAR_10_small.arff.gz"
     test_mode: bool = False
     test_invite_code: str = "TESTTEST1"
@@ -62,6 +66,10 @@ def _apply_overrides(defaults: AppConfig, overrides: Dict[str, Any]) -> AppConfi
         "relay_endpoint",
         "update_manifest_url",
         "pool_endpoint",
+        "research_coordinator_endpoint",
+        "research_llm_base_url",
+        "research_llm_model",
+        "research_llm_api_key",
         "cifar10_dataset_url",
         "test_invite_code",
         "problem_config_path",

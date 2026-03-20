@@ -1,8 +1,11 @@
 from __future__ import annotations
 
 import os
+from pathlib import Path
+import subprocess
+import sys
 import time
-from typing import Optional
+from typing import Any, Optional
 from urllib.parse import urlparse
 
 from PySide6.QtCore import Qt, Signal, QTimer
@@ -19,15 +22,155 @@ from PySide6.QtWidgets import (
     QVBoxLayout,
     QWidget,
 )
+import requests
 
 from gui.app_config import get_app_config
 from gui.components import PrimaryButton, SecondaryButton
 from gui.resource_path import resource_path
 from gui.screens.mining_screen import MiningScreen as LegacyMiningScreen
+from miner.research_competitions import CompetitionMode, list_builtin_research_competitions
 
 
 POOL_GRID_COLUMNS = 2
 POOL_GRID_SPACING = 24
+RESEARCH_POOL_MODE = "research_pool"
+
+
+def _humanize_competition_mode(mode: str | None) -> str:
+    raw = str(mode or "").strip().lower()
+    if raw == CompetitionMode.centerless.value:
+        return "Centerless"
+    if raw == CompetitionMode.peer_evaluation.value:
+        return "Peer Evaluation"
+    if raw == CompetitionMode.standard.value:
+        return "Standard"
+    return "Unknown"
+
+
+def _metric_label(metric_name: str | None, metric_direction: str | None) -> str:
+    name = str(metric_name or "").strip() or "metric"
+    direction = str(metric_direction or "").strip().lower()
+    if direction == "maximize":
+        return f"{name} (maximize)"
+    if direction == "minimize":
+        return f"{name} (minimize)"
+    return name
+
+
+def _research_runtime_settings() -> dict[str, str]:
+    cfg = get_app_config()
+    return {
+        "coordinator_url": (
+            os.getenv("BITSOTA_RESEARCH_COORDINATOR_URL")
+            or str(getattr(cfg, "research_coordinator_endpoint", "") or "")
+        ).strip(),
+        "llm_base_url": (
+            os.getenv("BITSOTA_RESEARCH_LLM_BASE_URL")
+            or str(getattr(cfg, "research_llm_base_url", "") or "")
+        ).strip(),
+        "llm_model": (
+            os.getenv("BITSOTA_RESEARCH_LLM_MODEL")
+            or str(getattr(cfg, "research_llm_model", "") or "")
+        ).strip(),
+        "llm_api_key": (
+            os.getenv("BITSOTA_RESEARCH_LLM_API_KEY")
+            or str(getattr(cfg, "research_llm_api_key", "") or "")
+        ).strip(),
+    }
+
+
+def _normalize_research_task_pool(
+    *,
+    task: dict[str, Any],
+    coordinator_url: str,
+    llm_model: str,
+) -> dict[str, Any]:
+    parsed = urlparse(coordinator_url) if coordinator_url else None
+    host = parsed.netloc or coordinator_url or "Not configured"
+    competition_mode = str(task.get("competition_mode") or CompetitionMode.standard.value)
+    metric_name = str(task.get("metric_name") or "").strip()
+    metric_direction = str(task.get("metric_direction") or "").strip()
+    return {
+        "id": f"research-task:{task.get('id')}",
+        "name": str(task.get("title") or task.get("slug") or "Research Task"),
+        "mode": RESEARCH_POOL_MODE,
+        "mode_label": "Research Agent Pool",
+        "endpoint": host,
+        "backend": "OpenAI-compatible agent",
+        "workers": 1,
+        "recommended": False,
+        "is_research_pool": True,
+        "task_id": str(task.get("id") or ""),
+        "task_slug": str(task.get("slug") or ""),
+        "competition_mode": competition_mode,
+        "competition_mode_label": _humanize_competition_mode(competition_mode),
+        "metric_label": _metric_label(metric_name, metric_direction),
+        "agent_model": llm_model or "Not configured",
+        "card_rows": [
+            ("Mode", "Research Agent Pool"),
+            ("Rules", _humanize_competition_mode(competition_mode)),
+            ("Metric", _metric_label(metric_name, metric_direction)),
+            ("Coordinator", host),
+        ],
+    }
+
+
+def _fallback_research_pools(*, coordinator_url: str, llm_model: str) -> list[dict[str, Any]]:
+    parsed = urlparse(coordinator_url) if coordinator_url else None
+    host = parsed.netloc or coordinator_url or "Not configured"
+    cards: list[dict[str, Any]] = []
+    for template in list_builtin_research_competitions():
+        cards.append(
+            {
+                "id": f"research-template:{template.slug}",
+                "name": template.title,
+                "mode": RESEARCH_POOL_MODE,
+                "mode_label": "Research Agent Pool",
+                "endpoint": host,
+                "backend": "OpenAI-compatible agent",
+                "workers": 1,
+                "recommended": False,
+                "is_research_pool": True,
+                "task_id": "",
+                "task_slug": template.slug,
+                "competition_mode": "",
+                "competition_mode_label": "From coordinator",
+                "metric_label": _metric_label(template.metric_name, template.metric_direction.value),
+                "agent_model": llm_model or "Not configured",
+                "card_rows": [
+                    ("Mode", "Research Agent Pool"),
+                    ("Rules", "From coordinator"),
+                    ("Metric", _metric_label(template.metric_name, template.metric_direction.value)),
+                    ("Coordinator", host),
+                ],
+            }
+        )
+    return cards
+
+
+def _configured_research_pools() -> list[dict[str, Any]]:
+    settings = _research_runtime_settings()
+    coordinator_url = settings["coordinator_url"]
+    llm_model = settings["llm_model"]
+    if not coordinator_url:
+        return _fallback_research_pools(coordinator_url=coordinator_url, llm_model=llm_model)
+
+    try:
+        response = requests.get(
+            f"{coordinator_url.rstrip('/')}/api/v1/tasks",
+            timeout=1.5,
+        )
+        response.raise_for_status()
+        payload = response.json() or []
+    except Exception:
+        return _fallback_research_pools(coordinator_url=coordinator_url, llm_model=llm_model)
+
+    cards = [
+        _normalize_research_task_pool(task=dict(task or {}), coordinator_url=coordinator_url, llm_model=llm_model)
+        for task in payload
+        if bool((task or {}).get("is_active", True))
+    ]
+    return cards or _fallback_research_pools(coordinator_url=coordinator_url, llm_model=llm_model)
 
 
 def _configured_pools() -> list[dict]:
@@ -39,7 +182,7 @@ def _configured_pools() -> list[dict]:
     backend_label = "C++" if backend in {"cpp", "cpp_baseline", "automl_zero_cpp"} else "Python"
     workers = max(1, int(getattr(cfg, "miner_workers", 1) or 1))
 
-    return [
+    classic = [
         {
             "id": "pool_lease",
             "name": "Lease Pool",
@@ -49,6 +192,12 @@ def _configured_pools() -> list[dict]:
             "backend": backend_label,
             "workers": workers,
             "recommended": True,
+            "card_rows": [
+                ("Mode", "Lease coordinator"),
+                ("Endpoint", host),
+                ("Backend", backend_label),
+                ("Workers", str(workers)),
+            ],
         },
         {
             "id": "pool_task",
@@ -59,8 +208,15 @@ def _configured_pools() -> list[dict]:
             "backend": backend_label,
             "workers": workers,
             "recommended": False,
+            "card_rows": [
+                ("Mode", "Task batches"),
+                ("Endpoint", host),
+                ("Backend", backend_label),
+                ("Workers", str(workers)),
+            ],
         },
     ]
+    return classic + _configured_research_pools()
 
 
 class PoolCard(QWidget):
@@ -91,11 +247,10 @@ class PoolCard(QWidget):
 
         rows = QVBoxLayout()
         rows.setSpacing(12)
-        _add_stat_row(rows, "Mode", self.pool_data.get("mode_label", "-"))
-        rows.addWidget(_create_divider())
-        _add_stat_row(rows, "Endpoint", self.pool_data.get("endpoint", "-"))
-        _add_stat_row(rows, "Backend", self.pool_data.get("backend", "-"))
-        _add_stat_row(rows, "Workers", str(self.pool_data.get("workers", "-")))
+        for idx, (label, value) in enumerate(self.pool_data.get("card_rows") or []):
+            _add_stat_row(rows, str(label), str(value))
+            if idx == 0:
+                rows.addWidget(_create_divider())
         layout.addLayout(rows)
         layout.addStretch()
 
@@ -127,6 +282,10 @@ class PoolDetailScreen(LegacyMiningScreen):
         super().__init__(main_window=main_window, parent=parent)
         self._runtime_timer = QTimer(self)
         self._runtime_timer.timeout.connect(self._update_runtime)
+        self._research_log_timer = QTimer(self)
+        self._research_log_timer.timeout.connect(self._poll_research_process)
+        self._research_log_path: Optional[Path] = None
+        self._research_log_offset = 0
 
     def setup_ui(self):
         self.task_type_map = {
@@ -315,11 +474,18 @@ class PoolDetailScreen(LegacyMiningScreen):
     def _create_pool_status(self) -> QWidget:
         panel = _create_stats_panel("Pool Status")
         content = panel.layout().itemAt(1).layout()
-        self.global_sota_label = _add_stat_row(content, "SOTA", "-")
-        content.addWidget(_create_divider())
-        self.endpoint_label = _add_stat_row(content, "Endpoint", self.pool_data.get("endpoint", "-"))
-        self.backend_label = _add_stat_row(content, "Backend", self.pool_data.get("backend", "-"))
-        self.mode_label = _add_stat_row(content, "Mode", self.pool_data.get("mode_label", "-"))
+        if self._is_research_pool():
+            self.global_sota_label = _add_stat_row(content, "Metric", self.pool_data.get("metric_label", "-"))
+            content.addWidget(_create_divider())
+            self.endpoint_label = _add_stat_row(content, "Coordinator", self.pool_data.get("endpoint", "-"))
+            self.backend_label = _add_stat_row(content, "Agent Model", self.pool_data.get("agent_model", "Not configured"))
+            self.mode_label = _add_stat_row(content, "Rules", self.pool_data.get("competition_mode_label", "-"))
+        else:
+            self.global_sota_label = _add_stat_row(content, "SOTA", "-")
+            content.addWidget(_create_divider())
+            self.endpoint_label = _add_stat_row(content, "Endpoint", self.pool_data.get("endpoint", "-"))
+            self.backend_label = _add_stat_row(content, "Backend", self.pool_data.get("backend", "-"))
+            self.mode_label = _add_stat_row(content, "Mode", self.pool_data.get("mode_label", "-"))
         return panel
 
     def _create_logs_section(self) -> QWidget:
@@ -386,7 +552,156 @@ class PoolDetailScreen(LegacyMiningScreen):
             return
         self.switch_pool_requested.emit()
 
+    def _is_research_pool(self) -> bool:
+        return bool(self.pool_data.get("is_research_pool")) or str(self.pool_data.get("mode")) == RESEARCH_POOL_MODE
+
+    def _research_log_dir(self) -> Path:
+        root = Path.cwd() / ".bitsota_agent_logs"
+        root.mkdir(parents=True, exist_ok=True)
+        return root
+
+    def _start_research_pool_mining(self) -> None:
+        if self.is_mining:
+            self._append_log("ERROR: Mining is already running.")
+            return
+        if not self.main_window:
+            self._append_log("ERROR: Main window reference not available.")
+            return
+        wallet = getattr(self.main_window, "wallet", None)
+        if wallet is None:
+            self._append_log("ERROR: No wallet loaded. Please load a wallet first.")
+            return
+
+        settings = _research_runtime_settings()
+        coordinator_url = settings["coordinator_url"]
+        llm_base_url = settings["llm_base_url"]
+        llm_model = settings["llm_model"]
+        if not coordinator_url:
+            self._append_log("ERROR: Research coordinator URL is missing. Set BITSOTA_RESEARCH_COORDINATOR_URL or gui config.")
+            return
+        if not llm_base_url:
+            self._append_log("ERROR: Research LLM base URL is missing. Set BITSOTA_RESEARCH_LLM_BASE_URL or gui config.")
+            return
+        if not llm_model:
+            self._append_log("ERROR: Research LLM model is missing. Set BITSOTA_RESEARCH_LLM_MODEL or gui config.")
+            return
+
+        cmd = [
+            sys.executable,
+            "-u",
+            "-m",
+            "neurons.research_agent_miner",
+            "loop",
+            "--coordinator-url",
+            coordinator_url,
+            "--llm-base-url",
+            llm_base_url,
+            "--llm-model",
+            llm_model,
+            "--participation-style",
+            "pool",
+            "--wallet-name",
+            str(getattr(wallet, "name", "default")),
+            "--wallet-hotkey",
+            str(getattr(wallet, "hotkey_str", "default")),
+            "--wallet-path",
+            str(getattr(wallet, "path", "~/.bittensor/wallets/")),
+            "--workspace-root",
+            str((Path.cwd() / ".bitsota_agent_workspace").resolve()),
+        ]
+        task_id = str(self.pool_data.get("task_id") or "").strip()
+        task_slug = str(self.pool_data.get("task_slug") or "").strip()
+        if task_id:
+            cmd.extend(["--task-id", task_id])
+        elif task_slug:
+            cmd.extend(["--task-slug", task_slug])
+        if settings["llm_api_key"]:
+            cmd.extend(["--llm-api-key", settings["llm_api_key"]])
+        if str(self.pool_data.get("competition_mode") or "") == CompetitionMode.peer_evaluation.value:
+            cmd.append("--allow-peer-evaluation")
+
+        log_name = str(self.pool_data.get("task_slug") or self.pool_data.get("id") or "research-pool")
+        log_path = self._research_log_dir() / f"{log_name}.log"
+        self._research_log_path = log_path
+        self._research_log_offset = 0
+        log_path.write_text("", encoding="utf-8")
+
+        env = os.environ.copy()
+        env["PYTHONUNBUFFERED"] = "1"
+        log_handle = log_path.open("a", encoding="utf-8")
+        try:
+            self.miner_process = subprocess.Popen(
+                cmd,
+                stdout=log_handle,
+                stderr=subprocess.STDOUT,
+                env=env,
+                start_new_session=True,
+            )
+        finally:
+            log_handle.close()
+
+        self.is_mining = True
+        self._runtime_started_at = time.time()
+        self._update_runtime()
+        self._runtime_timer.start(1000)
+        self._research_log_timer.start(1000)
+
+        self.start_mining_btn.update_icon("gui/images/stop.svg")
+        self.start_mining_btn.update_text("Stop Mining")
+        self.start_mining_btn.setObjectName("stop_mining_button")
+        self.start_mining_btn.setStyleSheet("")
+        self.start_mining_btn.style().unpolish(self.start_mining_btn)
+        self.start_mining_btn.style().polish(self.start_mining_btn)
+
+        self.update_connection_status(True)
+        self.wallet_status_label.setText(str(getattr(wallet, "name", "Connected")))
+        self._append_log(f"[research-pool] starting {self.pool_data.get('name')} via coordinator {coordinator_url}")
+        try:
+            self._append_log(f"[research-pool] agent miner started (pid={int(self.miner_process.pid)}).")
+        except Exception:
+            pass
+
+    def _poll_research_process(self) -> None:
+        if not self._research_log_path:
+            return
+        try:
+            with self._research_log_path.open("r", encoding="utf-8", errors="replace") as handle:
+                handle.seek(self._research_log_offset)
+                chunk = handle.read()
+                self._research_log_offset = handle.tell()
+        except Exception:
+            chunk = ""
+
+        for raw_line in str(chunk or "").splitlines():
+            line = raw_line.strip()
+            if not line:
+                continue
+            self._append_log(line)
+            if line.startswith("[research-agent] submitted"):
+                self._update_stats(
+                    {
+                        "tasks_completed": int(getattr(self, "tasks_completed", 0) or 0) + 1,
+                        "successful_submissions": int(getattr(self, "successful_submissions", 0) or 0) + 1,
+                        "best_score": getattr(self, "best_score", None),
+                    }
+                )
+            elif line.startswith("[research-agent] peer-evaluated"):
+                self._update_stats(
+                    {
+                        "tasks_completed": int(getattr(self, "tasks_completed", 0) or 0) + 1,
+                        "successful_submissions": int(getattr(self, "successful_submissions", 0) or 0),
+                        "best_score": getattr(self, "best_score", None),
+                    }
+                )
+
+        if self.miner_process is not None and self.miner_process.poll() is not None:
+            self._append_log("[research-pool] agent miner exited.")
+            self._on_mining_finished()
+
     def _start_mining(self):
+        if self._is_research_pool():
+            self._start_research_pool_mining()
+            return
         was_mining = self.is_mining
         super()._start_mining()
         if not was_mining and self.is_mining:
@@ -395,10 +710,12 @@ class PoolDetailScreen(LegacyMiningScreen):
             self._runtime_timer.start(1000)
 
     def _stop_mining(self):
+        self._research_log_timer.stop()
         super()._stop_mining()
         self._runtime_timer.stop()
 
     def _on_mining_finished(self):
+        self._research_log_timer.stop()
         super()._on_mining_finished()
         self._runtime_timer.stop()
 
