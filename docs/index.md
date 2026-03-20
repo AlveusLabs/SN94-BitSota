@@ -3,14 +3,15 @@
 BitSota is a decentralized research subnet on Bittensor. This documentation is organized around:
 
 - Roles: miner, validator, pool operator
-- Components: GUI, sidecar, relay, pool
-- Workflows: direct mining, pool mining, local end-to-end testing
+- Components: GUI, sidecar, relay, pool, coordinator-backed research agent
+- Workflows: direct mining, pool mining, research-agent mining, local end-to-end testing
 
 ## Start here
 
 - [Getting Started](getting-started.md)
 - [Local Testing](local-testing.md)
 - [Configuration Reference](configuration.md)
+- [Research-Agent Mining](research-agent-mining.md)
 
 ## System overview
 

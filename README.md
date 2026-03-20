@@ -50,6 +50,16 @@ Validators evaluate algorithm submissions, verify performance claims, and vote o
 
 **[→ Validation Guide](docs/validation.md)**
 
+### Experimental Research-Agent Mining
+
+SN94 now also includes an additive, coordinator-backed research miner that uses an OpenAI-compatible chat completions API.
+
+This path is separate from the existing AutoML-Zero style evolutionary contest and does not replace the current direct mining, pool mining, GUI, or validator flows.
+
+The new path supports coordinator-backed research competitions with `direct` and `pool` participation styles across `standard`, `centerless`, and `peer_evaluation` task modes.
+
+See [Research-Agent Mining](docs/research-agent-mining.md).
+
 ## Architecture
 
 ### Direct Mining Flow
@@ -129,6 +139,7 @@ python neurons/validator_node.py
 - **[Mining Guide](docs/mining.md)** - Direct mining setup and strategies
 - **[Pool Mining Guide](docs/pool-mining.md)** - Collaborative mining details
 - **[Validation Guide](docs/validation.md)** - Running a validator node
+- **[Research-Agent Mining](docs/research-agent-mining.md)** - Experimental coordinator-backed miner with OpenAI-compatible agents
 - **[Local Testing Guide](docs/local-testing.md)** - Run GUI + local relay + local validator
 - **[Rewards Guide](docs/rewards.md)** - Understanding incentive mechanisms
 
