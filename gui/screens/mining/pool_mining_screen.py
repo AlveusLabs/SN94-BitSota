@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
+import shlex
 import subprocess
 import sys
 import time
@@ -23,6 +24,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 import requests
+from substrateinterface import Keypair
 
 from gui.app_config import get_app_config
 from gui.components import PrimaryButton, SecondaryButton
@@ -34,6 +36,7 @@ from miner.research_competitions import CompetitionMode, list_builtin_research_c
 POOL_GRID_COLUMNS = 2
 POOL_GRID_SPACING = 24
 RESEARCH_POOL_MODE = "research_pool"
+DEFAULT_RESEARCH_TEST_TASK_SLUG = "cifar10-matrix-decomposition-frontier"
 
 
 def _humanize_competition_mode(mode: str | None) -> str:
@@ -64,6 +67,15 @@ def _research_runtime_settings() -> dict[str, str]:
             os.getenv("BITSOTA_RESEARCH_COORDINATOR_URL")
             or str(getattr(cfg, "research_coordinator_endpoint", "") or "")
         ).strip(),
+        "agent_command": (
+            os.getenv("BITSOTA_RESEARCH_AGENT_COMMAND")
+            or str(getattr(cfg, "research_agent_command", "") or "")
+        ).strip(),
+        "agent_mode": (
+            os.getenv("BITSOTA_RESEARCH_AGENT_MODE")
+            or str(getattr(cfg, "research_agent_mode", "") or "")
+        ).strip()
+        or "gui_managed",
         "llm_base_url": (
             os.getenv("BITSOTA_RESEARCH_LLM_BASE_URL")
             or str(getattr(cfg, "research_llm_base_url", "") or "")
@@ -77,6 +89,91 @@ def _research_runtime_settings() -> dict[str, str]:
             or str(getattr(cfg, "research_llm_api_key", "") or "")
         ).strip(),
     }
+
+
+def _optional_env_bool(name: str) -> Optional[bool]:
+    raw = os.getenv(name, "").strip().lower()
+    if not raw:
+        return None
+    if raw in {"1", "true", "yes", "on"}:
+        return True
+    if raw in {"0", "false", "no", "off"}:
+        return False
+    return None
+
+
+def _safe_positive_int(raw: Any, default: int) -> int:
+    try:
+        return max(1, int(raw))
+    except Exception:
+        return int(default)
+
+
+def _research_gui_test_settings() -> dict[str, Any]:
+    cfg = get_app_config()
+    enabled = bool(getattr(cfg, "test_mode", False)) and bool(getattr(cfg, "research_test_autostart", False))
+    env_enabled = _optional_env_bool("BITSOTA_RESEARCH_GUI_AUTOSTART")
+    if env_enabled is not None:
+        enabled = env_enabled
+
+    auto_restart = bool(getattr(cfg, "research_test_auto_restart", True))
+    env_auto_restart = _optional_env_bool("BITSOTA_RESEARCH_GUI_AUTO_RESTART")
+    if env_auto_restart is not None:
+        auto_restart = env_auto_restart
+
+    task_slug = (
+        os.getenv("BITSOTA_RESEARCH_GUI_TASK_SLUG")
+        or str(getattr(cfg, "research_test_task_slug", "") or "")
+    ).strip() or DEFAULT_RESEARCH_TEST_TASK_SLUG
+
+    restart_delay_seconds = _safe_positive_int(
+        os.getenv("BITSOTA_RESEARCH_GUI_RESTART_DELAY_SECONDS")
+        or getattr(cfg, "research_test_restart_delay_seconds", 5),
+        5,
+    )
+
+    return {
+        "enabled": bool(enabled),
+        "task_slug": str(task_slug),
+        "auto_restart": bool(auto_restart),
+        "restart_delay_seconds": int(restart_delay_seconds),
+    }
+
+
+def _ephemeral_hotkey_mnemonic() -> str:
+    return (
+        os.getenv("BITSOTA_RESEARCH_TEST_HOTKEY_MNEMONIC")
+        or os.getenv("BITSOTA_TEST_HOTKEY_MNEMONIC")
+        or ""
+    ).strip()
+
+
+def _ephemeral_hotkey_address(mnemonic: str) -> str:
+    seed = str(mnemonic or "").strip()
+    if not seed:
+        return ""
+    try:
+        return str(Keypair.create_from_mnemonic(seed).ss58_address or "")
+    except Exception:
+        return ""
+
+
+def _select_research_test_pool(pools: list[dict[str, Any]], task_slug: str) -> Optional[dict[str, Any]]:
+    wanted = str(task_slug or "").strip().lower()
+    if not wanted:
+        return None
+    preferred: Optional[dict[str, Any]] = None
+    fallback: Optional[dict[str, Any]] = None
+    for pool in pools:
+        if not bool(pool.get("is_research_pool")):
+            continue
+        if str(pool.get("task_slug") or "").strip().lower() != wanted:
+            continue
+        if str(pool.get("task_id") or "").strip():
+            preferred = dict(pool)
+            break
+        fallback = dict(pool)
+    return preferred or fallback
 
 
 def _normalize_research_task_pool(
@@ -151,7 +248,7 @@ def _fallback_research_pools(*, coordinator_url: str, llm_model: str) -> list[di
 def _configured_research_pools() -> list[dict[str, Any]]:
     settings = _research_runtime_settings()
     coordinator_url = settings["coordinator_url"]
-    llm_model = settings["llm_model"]
+    llm_model = settings["llm_model"] or (shlex.split(settings["agent_command"])[0] if settings["agent_command"] else "")
     if not coordinator_url:
         return _fallback_research_pools(coordinator_url=coordinator_url, llm_model=llm_model)
 
@@ -286,6 +383,17 @@ class PoolDetailScreen(LegacyMiningScreen):
         self._research_log_timer.timeout.connect(self._poll_research_process)
         self._research_log_path: Optional[Path] = None
         self._research_log_offset = 0
+        self._manual_stop_requested = False
+        self._auto_restart_enabled = False
+        self._auto_restart_delay_ms = 5000
+        self._last_research_exit_code: Optional[int] = None
+        self._auto_restart_timer = QTimer(self)
+        self._auto_restart_timer.setSingleShot(True)
+        self._auto_restart_timer.timeout.connect(self._auto_restart_research_mining)
+
+    def configure_research_test(self, *, auto_restart: bool, restart_delay_seconds: int) -> None:
+        self._auto_restart_enabled = bool(auto_restart)
+        self._auto_restart_delay_ms = max(1000, int(restart_delay_seconds) * 1000)
 
     def setup_ui(self):
         self.task_type_map = {
@@ -568,21 +676,25 @@ class PoolDetailScreen(LegacyMiningScreen):
             self._append_log("ERROR: Main window reference not available.")
             return
         wallet = getattr(self.main_window, "wallet", None)
-        if wallet is None:
+        hotkey_mnemonic = _ephemeral_hotkey_mnemonic()
+        hotkey_address = _ephemeral_hotkey_address(hotkey_mnemonic)
+        if wallet is None and not hotkey_mnemonic:
             self._append_log("ERROR: No wallet loaded. Please load a wallet first.")
             return
 
         settings = _research_runtime_settings()
         coordinator_url = settings["coordinator_url"]
+        agent_command = settings["agent_command"]
+        agent_mode = settings["agent_mode"] or "gui_managed"
         llm_base_url = settings["llm_base_url"]
         llm_model = settings["llm_model"]
         if not coordinator_url:
             self._append_log("ERROR: Research coordinator URL is missing. Set BITSOTA_RESEARCH_COORDINATOR_URL or gui config.")
             return
-        if not llm_base_url:
+        if not agent_command and not llm_base_url:
             self._append_log("ERROR: Research LLM base URL is missing. Set BITSOTA_RESEARCH_LLM_BASE_URL or gui config.")
             return
-        if not llm_model:
+        if not agent_command and not llm_model:
             self._append_log("ERROR: Research LLM model is missing. Set BITSOTA_RESEARCH_LLM_MODEL or gui config.")
             return
 
@@ -594,28 +706,51 @@ class PoolDetailScreen(LegacyMiningScreen):
             "loop",
             "--coordinator-url",
             coordinator_url,
-            "--llm-base-url",
-            llm_base_url,
-            "--llm-model",
-            llm_model,
             "--participation-style",
             "pool",
-            "--wallet-name",
-            str(getattr(wallet, "name", "default")),
-            "--wallet-hotkey",
-            str(getattr(wallet, "hotkey_str", "default")),
-            "--wallet-path",
-            str(getattr(wallet, "path", "~/.bittensor/wallets/")),
             "--workspace-root",
             str((Path.cwd() / ".bitsota_agent_workspace").resolve()),
+            "--interval-seconds",
+            "5",
         ]
+        if agent_command:
+            cmd.extend(
+                [
+                    "--agent-command",
+                    agent_command,
+                    "--agent-mode",
+                    agent_mode,
+                ]
+            )
+        else:
+            cmd.extend(
+                [
+                    "--llm-base-url",
+                    llm_base_url,
+                    "--llm-model",
+                    llm_model,
+                ]
+            )
+        if hotkey_mnemonic:
+            cmd.extend(["--hotkey-mnemonic", hotkey_mnemonic])
+        else:
+            cmd.extend(
+                [
+                    "--wallet-name",
+                    str(getattr(wallet, "name", "default")),
+                    "--wallet-hotkey",
+                    str(getattr(wallet, "hotkey_str", "default")),
+                    "--wallet-path",
+                    str(getattr(wallet, "path", "~/.bittensor/wallets/")),
+                ]
+            )
         task_id = str(self.pool_data.get("task_id") or "").strip()
         task_slug = str(self.pool_data.get("task_slug") or "").strip()
         if task_id:
             cmd.extend(["--task-id", task_id])
         elif task_slug:
             cmd.extend(["--task-slug", task_slug])
-        if settings["llm_api_key"]:
+        if settings["llm_api_key"] and not agent_command:
             cmd.extend(["--llm-api-key", settings["llm_api_key"]])
         if str(self.pool_data.get("competition_mode") or "") == CompetitionMode.peer_evaluation.value:
             cmd.append("--allow-peer-evaluation")
@@ -625,6 +760,9 @@ class PoolDetailScreen(LegacyMiningScreen):
         self._research_log_path = log_path
         self._research_log_offset = 0
         log_path.write_text("", encoding="utf-8")
+        self._manual_stop_requested = False
+        self._last_research_exit_code = None
+        self._auto_restart_timer.stop()
 
         env = os.environ.copy()
         env["PYTHONUNBUFFERED"] = "1"
@@ -654,7 +792,10 @@ class PoolDetailScreen(LegacyMiningScreen):
         self.start_mining_btn.style().polish(self.start_mining_btn)
 
         self.update_connection_status(True)
-        self.wallet_status_label.setText(str(getattr(wallet, "name", "Connected")))
+        wallet_label = str(getattr(wallet, "name", "Connected")) if wallet is not None else (
+            f"Test {hotkey_address[:6]}...{hotkey_address[-4:]}" if hotkey_address else "Test Hotkey"
+        )
+        self.wallet_status_label.setText(wallet_label)
         self._append_log(f"[research-pool] starting {self.pool_data.get('name')} via coordinator {coordinator_url}")
         try:
             self._append_log(f"[research-pool] agent miner started (pid={int(self.miner_process.pid)}).")
@@ -695,7 +836,8 @@ class PoolDetailScreen(LegacyMiningScreen):
                 )
 
         if self.miner_process is not None and self.miner_process.poll() is not None:
-            self._append_log("[research-pool] agent miner exited.")
+            self._last_research_exit_code = int(self.miner_process.poll() or 0)
+            self._append_log(f"[research-pool] agent miner exited (code={self._last_research_exit_code}).")
             self._on_mining_finished()
 
     def _start_mining(self):
@@ -710,14 +852,34 @@ class PoolDetailScreen(LegacyMiningScreen):
             self._runtime_timer.start(1000)
 
     def _stop_mining(self):
+        self._manual_stop_requested = True
+        self._auto_restart_timer.stop()
         self._research_log_timer.stop()
         super()._stop_mining()
         self._runtime_timer.stop()
 
     def _on_mining_finished(self):
+        should_restart = bool(
+            self._is_research_pool()
+            and self._auto_restart_enabled
+            and not self._manual_stop_requested
+        )
         self._research_log_timer.stop()
         super()._on_mining_finished()
         self._runtime_timer.stop()
+        if should_restart:
+            delay_s = max(1.0, self._auto_restart_delay_ms / 1000.0)
+            self._append_log(
+                f"[research-pool] scheduling auto-restart in {delay_s:.1f}s after exit code "
+                f"{self._last_research_exit_code if self._last_research_exit_code is not None else 'unknown'}."
+            )
+            self._auto_restart_timer.start(self._auto_restart_delay_ms)
+
+    def _auto_restart_research_mining(self) -> None:
+        if self.is_mining:
+            return
+        self._append_log("[research-pool] auto-restarting research miner.")
+        self._start_research_pool_mining()
 
     def _update_runtime(self):
         if self._runtime_started_at is None:
@@ -781,6 +943,7 @@ class PoolMiningScreen(QWidget):
         self.main_window = main_window
         self.pool_cards: list[PoolCard] = []
         self.pool_detail_view: Optional[PoolDetailScreen] = None
+        self._research_test_settings = _research_gui_test_settings()
         self._setup_ui()
 
     def _setup_ui(self):
@@ -816,8 +979,16 @@ class PoolMiningScreen(QWidget):
         scroll.setWidget(scroll_content)
         container_layout.addWidget(scroll)
 
-        self._load_pools(_configured_pools())
+        self.reload_pools()
         return container
+
+    def research_gui_test_enabled(self) -> bool:
+        return bool(self._research_test_settings.get("enabled"))
+
+    def reload_pools(self) -> list[dict[str, Any]]:
+        pools = _configured_pools()
+        self._load_pools(pools)
+        return pools
 
     def _load_pools(self, pools: list[dict]):
         for card in self.pool_cards:
@@ -845,6 +1016,40 @@ class PoolMiningScreen(QWidget):
         wallet = getattr(self.main_window, "wallet", None) if self.main_window else None
         if wallet is not None:
             self.pool_detail_view.update_wallet_status(getattr(wallet, "name", "") or "Connected")
+
+    def maybe_autostart_research_test(self) -> bool:
+        if not self.research_gui_test_enabled():
+            return False
+        target_slug = str(self._research_test_settings.get("task_slug") or "").strip()
+        if not target_slug:
+            return False
+
+        pools = self.reload_pools()
+        selected = _select_research_test_pool(pools, target_slug)
+        if selected is None:
+            return False
+
+        current_slug = (
+            str(self.pool_detail_view.pool_data.get("task_slug") or "").strip().lower()
+            if self.pool_detail_view is not None
+            else ""
+        )
+        if current_slug != target_slug.lower():
+            self._on_join_pool(selected)
+
+        if self.pool_detail_view is None:
+            return False
+
+        self.pool_detail_view.configure_research_test(
+            auto_restart=bool(self._research_test_settings.get("auto_restart")),
+            restart_delay_seconds=int(self._research_test_settings.get("restart_delay_seconds") or 5),
+        )
+        if not self.pool_detail_view.is_mining:
+            self.pool_detail_view._append_log(
+                f"[research-pool-test] auto-starting task slug={target_slug}."
+            )
+            self.pool_detail_view._start_mining()
+        return True
 
     def show_pool_list(self):
         self.stack.setCurrentWidget(self.pool_list_view)

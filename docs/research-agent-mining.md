@@ -32,15 +32,25 @@ The research-agent miner can:
 
 ## Built-in research competitions
 
-The new miner ships with 5 built-in research competition templates:
+The new miner ships with 6 built-in research competition templates:
 
 - `nanogpt-default`
 - `gpt2-145m-ternary-2x`
 - `gpt2-145m-compression-2x`
+- `cifar10-matrix-decomposition-frontier`
 - `eggroll-efficiency`
 - `bitnet-cpu-ternary-kernel`
 
 These are local templates for discovery and alignment. The actual tasks still come from the coordinator you point the miner at.
+
+Important clarification:
+
+- this repo currently ships the research-agent miner and coordinator client contract
+- it does **not** yet ship a production coordinator service
+- the GUI will only show the tasks returned by the coordinator you run
+- if a local mock or partial coordinator returns 1 active task, the GUI will show 1 task
+
+See [Research Coordinator TODO](research-coordinator-todo.md).
 
 ## Modes
 
@@ -57,14 +67,78 @@ Simple mapping:
 - `centerless` means miners also submit a new idea and may implement another miner's prior idea.
 - `peer_evaluation` means miners evaluate each other until minimum consensus is reached.
 
+## Production Direction
+
+The production direction is now:
+
+- keep the coordinator in `autoresearch-bittensor` as the source of truth
+- keep `current-sn-2` as a thin launcher/orchestrator
+- prefer external agent CLIs such as Codex CLI, Claude Code CLI, or Hermes
+- keep the older built-in OpenAI-compatible planner path only as a fallback
+
+In other words, this repo should launch an agent against a checked-out workspace and coordinator onboarding, not grow a second custom research harness.
+
+## Modes
+
+There are 2 distinct launch modes for external agents:
+
+- `INTRO_GUI.md`: GUI-managed mode
+- `INTRO.md`: autonomous mode
+
+Both are generated from the same coordinator task plus `onboard.md`.
+
+`INTRO_GUI.md` means:
+
+- the launcher claims the task or work item
+- the launcher owns the hotkey and coordinator submission
+- the agent edits files and writes `submission.json`
+- the launcher computes `git diff` and submits
+
+`INTRO.md` means:
+
+- the launcher still prepares the workspace and claim context
+- the agent is allowed to submit directly if wallet access is available
+- the agent can use the local helper command `bitsota-research-agent submit-workspace`
+
 ## Requirements
 
 - local Bittensor hotkey or a test mnemonic
 - coordinator API URL
-- OpenAI-compatible chat completions URL
-- model name
+- either:
+  - an external agent CLI command
+  - or the older OpenAI-compatible chat completions URL plus model name
 
-The chat endpoint should support an OpenAI-style `POST /v1/chat/completions` request.
+If you use the older planner path, the chat endpoint should support an OpenAI-style `POST /v1/chat/completions` request.
+
+## Workspace Contract
+
+The launcher creates a workspace with:
+
+- `repo/`: cloned task repository checkout
+- `onboard.md`: coordinator onboarding copy
+- `claim_context.json`: task, work item, and claim metadata
+- `INTRO.md` or `INTRO_GUI.md`
+- `submission.json`: written by the agent
+- `submission_result.json`: optional coordinator response written by `submit-workspace`
+
+The agent should modify files inside `repo/` and write `submission.json` in the workspace root.
+
+Minimal `submission.json` shape:
+
+```json
+{
+  "summary": "Short explanation of the change and result.",
+  "claimed_metrics": {
+    "metric_name_here": 1.23
+  },
+  "proposed_idea": null,
+  "implemented_submission_id": null,
+  "artifact_uri": null,
+  "execution_log": null
+}
+```
+
+The patch is not written into `submission.json`. The launcher or helper computes it from `git diff`.
 
 ## CLI
 
@@ -87,7 +161,7 @@ bitsota-research-agent list-tasks \
   --coordinator-url http://127.0.0.1:8000
 ```
 
-Run one direct mining pass:
+Run one direct mining pass with the older built-in planner:
 
 ```bash
 bitsota-research-agent mine-once \
@@ -100,7 +174,7 @@ bitsota-research-agent mine-once \
   --wallet-hotkey default
 ```
 
-Run one shared-task pool pass:
+Run one shared-task pool pass with the older built-in planner:
 
 ```bash
 bitsota-research-agent mine-once \
@@ -125,7 +199,41 @@ bitsota-research-agent peer-evaluate-once \
   --wallet-hotkey default
 ```
 
-Run in a loop:
+Run one shared-task pass with an external agent CLI:
+
+```bash
+bitsota-research-agent mine-once \
+  --coordinator-url http://127.0.0.1:8000 \
+  --agent-command 'codex exec {intro_path_quoted}' \
+  --agent-mode gui_managed \
+  --task-slug nanogpt-default \
+  --participation-style pool \
+  --hotkey-mnemonic 'replace with test mnemonic'
+```
+
+Run in a loop with an external agent CLI:
+
+```bash
+bitsota-research-agent loop \
+  --coordinator-url http://127.0.0.1:8000 \
+  --agent-command 'codex exec {intro_path_quoted}' \
+  --agent-mode gui_managed \
+  --task-slug nanogpt-default \
+  --participation-style pool
+```
+
+Submit a claimed workspace directly:
+
+```bash
+bitsota-research-agent submit-workspace \
+  --coordinator-url http://127.0.0.1:8000 \
+  --claim-id CLAIM_ID \
+  --repo-dir /path/to/workspace/repo \
+  --submission-file /path/to/workspace/submission.json \
+  --hotkey-mnemonic 'replace with test mnemonic'
+```
+
+Run in a loop with the older built-in planner:
 
 ```bash
 bitsota-research-agent loop \

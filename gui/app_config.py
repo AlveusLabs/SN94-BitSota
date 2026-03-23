@@ -14,12 +14,17 @@ class AppConfig:
     update_manifest_url: str = "https://relay.bitsota.com/version.json"
     pool_endpoint: str = "https://api.bitsota.com"
     research_coordinator_endpoint: str = "http://127.0.0.1:8000"
+    research_agent_command: str = ""
+    research_agent_mode: str = "gui_managed"
     research_llm_base_url: str = "http://127.0.0.1:11434/v1"
     research_llm_model: str = ""
     research_llm_api_key: str = ""
+    research_test_task_slug: str = ""
     cifar10_dataset_url: str = "https://cifar10.fra1.digitaloceanspaces.com/CIFAR_10_small.arff.gz"
     test_mode: bool = False
     test_invite_code: str = "TESTTEST1"
+    research_test_autostart: bool = False
+    research_test_auto_restart: bool = True
     # Default task suite sizes aligned with `cpp/automl_zero/run_*.sh`:
     # - search_tasks.num_tasks (miner fitness evaluation): 10
     # - final_tasks.num_tasks (validator verification): 100
@@ -32,6 +37,7 @@ class AppConfig:
     miner_seed: Optional[int] = None
     miner_migration_generations: int = 0
     pool_lease_evolve_generations: int = 160
+    research_test_restart_delay_seconds: int = 5
 
 
 def is_frozen() -> bool:
@@ -67,9 +73,12 @@ def _apply_overrides(defaults: AppConfig, overrides: Dict[str, Any]) -> AppConfi
         "update_manifest_url",
         "pool_endpoint",
         "research_coordinator_endpoint",
+        "research_agent_command",
+        "research_agent_mode",
         "research_llm_base_url",
         "research_llm_model",
         "research_llm_api_key",
+        "research_test_task_slug",
         "cifar10_dataset_url",
         "test_invite_code",
         "problem_config_path",
@@ -85,6 +94,7 @@ def _apply_overrides(defaults: AppConfig, overrides: Dict[str, Any]) -> AppConfi
         "miner_workers",
         "miner_migration_generations",
         "pool_lease_evolve_generations",
+        "research_test_restart_delay_seconds",
     ):
         raw = overrides.get(key)
         if raw is None:
@@ -120,8 +130,23 @@ def _apply_overrides(defaults: AppConfig, overrides: Dict[str, Any]) -> AppConfi
                 seed_value = None
         if seed_value is not None:
             cleaned["miner_seed"] = int(seed_value)
-    if "test_mode" in overrides:
-        cleaned["test_mode"] = bool(overrides["test_mode"])
+    def _coerce_bool(raw: Any) -> Optional[bool]:
+        if isinstance(raw, bool):
+            return raw
+        if isinstance(raw, str):
+            normalized = raw.strip().lower()
+            if normalized in {"1", "true", "yes", "on"}:
+                return True
+            if normalized in {"0", "false", "no", "off"}:
+                return False
+        return None
+
+    for key in ("test_mode", "research_test_autostart", "research_test_auto_restart"):
+        if key not in overrides:
+            continue
+        value = _coerce_bool(overrides.get(key))
+        if value is not None:
+            cleaned[key] = value
     return replace(defaults, **cleaned) if cleaned else defaults
 
 
