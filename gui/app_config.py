@@ -13,6 +13,10 @@ class AppConfig:
     relay_endpoint: str = "https://relay.bitsota.com"
     update_manifest_url: str = "https://relay.bitsota.com/version.json"
     pool_endpoint: str = "https://api.bitsota.com"
+    merkle_claim_endpoint: str = ""
+    onchain_ws_url: str = "wss://test.finney.opentensor.ai:443"
+    onchain_contract: str = ""
+    onchain_metadata_path: str = ""
     research_coordinator_endpoint: str = "http://127.0.0.1:8000"
     research_agent_command: str = ""
     research_agent_mode: str = "gui_managed"
@@ -72,6 +76,10 @@ def _apply_overrides(defaults: AppConfig, overrides: Dict[str, Any]) -> AppConfi
         "relay_endpoint",
         "update_manifest_url",
         "pool_endpoint",
+        "merkle_claim_endpoint",
+        "onchain_ws_url",
+        "onchain_contract",
+        "onchain_metadata_path",
         "research_coordinator_endpoint",
         "research_agent_command",
         "research_agent_mode",

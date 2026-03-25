@@ -15,7 +15,7 @@ from bittensor_network.wallet import Wallet
 from miner.client import BittensorDirectClient
 from gui.theme import BitSOTATheme
 from gui.screens import StartScreen, WalletScreen, MiningScreen, ProfileScreen
-from gui.components import Sidebar, UserGuideModal, InviteCodeModal, ColdkeyAddressModal, ComingSoonModal, UpdateAvailableModal
+from gui.components import Sidebar, UserGuideModal, InviteCodeModal, ColdkeyAddressModal, UpdateAvailableModal
 from gui.resource_path import resource_path
 from gui.update_checker import UpdateChecker
 from gui.app_config import get_app_config
@@ -85,7 +85,7 @@ class MiningWindow(QMainWindow):
         self.wallet_screen.wallet_loaded.connect(self._on_wallet_loaded)
         self.wallet_screen.hotkey_imported.connect(self._on_hotkey_imported)
         self.mining_screen = MiningScreen(main_window=self)
-        self.profile_screen = ProfileScreen()
+        self.profile_screen = ProfileScreen(main_window=self)
         self.screen_stack.addWidget(self.wallet_screen)
         self.screen_stack.addWidget(self.mining_screen)
         self.screen_stack.addWidget(self.profile_screen)
@@ -117,13 +117,9 @@ class MiningWindow(QMainWindow):
         elif tab_id == "mining":
             self.screen_stack.setCurrentWidget(self.mining_screen)
         elif tab_id == "profile":
-            modal = ComingSoonModal(
-                "Profile Screen",
-                "The Profile screen is coming soon! This screen will show your mining history, rewards, and balances from both Direct Mining and Pool Mining. You'll be able to view detailed statistics and claim your rewards.",
-                parent=self
-            )
-            modal.exec()
-            self.sidebar.set_active_tab("mining")
+            self.screen_stack.setCurrentWidget(self.profile_screen)
+            if hasattr(self.profile_screen, "refresh_data"):
+                self.profile_screen.refresh_data()
 
     def _on_connect_wallet(self):
         self.sidebar.set_active_tab("setup_wallet")
