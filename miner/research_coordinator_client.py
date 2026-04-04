@@ -202,6 +202,16 @@ class CoordinatorClient:
             body["execution_log"] = str(execution_log)
         return dict(self._request("POST", "/api/v1/submissions", body=body, sign=True).json() or {})
 
+    def cancel_claim(self, *, claim_id: str) -> dict[str, Any]:
+        return dict(
+            self._request(
+                "POST",
+                f"/api/v1/claims/{claim_id}/cancel",
+                sign=True,
+            ).json()
+            or {}
+        )
+
     def list_peer_evaluations(
         self,
         *,
