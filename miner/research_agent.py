@@ -216,6 +216,8 @@ def submit_claimed_workspace(
     repo_dir: Path,
     submission_file: Path,
     default_base_ref: str,
+    competition_mode: str | None = None,
+    idea_candidates: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
     payload = load_submission_sidecar(
         submission_file=Path(submission_file),
@@ -224,6 +226,17 @@ def submit_claimed_workspace(
     patch = compute_repo_patch(Path(repo_dir))
     summary = str(payload.get("summary") or "").strip()
     claimed_metrics = _coerce_claimed_metrics(payload.get("claimed_metrics"))
+    implemented_submission_id = (
+        str(payload.get("implemented_submission_id")).strip()
+        if payload.get("implemented_submission_id") is not None
+        else None
+    )
+    if (
+        str(competition_mode or CompetitionMode.standard.value) == CompetitionMode.centerless.value
+        and idea_candidates
+        and not implemented_submission_id
+    ):
+        implemented_submission_id = str(idea_candidates[0]["id"])
     return dict(
         coordinator.submit_submission(
             claim_id=str(claim_id),
@@ -236,11 +249,7 @@ def submit_claimed_workspace(
                 if payload.get("proposed_idea") is not None
                 else None
             ),
-            implemented_submission_id=(
-                str(payload.get("implemented_submission_id")).strip()
-                if payload.get("implemented_submission_id") is not None
-                else None
-            ),
+            implemented_submission_id=implemented_submission_id,
             artifact_uri=(
                 str(payload.get("artifact_uri")).strip()
                 if payload.get("artifact_uri") is not None
@@ -807,6 +816,8 @@ class ResearchAgentMiner:
                 repo_dir=Path(agent_result["repo_dir"]),
                 submission_file=Path(agent_result["submission_file"]),
                 default_base_ref=str(task.get("base_ref") or ""),
+                competition_mode=mode,
+                idea_candidates=idea_candidates,
             )
         except Exception as exc:
             self._cancel_claim_after_failure(claim_id=str(claim.get("id") or ""), reason=str(exc))

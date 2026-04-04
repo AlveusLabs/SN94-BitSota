@@ -199,14 +199,14 @@ def _build_patch(repo_dir: Path, rel_path: str, new_content: str) -> str:
     return patch
 
 
-def test_builtin_research_catalog_exposes_six_competitions() -> None:
+def test_builtin_research_catalog_exposes_builtin_competitions() -> None:
     templates = list_builtin_research_competitions()
-    assert len(templates) == 6
+    assert len(templates) == 5
     assert templates[0].slug == "nanogpt-default"
-    assert any(template.slug == "cifar10-matrix-decomposition-frontier" for template in templates)
-    cifar = next(template for template in templates if template.slug == "cifar10-matrix-decomposition-frontier")
-    assert cifar.metric_name == "cifar10_top1"
-    assert cifar.metric_direction.value == "maximize"
+    assert any(template.slug == "bitnet-cpu-ternary-kernel" for template in templates)
+    bitnet = next(template for template in templates if template.slug == "bitnet-cpu-ternary-kernel")
+    assert bitnet.metric_name == "tokens_per_second"
+    assert bitnet.metric_direction.value == "maximize"
 
 
 def test_build_agent_intro_markdown_separates_autonomous_and_gui_modes() -> None:
@@ -219,7 +219,7 @@ def test_build_agent_intro_markdown_separates_autonomous_and_gui_modes() -> None
         "metric_name": "val_bpb",
         "metric_direction": "minimize",
         "competition_mode": CompetitionMode.standard.value,
-        "benchmark_command": "python train.py",
+        "benchmark_command": "python3 train.py",
     }
     claim = {"id": "claim-1"}
     work_item = {"id": "work-1", "title": "Baseline", "instructions": "Edit train.py."}
@@ -602,7 +602,7 @@ def test_agent_mine_once_executes_patch_and_submits_observed_metric(tmp_path: Pa
                 "metric_name": "val_bpb",
                 "metric_direction": "minimize",
                 "competition_mode": CompetitionMode.standard.value,
-                "benchmark_command": "python train.py",
+                "benchmark_command": "python3 train.py",
                 "time_budget_seconds": 30,
             },
             "work_item": {
@@ -706,7 +706,7 @@ def test_agent_mine_once_can_run_external_gui_managed_agent(tmp_path: Path) -> N
                 "metric_name": "val_bpb",
                 "metric_direction": "minimize",
                 "competition_mode": CompetitionMode.standard.value,
-                "benchmark_command": "python train.py",
+                "benchmark_command": "python3 train.py",
                 "time_budget_seconds": 30,
             },
             "work_item": {
@@ -754,6 +754,83 @@ def test_agent_mine_once_can_run_external_gui_managed_agent(tmp_path: Path) -> N
     assert (workspace_dir / "submission.json").exists()
 
 
+def test_agent_mine_once_external_gui_managed_centerless_auto_fills_prior_idea_reference(
+    tmp_path: Path,
+) -> None:
+    repo_dir, base_ref = _init_git_repo(
+        tmp_path,
+        {
+            "README.md": "demo\n",
+            "train.py": "print('val_bpb: 2.5')\n",
+        },
+    )
+    coordinator = FakeCoordinator()
+    coordinator.selected = type(
+        "Selection",
+        (),
+        {
+            "task": {
+                "id": "task-centerless",
+                "slug": "nanogpt-default",
+                "title": "nanoGPT",
+                "base_ref": base_ref,
+                "repository": str(repo_dir),
+                "metric_name": "val_bpb",
+                "metric_direction": "minimize",
+                "competition_mode": CompetitionMode.centerless.value,
+                "benchmark_command": "python3 train.py",
+                "time_budget_seconds": 30,
+            },
+            "work_item": {
+                "id": "work-1",
+                "title": "Implement the prior idea",
+                "instructions": "Modify train.py and report val_bpb.",
+            },
+        },
+    )()
+    coordinator.task_submissions = [
+        {
+            "id": "prior-idea-1",
+            "miner_hotkey": "another-miner",
+            "status": "accepted",
+            "summary": "Earlier idea",
+            "proposed_idea": "Try the lower depth first.",
+        }
+    ]
+    coordinator.onboard = "# onboard\nEdit train.py and report val_bpb.\n"
+    runner = (
+        "import json, os, pathlib\n"
+        "workspace = pathlib.Path(os.environ['BITSOTA_AGENT_WORKSPACE'])\n"
+        "repo = pathlib.Path(os.environ['BITSOTA_AGENT_REPO_DIR'])\n"
+        "(repo / 'train.py').write_text(\"print('val_bpb: 1.01')\\n\", encoding='utf-8')\n"
+        "(workspace / 'submission.json').write_text(json.dumps({"
+        "\"summary\": \"Centerless external agent submission.\","
+        "\"claimed_metrics\": {\"val_bpb\": 1.01},"
+        "\"proposed_idea\": \"Try 0.99 next.\""
+        "}), encoding='utf-8')\n"
+    )
+    command = f"{shlex.quote(sys.executable)} -c {shlex.quote(runner)}"
+    agent = ResearchAgentMiner(
+        coordinator=coordinator,  # type: ignore[arg-type]
+        llm=None,  # type: ignore[arg-type]
+        config=AgentMinerConfig(
+            participation_style=ParticipationStyle.pool,
+            workspace_root=tmp_path / "workspace",
+            execution_enabled=False,
+            external_agent_command=command,
+            external_agent_mode="gui_managed",
+        ),
+    )
+
+    result = agent.mine_once(participation_style=ParticipationStyle.pool)
+
+    submission = coordinator.submissions[0]
+    assert submission["claim_id"] == "claim-work-1"
+    assert submission["implemented_submission_id"] == "prior-idea-1"
+    assert submission["proposed_idea"] == "Try 0.99 next."
+    assert result["submission"]["implemented_submission_id"] == "prior-idea-1"
+
+
 def test_agent_mine_once_cancels_claim_after_local_execution_failure(tmp_path: Path) -> None:
     repo_dir, base_ref = _init_git_repo(
         tmp_path,
@@ -776,7 +853,7 @@ def test_agent_mine_once_cancels_claim_after_local_execution_failure(tmp_path: P
                 "metric_name": "val_bpb",
                 "metric_direction": "minimize",
                 "competition_mode": CompetitionMode.standard.value,
-                "benchmark_command": "python train.py",
+                "benchmark_command": "python3 train.py",
                 "time_budget_seconds": 30,
             },
             "work_item": {
