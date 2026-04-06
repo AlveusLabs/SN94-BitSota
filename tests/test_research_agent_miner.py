@@ -639,7 +639,12 @@ def test_agent_mine_once_executes_patch_and_submits_observed_metric(tmp_path: Pa
     result = agent.mine_once(participation_style=ParticipationStyle.pool)
 
     submission = coordinator.submissions[0]
+    expected_base_commit = (
+        subprocess.run(["git", "rev-parse", "HEAD"], cwd=repo_dir, check=True, capture_output=True, text=True)
+        .stdout.strip()
+    )
     assert submission["claim_id"] == "claim-work-1"
+    assert submission["base_ref"] == expected_base_commit
     assert submission["claimed_metrics"]["val_bpb"] == 1.23
     assert "Observed locally: val_bpb=1.23." in submission["summary"]
     assert "benchmark_exit=0" in submission["execution_log"]
@@ -676,9 +681,14 @@ def test_submit_claimed_workspace_uses_submission_json_and_git_diff(tmp_path: Pa
         submission_file=submission_file,
         default_base_ref=base_ref,
     )
+    head_commit = (
+        subprocess.run(["git", "rev-parse", "HEAD"], cwd=repo_dir, check=True, capture_output=True, text=True)
+        .stdout.strip()
+    )
 
     assert result["id"] == "submission-1"
     assert coordinator.submissions[0]["claim_id"] == "claim-external-1"
+    assert coordinator.submissions[0]["base_ref"] == head_commit
     assert coordinator.submissions[0]["summary"] == "External agent changed the training script."
     assert coordinator.submissions[0]["claimed_metrics"]["val_bpb"] == 1.11
     assert coordinator.submissions[0]["patch"].startswith("diff --git a/train.py b/train.py")

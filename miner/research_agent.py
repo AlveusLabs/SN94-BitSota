@@ -209,6 +209,22 @@ def compute_repo_patch(repo_dir: Path) -> str:
     return patch
 
 
+def resolve_repo_head_commit(repo_dir: Path) -> str:
+    result = subprocess.run(
+        ["git", "rev-parse", "HEAD"],
+        cwd=str(repo_dir),
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    if result.returncode != 0:
+        raise RuntimeError(f"git rev-parse HEAD failed with exit={result.returncode}: {result.stderr}")
+    commit_sha = str(result.stdout or "").strip()
+    if not re.fullmatch(r"[0-9a-fA-F]{40}", commit_sha):
+        raise RuntimeError("repo checkout HEAD did not resolve to a full commit SHA")
+    return commit_sha
+
+
 def submit_claimed_workspace(
     *,
     coordinator: Any,
@@ -223,6 +239,7 @@ def submit_claimed_workspace(
         submission_file=Path(submission_file),
         metric_name="",
     )
+    pinned_base_ref = resolve_repo_head_commit(Path(repo_dir))
     patch = compute_repo_patch(Path(repo_dir))
     summary = str(payload.get("summary") or "").strip()
     claimed_metrics = _coerce_claimed_metrics(payload.get("claimed_metrics"))
@@ -240,7 +257,7 @@ def submit_claimed_workspace(
     return dict(
         coordinator.submit_submission(
             claim_id=str(claim_id),
-            base_ref=str(payload.get("base_ref") or default_base_ref or "").strip(),
+            base_ref=pinned_base_ref,
             patch=patch,
             summary=summary,
             claimed_metrics=claimed_metrics,
@@ -289,6 +306,7 @@ class LocalExecutionResult:
     execution_log: str
     artifact_dir: Path
     benchmark_output: str
+    base_commit_sha: str | None = None
 
 
 class LocalExecutionError(RuntimeError):
@@ -642,7 +660,13 @@ class ResearchAgentMiner:
             )
             submission = self.coordinator.submit_submission(
                 claim_id=str(claim["id"]),
-                base_ref=str(current_plan.get("base_ref") or task.get("base_ref") or ""),
+                base_ref=str(
+                    (
+                        execution_result.base_commit_sha
+                        if execution_result is not None and execution_result.base_commit_sha
+                        else current_plan.get("base_ref") or task.get("base_ref") or ""
+                    )
+                ),
                 patch=str(current_plan.get("patch") or ""),
                 summary=summary,
                 claimed_metrics=claimed_metrics,
@@ -1111,6 +1135,9 @@ class ResearchAgentMiner:
             metadata["checkout_exit"] = checkout_result.returncode
             if checkout_result.returncode != 0:
                 _raise_execution_error(f"repository checkout failed with exit={checkout_result.returncode}")
+            base_commit_sha = resolve_repo_head_commit(repo_dir)
+            metadata["base_commit_sha"] = base_commit_sha
+            log_lines.append(f"base_commit_sha={base_commit_sha}")
 
             apply_result = self._run_local_command(
                 ["git", "apply", "-"],
@@ -1172,6 +1199,7 @@ class ResearchAgentMiner:
                 execution_log=execution_log,
                 artifact_dir=artifact_dir,
                 benchmark_output=combined_output,
+                base_commit_sha=str(metadata.get("base_commit_sha") or "") or None,
             )
         except subprocess.TimeoutExpired as exc:
             log_lines.extend(
