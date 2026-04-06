@@ -728,11 +728,13 @@ def test_agent_mine_once_can_run_external_gui_managed_agent(tmp_path: Path) -> N
     )()
     coordinator.onboard = "# onboard\nEdit train.py and report val_bpb.\n"
     runner = (
-        "import json, os, pathlib\n"
+        "import json, os, pathlib, sys\n"
         "workspace = pathlib.Path(os.environ['BITSOTA_AGENT_WORKSPACE'])\n"
         "repo = pathlib.Path(os.environ['BITSOTA_AGENT_REPO_DIR'])\n"
         "intro = workspace / 'INTRO_GUI.md'\n"
         "assert 'Do not submit directly to the coordinator' in intro.read_text(encoding='utf-8')\n"
+        "print('external agent started')\n"
+        "print('external agent stderr', file=sys.stderr)\n"
         "(repo / 'train.py').write_text(\"print('val_bpb: 1.01')\\n\", encoding='utf-8')\n"
         "(workspace / 'submission.json').write_text(json.dumps({"
         "\"summary\": \"Codex-style external agent submission.\","
@@ -762,6 +764,8 @@ def test_agent_mine_once_can_run_external_gui_managed_agent(tmp_path: Path) -> N
     workspace_dir = Path(result["execution"]["workspace_dir"])
     assert (workspace_dir / "INTRO_GUI.md").exists()
     assert (workspace_dir / "submission.json").exists()
+    assert (workspace_dir / "agent.stdout.txt").read_text(encoding="utf-8") == "external agent started\n"
+    assert (workspace_dir / "agent.stderr.txt").read_text(encoding="utf-8") == "external agent stderr\n"
 
 
 def test_agent_mine_once_external_gui_managed_centerless_auto_fills_prior_idea_reference(

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import sys
 from dataclasses import dataclass, replace
 from pathlib import Path
@@ -48,9 +49,20 @@ def is_frozen() -> bool:
     return bool(getattr(sys, "frozen", False))
 
 
+def _strip_json_comments(raw_text: str) -> str:
+    cleaned_lines: list[str] = []
+    for line in str(raw_text or "").splitlines():
+        stripped = line.lstrip()
+        if stripped.startswith("//") or stripped.startswith("#"):
+            continue
+        cleaned_lines.append(line)
+    without_comments = "\n".join(cleaned_lines)
+    return re.sub(r",(\s*[}\]])", r"\1", without_comments)
+
+
 def _read_json_file(path: Path) -> Dict[str, Any]:
     try:
-        return json.loads(path.read_text())
+        return json.loads(_strip_json_comments(path.read_text(encoding="utf-8")))
     except Exception:
         return {}
 

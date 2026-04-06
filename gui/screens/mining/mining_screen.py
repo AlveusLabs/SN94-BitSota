@@ -1,5 +1,5 @@
 # PySide6 imports
-from PySide6.QtCore import Qt
+from PySide6.QtCore import Qt, QTimer
 from PySide6.QtWidgets import QWidget, QVBoxLayout, QLabel
 
 # Local application imports
@@ -32,7 +32,11 @@ class MiningScreen(QWidget):
     def __init__(self, main_window=None, parent=None):
         super().__init__(parent)
         self.main_window = main_window
+        self._research_auto_start_attempts = 0
+        self._research_auto_start_max_attempts = 30
         self.setup_ui()
+        if self.pool_content.research_gui_test_enabled():
+            QTimer.singleShot(1500, self._maybe_autostart_research_pool)
 
     # ========== UI Setup ==========
 
@@ -95,6 +99,8 @@ class MiningScreen(QWidget):
         self.direct_content.hide()
         self.pool_content.show()
         self.description.setText(POOL_MINING_DESCRIPTION)
+        if self.pool_content.research_gui_test_enabled():
+            QTimer.singleShot(0, self._maybe_autostart_research_pool)
 
     def _switch_to_direct(self):
         """Switch to direct mining mode."""
@@ -108,6 +114,8 @@ class MiningScreen(QWidget):
         """Update wallet status display on both sub-screens."""
         self.direct_content.update_wallet_status(wallet_name)
         self.pool_content.update_wallet_status(wallet_name)
+        if self.pool_content.research_gui_test_enabled():
+            self._maybe_autostart_research_pool()
 
     def update_connection_status(self, connected: bool):
         """Update connection and mining status indicators."""
@@ -120,3 +128,27 @@ class MiningScreen(QWidget):
     def _on_invite_code_verified(self):
         """Forward invite code verification to direct mining screen."""
         self.direct_content._on_invite_code_verified()
+
+    def _maybe_autostart_research_pool(self) -> None:
+        if not self.pool_content.research_gui_test_enabled():
+            return
+
+        wallet = getattr(self.main_window, "wallet", None) if self.main_window else None
+        if wallet is None:
+            print("[research-pool-gui] waiting for wallet before autostart")
+            self._research_auto_start_attempts += 1
+            if self._research_auto_start_attempts < self._research_auto_start_max_attempts:
+                QTimer.singleShot(1000, self._maybe_autostart_research_pool)
+            return
+
+        print(f"[research-pool-gui] attempting autostart for wallet {getattr(wallet, 'name', 'unknown')}")
+        self.mining_tab_switcher.set_active_tab("pool")
+        if self.pool_content.maybe_autostart_research_test():
+            print("[research-pool-gui] research pool autostart launched")
+            self._research_auto_start_attempts = 0
+            return
+
+        print("[research-pool-gui] no matching research pool task yet; will retry")
+        self._research_auto_start_attempts += 1
+        if self._research_auto_start_attempts < self._research_auto_start_max_attempts:
+            QTimer.singleShot(2000, self._maybe_autostart_research_pool)

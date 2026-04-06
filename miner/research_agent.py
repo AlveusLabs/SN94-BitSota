@@ -9,6 +9,7 @@ import shlex
 import shutil
 import subprocess
 import tempfile
+import time
 from typing import Any, Callable, Optional
 from urllib.parse import urlparse
 
@@ -958,15 +959,22 @@ class ResearchAgentMiner:
                 "BITSOTA_RESEARCH_COORDINATOR_URL": str(self.coordinator.base_url),
             }
         )
-        result = self._run_local_command(
+        stdout_path = workspace_dir / "agent.stdout.txt"
+        stderr_path = workspace_dir / "agent.stderr.txt"
+        self.log(
+            f"[research-agent] external agent logs stdout={stdout_path} stderr={stderr_path}"
+        )
+        result = self._run_logged_command(
             command,
             cwd=workspace_dir,
             timeout_seconds=max(60, int(task.get("time_budget_seconds") or 300)),
             shell=True,
             env=env,
+            stdout_path=stdout_path,
+            stderr_path=stderr_path,
+            heartbeat_label="external agent",
+            heartbeat_context=f"workspace={workspace_dir}",
         )
-        (workspace_dir / "agent.stdout.txt").write_text(str(result.stdout or ""), encoding="utf-8")
-        (workspace_dir / "agent.stderr.txt").write_text(str(result.stderr or ""), encoding="utf-8")
         if result.returncode != 0:
             raise RuntimeError(
                 f"external agent command failed with exit={result.returncode}: "
@@ -1245,6 +1253,60 @@ class ResearchAgentMiner:
             timeout=max(1, int(timeout_seconds)),
             input=input_text,
             env=env,
+        )
+
+    def _run_logged_command(
+        self,
+        command: list[str] | str,
+        *,
+        cwd: Path | None = None,
+        timeout_seconds: int,
+        shell: bool = False,
+        env: dict[str, str] | None = None,
+        stdout_path: Path,
+        stderr_path: Path,
+        heartbeat_label: str,
+        heartbeat_context: str = "",
+    ) -> subprocess.CompletedProcess[str]:
+        timeout_s = max(1, int(timeout_seconds))
+        heartbeat_s = 10.0
+        started_at = time.monotonic()
+        stdout_path.parent.mkdir(parents=True, exist_ok=True)
+        stderr_path.parent.mkdir(parents=True, exist_ok=True)
+        with stdout_path.open("w", encoding="utf-8", errors="replace") as stdout_handle, stderr_path.open(
+            "w", encoding="utf-8", errors="replace"
+        ) as stderr_handle:
+            process = subprocess.Popen(
+                command,
+                cwd=str(cwd) if cwd is not None else None,
+                shell=shell,
+                stdin=subprocess.DEVNULL,
+                stdout=stdout_handle,
+                stderr=stderr_handle,
+                text=True,
+                env=env,
+            )
+            while True:
+                elapsed = time.monotonic() - started_at
+                remaining = timeout_s - elapsed
+                if remaining <= 0:
+                    process.kill()
+                    process.wait()
+                    raise subprocess.TimeoutExpired(command, timeout_s)
+                try:
+                    process.wait(timeout=min(heartbeat_s, remaining))
+                    break
+                except subprocess.TimeoutExpired:
+                    suffix = f" {heartbeat_context.strip()}" if heartbeat_context.strip() else ""
+                    self.log(
+                        f"[research-agent] {heartbeat_label} still running elapsed={int(time.monotonic() - started_at)}s{suffix}"
+                    )
+
+        return subprocess.CompletedProcess(
+            args=command,
+            returncode=int(process.returncode or 0),
+            stdout=stdout_path.read_text(encoding="utf-8", errors="replace"),
+            stderr=stderr_path.read_text(encoding="utf-8", errors="replace"),
         )
 
     @staticmethod

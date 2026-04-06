@@ -114,6 +114,19 @@ class CoordinatorClient:
             params["status"] = str(status)
         return list(self._request("GET", "/api/v1/work-items", params=params).json() or [])
 
+    def list_claims(
+        self,
+        *,
+        task_id: str | None = None,
+        status: str | None = None,
+    ) -> list[dict[str, Any]]:
+        params: dict[str, Any] = {}
+        if task_id:
+            params["task_id"] = str(task_id)
+        if status:
+            params["status"] = str(status)
+        return list(self._request("GET", "/api/v1/claims", params=params).json() or [])
+
     def get_onboard_markdown(self, task_id: str) -> str:
         return str(self._request("GET", f"/api/v1/tasks/{task_id}/onboard.md").text or "")
 
@@ -167,6 +180,16 @@ class CoordinatorClient:
                 "POST",
                 f"/api/v1/work-items/{work_item_id}/claim",
                 body=body,
+                sign=True,
+            ).json()
+            or {}
+        )
+
+    def cancel_claim(self, *, claim_id: str) -> dict[str, Any]:
+        return dict(
+            self._request(
+                "POST",
+                f"/api/v1/claims/{claim_id}/cancel",
                 sign=True,
             ).json()
             or {}
@@ -276,6 +299,22 @@ class CoordinatorClient:
         task = dict(matches[0])
         if str(participation_style) != "pool":
             return CoordinatorSelection(task=task)
+        claimed_items = self.list_work_items(task_id=str(task.get("id")), status="claimed")
+        if claimed_items:
+            active_claims = self.list_claims(task_id=str(task.get("id")), status="active")
+            active_claims_by_id = {str(row.get("id")): dict(row) for row in active_claims}
+            resumable_items = [
+                dict(row)
+                for row in claimed_items
+                if str(active_claims_by_id.get(str(row.get("claim_id")) or "", {}).get("miner_hotkey") or "")
+                == self.hotkey
+            ]
+            if resumable_items:
+                ordered = sorted(
+                    resumable_items,
+                    key=lambda row: (-int(row.get("priority", 0) or 0), str(row.get("created_at", ""))),
+                )
+                return CoordinatorSelection(task=task, work_item=ordered[0])
         work_items = self.list_work_items(task_id=str(task.get("id")), status="open")
         if not work_items:
             raise CoordinatorApiError("no open work items available for the selected task")
