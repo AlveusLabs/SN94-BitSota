@@ -176,6 +176,59 @@ def _select_research_test_pool(pools: list[dict[str, Any]], task_slug: str) -> O
     return preferred or fallback
 
 
+def _fetch_research_tasks(*, coordinator_url: str, timeout_s: float = 1.5) -> list[dict[str, Any]]:
+    response = requests.get(
+        f"{coordinator_url.rstrip('/')}/api/v1/tasks",
+        timeout=timeout_s,
+    )
+    response.raise_for_status()
+    payload = response.json() or []
+    return [dict(task or {}) for task in payload if isinstance(task, dict)]
+
+
+def _find_research_task(
+    tasks: list[dict[str, Any]],
+    *,
+    task_id: str = "",
+    task_slug: str = "",
+) -> Optional[dict[str, Any]]:
+    wanted_id = str(task_id or "").strip()
+    wanted_slug = str(task_slug or "").strip().lower()
+    if wanted_id:
+        for task in tasks:
+            if str(task.get("id") or "").strip() == wanted_id:
+                return dict(task)
+        return None
+    if wanted_slug:
+        for task in tasks:
+            if str(task.get("slug") or "").strip().lower() == wanted_slug:
+                return dict(task)
+    return None
+
+
+def _resolve_research_launch_task(
+    *,
+    coordinator_url: str,
+    task_id: str = "",
+    task_slug: str = "",
+    timeout_s: float = 2.0,
+) -> tuple[Optional[dict[str, Any]], Optional[str]]:
+    try:
+        tasks = _fetch_research_tasks(coordinator_url=coordinator_url, timeout_s=timeout_s)
+    except Exception as exc:
+        return None, f"failed to reach research coordinator {coordinator_url}: {exc}"
+
+    matched = _find_research_task(tasks, task_id=task_id, task_slug=task_slug)
+    if matched is not None:
+        return matched, None
+
+    target = f"id={task_id}" if str(task_id or "").strip() else f"slug={task_slug}"
+    return None, (
+        f"selected research task {target} is not live on coordinator {coordinator_url}. "
+        "The current card is a fallback template, so mining was not started."
+    )
+
+
 def _normalize_research_task_pool(
     *,
     task: dict[str, Any],
@@ -197,8 +250,10 @@ def _normalize_research_task_pool(
         "workers": 1,
         "recommended": False,
         "is_research_pool": True,
+        "coordinator_url": coordinator_url,
         "task_id": str(task.get("id") or ""),
         "task_slug": str(task.get("slug") or ""),
+        "task_source": "live",
         "competition_mode": competition_mode,
         "competition_mode_label": _humanize_competition_mode(competition_mode),
         "metric_label": _metric_label(metric_name, metric_direction),
@@ -228,8 +283,10 @@ def _fallback_research_pools(*, coordinator_url: str, llm_model: str) -> list[di
                 "workers": 1,
                 "recommended": False,
                 "is_research_pool": True,
+                "coordinator_url": coordinator_url,
                 "task_id": "",
                 "task_slug": template.slug,
+                "task_source": "template",
                 "competition_mode": "",
                 "competition_mode_label": "From coordinator",
                 "metric_label": _metric_label(template.metric_name, template.metric_direction.value),
@@ -253,12 +310,7 @@ def _configured_research_pools() -> list[dict[str, Any]]:
         return _fallback_research_pools(coordinator_url=coordinator_url, llm_model=llm_model)
 
     try:
-        response = requests.get(
-            f"{coordinator_url.rstrip('/')}/api/v1/tasks",
-            timeout=1.5,
-        )
-        response.raise_for_status()
-        payload = response.json() or []
+        payload = _fetch_research_tasks(coordinator_url=coordinator_url, timeout_s=1.5)
     except Exception:
         return _fallback_research_pools(coordinator_url=coordinator_url, llm_model=llm_model)
 
@@ -683,7 +735,7 @@ class PoolDetailScreen(LegacyMiningScreen):
             return
 
         settings = _research_runtime_settings()
-        coordinator_url = settings["coordinator_url"]
+        coordinator_url = str(self.pool_data.get("coordinator_url") or settings["coordinator_url"] or "").strip()
         agent_command = settings["agent_command"]
         agent_mode = settings["agent_mode"] or "gui_managed"
         llm_base_url = settings["llm_base_url"]
@@ -697,6 +749,22 @@ class PoolDetailScreen(LegacyMiningScreen):
         if not agent_command and not llm_model:
             self._append_log("ERROR: Research LLM model is missing. Set BITSOTA_RESEARCH_LLM_MODEL or gui config.")
             return
+
+        task_id = str(self.pool_data.get("task_id") or "").strip()
+        task_slug = str(self.pool_data.get("task_slug") or "").strip()
+        resolved_task, launch_error = _resolve_research_launch_task(
+            coordinator_url=coordinator_url,
+            task_id=task_id,
+            task_slug=task_slug,
+        )
+        if launch_error is not None:
+            self._append_log(f"ERROR: {launch_error}")
+            return
+        if resolved_task is not None:
+            resolved_task_id = str(resolved_task.get("id") or "").strip()
+            if resolved_task_id:
+                task_id = resolved_task_id
+                self.pool_data["task_id"] = resolved_task_id
 
         cmd = [
             sys.executable,
@@ -744,8 +812,6 @@ class PoolDetailScreen(LegacyMiningScreen):
                     str(getattr(wallet, "path", "~/.bittensor/wallets/")),
                 ]
             )
-        task_id = str(self.pool_data.get("task_id") or "").strip()
-        task_slug = str(self.pool_data.get("task_slug") or "").strip()
         if task_id:
             cmd.extend(["--task-id", task_id])
         elif task_slug:

@@ -6,7 +6,9 @@ from gui.screens.mining.pool_mining_screen import (
     _configured_research_pools,
     _ephemeral_hotkey_address,
     _fallback_research_pools,
+    _find_research_task,
     _normalize_research_task_pool,
+    _resolve_research_launch_task,
     _research_runtime_settings,
     _research_gui_test_settings,
     _select_research_test_pool,
@@ -34,6 +36,7 @@ def test_fallback_research_pools_expose_builtin_competitions() -> None:
     assert pools[0]["is_research_pool"] is True
     assert pools[0]["mode"] == "research_pool"
     assert pools[0]["task_slug"] == "nanogpt-default"
+    assert pools[0]["task_source"] == "template"
     assert any(pool["task_slug"] == "cifar10-matrix-decomposition-frontier" for pool in pools)
 
 
@@ -52,6 +55,8 @@ def test_normalize_research_task_pool_includes_mode_and_metric_labels() -> None:
     )
 
     assert pool["task_id"] == "task-123"
+    assert pool["coordinator_url"] == "http://127.0.0.1:8000"
+    assert pool["task_source"] == "live"
     assert pool["competition_mode_label"] == "Peer Evaluation"
     assert pool["metric_label"] == "val_bpb (minimize)"
     assert pool["agent_model"] == "gpt-local"
@@ -90,6 +95,8 @@ def test_configured_research_pools_prefers_live_coordinator_tasks(monkeypatch) -
 
     assert len(pools) == 1
     assert pools[0]["task_id"] == "task-live-1"
+    assert pools[0]["coordinator_url"] == "http://127.0.0.1:8000"
+    assert pools[0]["task_source"] == "live"
     assert pools[0]["competition_mode_label"] == "Centerless"
 
 
@@ -163,6 +170,66 @@ def test_select_research_test_pool_prefers_live_task_card() -> None:
 
     assert selected is not None
     assert selected["task_id"] == "task-live-1"
+
+
+def test_find_research_task_matches_task_id_before_slug() -> None:
+    tasks = [
+        {"id": "task-1", "slug": "nanogpt-default"},
+        {"id": "task-2", "slug": "bitnet-cpu-ternary-kernel"},
+    ]
+
+    selected = _find_research_task(tasks, task_id="task-2", task_slug="nanogpt-default")
+
+    assert selected is not None
+    assert selected["id"] == "task-2"
+
+
+def test_resolve_research_launch_task_returns_live_task(monkeypatch) -> None:
+    monkeypatch.setattr(
+        "gui.screens.mining.pool_mining_screen._fetch_research_tasks",
+        lambda **_kwargs: [{"id": "task-live-1", "slug": "bitnet-cpu-ternary-kernel"}],
+    )
+
+    task, error = _resolve_research_launch_task(
+        coordinator_url="https://example.com",
+        task_slug="bitnet-cpu-ternary-kernel",
+    )
+
+    assert error is None
+    assert task is not None
+    assert task["id"] == "task-live-1"
+
+
+def test_resolve_research_launch_task_reports_missing_live_task(monkeypatch) -> None:
+    monkeypatch.setattr(
+        "gui.screens.mining.pool_mining_screen._fetch_research_tasks",
+        lambda **_kwargs: [],
+    )
+
+    task, error = _resolve_research_launch_task(
+        coordinator_url="https://example.com",
+        task_slug="bitnet-cpu-ternary-kernel",
+    )
+
+    assert task is None
+    assert error is not None
+    assert "not live on coordinator" in error
+
+
+def test_resolve_research_launch_task_reports_coordinator_failure(monkeypatch) -> None:
+    def _boom(**_kwargs):
+        raise RuntimeError("connection refused")
+
+    monkeypatch.setattr("gui.screens.mining.pool_mining_screen._fetch_research_tasks", _boom)
+
+    task, error = _resolve_research_launch_task(
+        coordinator_url="http://127.0.0.1:8000",
+        task_slug="bitnet-cpu-ternary-kernel",
+    )
+
+    assert task is None
+    assert error is not None
+    assert "failed to reach research coordinator" in error
 
 
 def test_research_gui_test_settings_defaults_to_cifar_task_in_test_mode(monkeypatch) -> None:
