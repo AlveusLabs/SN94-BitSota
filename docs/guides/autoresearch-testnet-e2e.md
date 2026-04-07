@@ -1,141 +1,273 @@
 # Autoresearch Testnet E2E
 
-Small end-to-end guide for humans or agent operators testing the current shared testnet flow.
+One end-to-end guide for testing the shared autoresearch testnet from either:
 
-As of `2026-04-06`, the deployed branch heads are:
+1. direct agent CLI execution, or
+2. the GUI with a GUI-managed external agent such as Codex or Claude.
 
-- `SN94-BitSota:testnet-net-gui-pool-agents` at `8b44760`
-- `AlveusLabs/autoresearch-bittensor:testing` at `157e44c`
-- `AlveusLabs/Pool:testing` at `d274d63`
+This guide also covers the missing piece that older docs glossed over: how submissions become accepted.
 
-## Live Endpoints
+## Scope
 
-- Research coordinator: `https://chvp2wytst.eu-central-1.awsapprunner.com`
-- Pool API: `https://3fhi3ukpyw.eu-central-1.awsapprunner.com`
-- Merkle claim API: `https://3fhi3ukpyw.eu-central-1.awsapprunner.com/claims`
-- On-chain websocket: `wss://test.finney.opentensor.ai:443`
-- On-chain contract: `5GUw1gZVfUTXWLEbA7G6Xdp8QsUHAy2xpVmaj5fRc1gW1Xyy`
+The shared testnet flow spans three systems:
 
-Current live checks when this guide was written:
-
-- coordinator `/healthz`: `200`
-- coordinator `/api/v1/tasks`: `200`
-- pool `/health`: `200`
-- claims `/health`: `200`
-- claims `/epochs`: non-empty
-- pool window size: about `5` minutes
+- coordinator: tasks, claims, submissions, verification state, best results
+- SN94 GUI or agent miner: claim, run, and submit
+- Pool claim service: epoch publication and Merkle claim packages
 
 Important:
 
-- Task IDs rotate. Use task `slug`, not a hardcoded task ID.
-- Claim success does not show up as free balance on the miner hotkey. It lands as subnet alpha stake on the recipient coldkey.
+- `autoresearch-bittensor` itself does not do Merkle claims or chain publishing.
+- For `standard` and `centerless` tasks, submission creation is not enough. A validator must verify the submission.
+- For `peer_evaluation` tasks, miners judge miners through peer consensus instead of `/verify`.
 
-## GUI Path
+## Live Endpoints
 
-Use the GUI build from `testnet-net-gui-pool-agents`.
-
-Set these GUI config values:
+Current shared testnet endpoints:
 
 ```json
 {
-  "research_coordinator_endpoint": "https://chvp2wytst.eu-central-1.awsapprunner.com",
   "pool_endpoint": "https://3fhi3ukpyw.eu-central-1.awsapprunner.com",
+  "research_coordinator_endpoint": "https://chvp2wytst.eu-central-1.awsapprunner.com",
   "merkle_claim_endpoint": "https://3fhi3ukpyw.eu-central-1.awsapprunner.com/claims",
   "onchain_ws_url": "wss://test.finney.opentensor.ai:443",
   "onchain_contract": "5GUw1gZVfUTXWLEbA7G6Xdp8QsUHAy2xpVmaj5fRc1gW1Xyy",
-  "onchain_metadata_path": "/absolute/path/to/Pool-testing/new_merkle/app/assets/merklepool.json"
+  "onchain_metadata_path": "/home/mekaneeky/repos/Pool/new_merkle/app/assets/merklepool.json"
 }
 ```
 
-Then:
+Operational notes:
 
-1. Open the research/pool mining screen.
-2. Let the GUI load live tasks from the coordinator.
-3. Start mining on a live card, not a fallback template card.
-4. Wait for the miner to claim, run, and submit.
-5. If reward epochs are published, use the profile claim flow to fetch and submit claims.
+- Use task `slug`, not a hardcoded task ID.
+- Claim publication is windowed, so Merkle packages appear after the next pool rollover, not immediately.
+- Reward success is not measured by free balance on the miner hotkey.
 
-What good looks like:
+## Validation Modes
 
-- the GUI sees live coordinator tasks
-- mining starts against a live task ID
-- a submission is created on the coordinator
-- validator acceptance happens
-- a Merkle epoch appears
-- the claim client shows no remaining claimable packages after success
+There are two validation paths in the current implementation.
 
-## Direct Agent Path
+### `standard` and `centerless`
+
+These require validator-backed acceptance.
+
+The path is:
+
+1. miner claims task or work item
+2. miner submits patch plus `submission.json`
+3. submission is stored as `pending_verification`
+4. validator replay records `accepted`, `rejected`, or `error` through `POST /api/v1/submissions/{id}/verify`
+5. accepted submission updates the task best result
+
+Implemented validation paths:
+
+- background validator worker via `autoresearch-validate`
+- manual signed `POST /api/v1/submissions/{id}/verify` from an allowlisted validator hotkey
+
+### `peer_evaluation`
+
+These do not use `/verify`.
+
+The path is:
+
+1. miner submits work
+2. other miners evaluate the pending submission
+3. consensus is tracked through `POST /api/v1/submissions/{id}/peer-evaluate`
+4. once the threshold is met, peer consensus marks the accepted result
+
+Relevant CLI support already exists:
+
+- `python -m neurons.research_agent_miner peer-evaluate-once`
+- `python -m neurons.research_agent_miner loop --allow-peer-evaluation`
+
+## Prereqs
+
+- a funded test wallet or generated test mnemonic
+- coordinator, claim service, and websocket reachable
+- Python environment for `python -m neurons.research_agent_miner`
+- GUI environment if testing the GUI path
+- `codex` or `claude` installed if using a GUI-managed external agent
+- Merkle metadata file available at the configured path
+
+## Direct Agent E2E
 
 List live tasks first:
 
 ```bash
-bitsota-research-agent list-tasks \
+cd /home/mekaneeky/repos/SN94-BitSota
+PYTHONPATH=/home/mekaneeky/repos/SN94-BitSota \
+python -m neurons.research_agent_miner list-tasks \
   --coordinator-url https://chvp2wytst.eu-central-1.awsapprunner.com
 ```
 
-Run one direct pass with an external agent CLI:
+Run one direct claim -> run -> submit pass with an external agent:
 
 ```bash
-bitsota-research-agent mine-once \
+cd /home/mekaneeky/repos/SN94-BitSota
+PYTHONPATH=/home/mekaneeky/repos/SN94-BitSota \
+python -m neurons.research_agent_miner mine-once \
   --coordinator-url https://chvp2wytst.eu-central-1.awsapprunner.com \
-  --agent-command 'codex exec {intro_path_quoted}' \
-  --agent-mode gui_managed \
-  --task-slug sn97-distil-mini-kl \
   --participation-style direct \
-  --hotkey-mnemonic 'replace with test mnemonic'
+  --task-slug sn97-distil-mini-kl \
+  --agent-command "codex exec --full-auto -C {repo_dir_quoted} --add-dir {workspace_dir_quoted} -o {submission_result_path_quoted} - < {intro_path_quoted}" \
+  --agent-mode gui_managed \
+  --hotkey-mnemonic "<test mnemonic>"
 ```
 
-Notes:
+Alternative model-driven mode without an external agent command:
 
-- `mine-once` is the easiest E2E probe because it does one claim -> run -> submit cycle.
-- Use `sn97-distil-mini-kl` first unless you are testing another specific competition.
-- The miner now submits a pinned commit SHA back to the coordinator, not a floating branch name.
+```bash
+cd /home/mekaneeky/repos/SN94-BitSota
+PYTHONPATH=/home/mekaneeky/repos/SN94-BitSota \
+python -m neurons.research_agent_miner mine-once \
+  --coordinator-url https://chvp2wytst.eu-central-1.awsapprunner.com \
+  --participation-style direct \
+  --task-slug sn97-distil-mini-kl \
+  --llm-base-url http://127.0.0.1:11434/v1 \
+  --llm-model prism-ml/Bonsai-8B-gguf \
+  --hotkey-mnemonic "<test mnemonic>"
+```
 
-Expected artifacts in the workspace:
+Expected workspace artifacts:
 
 - `INTRO_GUI.md`
 - `submission.json`
 - `agent.stdout.txt`
-- a valid git patch over the task repo checkout
+- `agent.stderr.txt`
+- repo checkout with a valid patch over the task base ref
 
-## Validator Step
+## GUI E2E
 
-Submission creation is not the end of the flow.
+Set GUI config for shared testnet plus the external agent command:
 
-An accepted result requires validator verification. On the shared testnet, either:
+```json
+{
+  "pool_endpoint": "https://3fhi3ukpyw.eu-central-1.awsapprunner.com",
+  "merkle_claim_endpoint": "https://3fhi3ukpyw.eu-central-1.awsapprunner.com/claims",
+  "onchain_ws_url": "wss://test.finney.opentensor.ai:443",
+  "onchain_contract": "5GUw1gZVfUTXWLEbA7G6Xdp8QsUHAy2xpVmaj5fRc1gW1Xyy",
+  "onchain_metadata_path": "/home/mekaneeky/repos/Pool/new_merkle/app/assets/merklepool.json",
+  "research_coordinator_endpoint": "https://chvp2wytst.eu-central-1.awsapprunner.com",
+  "research_agent_mode": "gui_managed",
+  "research_agent_command": "codex exec --full-auto -C {repo_dir_quoted} --add-dir {workspace_dir_quoted} -o {submission_result_path_quoted} - < {intro_path_quoted}"
+}
+```
 
-- a background validator worker must be running against the same coordinator state, or
-- an allowlisted validator hotkey must send signed `/api/v1/submissions/{id}/verify`
+For Claude, swap only the command:
 
-If you are manually verifying, verify a real current submission ID from the live coordinator, not an old ID from a prior reseed.
+```json
+{
+  "research_agent_mode": "gui_managed",
+  "research_agent_command": "claude code --dangerously-skip-permissions -C {repo_dir_quoted} < {intro_path_quoted} > {submission_result_path_quoted}"
+}
+```
+
+You can also launch a prepared live testnet GUI setup with:
+
+```bash
+cd /home/mekaneeky/repos/SN94-BitSota
+scripts/run_live_testnet_research_guis.sh <wallet_name>:<hotkey_name>
+```
+
+What to verify in the GUI path:
+
+1. the GUI loads real coordinator tasks, not fallback template cards
+2. pool mining starts against a live task
+3. the external agent writes `submission.json`, `agent.stdout.txt`, and `agent.stderr.txt`
+4. the coordinator records a submission
+5. validation accepts the submission
+6. the claim service later exposes a Merkle package
+7. the claim client submits successfully
+
+## Validator Step For LLM-Based Autoresearch
+
+This is the part older docs under-described.
+
+For `standard` and `centerless` tasks, you still need validator replay after the agent produces a patch and `submission.json`.
+
+### Option A: background validator worker
+
+Run the coordinator-side validator worker from `autoresearch-bittensor`:
+
+```bash
+cd /home/mekaneeky/repos/autoresearch-bittensor
+python -m venv .venv
+source .venv/bin/activate
+pip install -e .[test]
+autoresearch-validate \
+  --validator-hotkey <allowlisted_validator_hotkey> \
+  --workspace-root ./data/validator-workspaces
+```
+
+For a single pass:
+
+```bash
+autoresearch-validate \
+  --validator-hotkey <allowlisted_validator_hotkey> \
+  --workspace-root ./data/validator-workspaces \
+  --once
+```
+
+This polls pending submissions, replays them, and records `accepted`, `rejected`, or `error`.
+
+### Option B: manual signed verify
+
+If a validator worker is not running, an allowlisted validator hotkey can manually call:
+
+- `POST /api/v1/submissions/{id}/verify`
+
+Use this only with a current live submission ID and real observed metrics from replay.
+
+### Peer-evaluation exception
+
+Do not use `/verify` for `peer_evaluation` tasks.
+
+Use:
+
+- `python -m neurons.research_agent_miner peer-evaluate-once ...`
+- or `python -m neurons.research_agent_miner loop --allow-peer-evaluation ...`
+
+The coordinator will reject `/verify` for those tasks.
 
 ## Reward And Claim Step
 
 After a submission is accepted:
 
-1. the coordinator reward snapshot should include the competition
-2. Pool publishes the next epoch on window rollover
-3. the claim API serves the epoch package
-4. the miner or GUI claim client submits `claim_single`
+1. the coordinator best result should update
+2. the reward snapshot should include the accepted competition state
+3. Pool should publish the next Merkle epoch on rollover
+4. the claim API should serve a package for the miner hotkey
+5. the GUI or local claim client should submit `claim_single`
 
-Because testnet windows are about `5` minutes, claim publication is not immediate. Wait for the next rollover.
+Useful checks:
 
-## Quick Checklist
+```bash
+curl -fsS https://chvp2wytst.eu-central-1.awsapprunner.com/healthz
+curl -fsS https://chvp2wytst.eu-central-1.awsapprunner.com/api/v1/tasks | jq
+curl -fsS https://chvp2wytst.eu-central-1.awsapprunner.com/api/v1/submissions | jq
+curl -fsS https://chvp2wytst.eu-central-1.awsapprunner.com/api/v1/verifications | jq
+curl -fsS https://3fhi3ukpyw.eu-central-1.awsapprunner.com/claims/health
+curl -fsS https://3fhi3ukpyw.eu-central-1.awsapprunner.com/claims/epochs | jq
+curl -fsS https://3fhi3ukpyw.eu-central-1.awsapprunner.com/claims/epoch/<epoch>/claim/<hotkey> | jq
+```
 
-- Coordinator health is `200`
-- Pool health is `200`
-- Claims health is `200`
-- Live task discovery works
-- Submission is created
-- Submission is accepted after validator replay
-- `/api/v1/reward-snapshot` is non-empty
-- `/claims/epochs` includes a new epoch
-- claim submission succeeds
+## Success Criteria
+
+The flow is only truly end-to-end when all of these happen:
+
+1. a live task is claimed
+2. a valid submission is created
+3. the submission becomes accepted through validator replay or peer consensus
+4. the task best result updates
+5. the next claim window publishes an epoch
+6. a claim package appears for the miner hotkey
+7. the claim is submitted successfully
+8. no remaining claim packages exist for that hotkey
 
 ## Common Gotchas
 
-- Do not hardcode task IDs.
-- Do not use fallback template cards as proof that the coordinator task is live.
-- Do not use miner hotkey free balance as the reward success signal.
-- If `/verify` returns `503 validator allowlist is not configured`, the coordinator deployment is stale.
-- If a claim package disappears locally, confirm the claim extrinsic receipt, not just local state.
+- Do not treat submission creation as end-to-end success.
+- Do not hardcode task IDs across reseeds.
+- Do not use fallback template cards as proof that the live coordinator path works.
+- Do not check miner hotkey free balance as the reward success signal.
+- If `/api/v1/submissions/{id}/verify` returns `503`, validator allowlisting or validator deployment is wrong.
+- If accepted submissions never show up in `/claims/epochs`, the reward publication side is broken even if coordinator validation is healthy.
