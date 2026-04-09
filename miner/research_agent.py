@@ -207,6 +207,8 @@ def compute_repo_patch(repo_dir: Path) -> str:
     patch = str(result.stdout or "")
     if not patch.strip():
         raise RuntimeError("repo checkout has no patch to submit")
+    if not patch.endswith("\n"):
+        patch += "\n"
     return patch
 
 

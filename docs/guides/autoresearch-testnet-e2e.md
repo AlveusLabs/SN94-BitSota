@@ -98,14 +98,14 @@ python -m neurons.research_agent_miner ...
 
 If you want to skip `bitsota-research-agent` entirely, you can drive the coordinator manually with an agent.
 
-Use the master prompt in [autoresearch-agent-master-prompt.md](/home/mekaneeky/repos/SN94-BitSota/docs/guides/autoresearch-agent-master-prompt.md) and point the agent at both repos:
+Use the master prompt in [autoresearch-agent-master-prompt.md](/home/mekaneeky/repos/SN94-BitSota/docs/guides/autoresearch-agent-master-prompt.md) and point the agent at the SN94 checkout only:
 
 - `/home/mekaneeky/repos/SN94-BitSota`
-- `/home/mekaneeky/repos/autoresearch-bittensor`
 
 The signing helper the agent should use is:
 
-- `/home/mekaneeky/repos/autoresearch-bittensor/src/autoresearch_bittensor/auth/hotkey.py`
+- `/home/mekaneeky/repos/SN94-BitSota/miner/research_auth.py`
+- `/home/mekaneeky/repos/SN94-BitSota/miner/research_coordinator_client.py`
 
 Tested direct Codex launch shape:
 
@@ -117,7 +117,6 @@ EOF
 codex exec --dangerously-bypass-approvals-and-sandbox \
   -C /home/mekaneeky/repos \
   --add-dir /home/mekaneeky/repos/SN94-BitSota \
-  --add-dir /home/mekaneeky/repos/autoresearch-bittensor \
   - < /tmp/direct-autoresearch-prompt.txt
 ```
 

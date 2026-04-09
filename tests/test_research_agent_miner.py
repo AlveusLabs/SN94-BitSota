@@ -692,6 +692,19 @@ def test_submit_claimed_workspace_uses_submission_json_and_git_diff(tmp_path: Pa
     assert coordinator.submissions[0]["summary"] == "External agent changed the training script."
     assert coordinator.submissions[0]["claimed_metrics"]["val_bpb"] == 1.11
     assert coordinator.submissions[0]["patch"].startswith("diff --git a/train.py b/train.py")
+    assert coordinator.submissions[0]["patch"].endswith("\n")
+
+    replay_repo = tmp_path / "replay"
+    subprocess.run(["git", "clone", "--quiet", str(repo_dir), str(replay_repo)], check=True, capture_output=True, text=True)
+    subprocess.run(["git", "checkout", head_commit], cwd=replay_repo, check=True, capture_output=True, text=True)
+    subprocess.run(
+        ["git", "apply", "-"],
+        cwd=replay_repo,
+        input=coordinator.submissions[0]["patch"],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
 
 
 def test_agent_mine_once_can_run_external_gui_managed_agent(tmp_path: Path) -> None:
