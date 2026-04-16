@@ -15,10 +15,17 @@ from bittensor_network.wallet import Wallet
 from miner.client import BittensorDirectClient
 from gui.theme import BitSOTATheme
 from gui.screens import StartScreen, WalletScreen, MiningScreen, ProfileScreen
-from gui.components import Sidebar, UserGuideModal, InviteCodeModal, ColdkeyAddressModal, UpdateAvailableModal
+from gui.components import (
+    Sidebar,
+    UserGuideModal,
+    InviteCodeModal,
+    ColdkeyAddressModal,
+    ResearchSetupModal,
+    UpdateAvailableModal,
+)
 from gui.resource_path import resource_path
 from gui.update_checker import UpdateChecker
-from gui.app_config import get_app_config
+from gui.app_config import get_app_config, needs_research_setup
 
 
 class MiningWindow(QMainWindow):
@@ -27,6 +34,7 @@ class MiningWindow(QMainWindow):
         self.wallet: Optional[Wallet] = None
         self.client: Optional[BittensorDirectClient] = None
         self.coldkey_address: Optional[str] = None
+        self._research_setup_modal_open = False
         self.update_checker = UpdateChecker()
         self._setup_window()
         self._create_ui()
@@ -110,6 +118,7 @@ class MiningWindow(QMainWindow):
 
     def _on_user_guide_proceed(self):
         self.content_stack.setCurrentIndex(1)
+        QTimer.singleShot(0, self._maybe_prompt_research_setup)
 
     def _on_tab_changed(self, tab_id: str):
         if tab_id == "setup_wallet":
@@ -367,8 +376,41 @@ class MiningWindow(QMainWindow):
             self.screen_stack.setCurrentWidget(self.mining_screen)
 
             print(f"Auto-loaded wallet: {last_wallet_name}/{last_hotkey_name}")
+            QTimer.singleShot(0, self._maybe_prompt_research_setup)
         except Exception as e:
             print(f"Failed to auto-load wallet: {e}")
+
+    def _maybe_prompt_research_setup(self) -> bool:
+        if self._research_setup_modal_open:
+            return False
+        if not needs_research_setup(get_app_config(force_reload=True)):
+            return False
+        return self.open_research_setup_modal()
+
+    def open_research_setup_modal(self) -> bool:
+        if self._research_setup_modal_open:
+            return False
+
+        self._research_setup_modal_open = True
+        modal = ResearchSetupModal(parent=self)
+        try:
+            accepted = bool(modal.exec())
+            if not accepted:
+                return False
+
+            self._refresh_runtime_config()
+            if self.wallet is None:
+                self.sidebar.set_active_tab("setup_wallet")
+                self.screen_stack.setCurrentWidget(self.wallet_screen)
+            return True
+        finally:
+            self._research_setup_modal_open = False
+
+    def _refresh_runtime_config(self) -> None:
+        if hasattr(self.mining_screen, "refresh_runtime_config"):
+            self.mining_screen.refresh_runtime_config()
+        if self.screen_stack.currentWidget() is self.profile_screen and hasattr(self.profile_screen, "refresh_data"):
+            self.profile_screen.refresh_data()
 
     def _setup_update_checker(self):
         QTimer.singleShot(2000, self._check_for_updates_on_startup)

@@ -11,6 +11,8 @@ import requests
 from substrateinterface import Keypair, SubstrateInterface
 from substrateinterface.contracts import ContractInstance
 
+from gui.app_config import resolve_bundled_metadata_path
+
 
 _CLAIM_GAS_LIMIT = {"ref_time": 50_000_000_000, "proof_size": 2_000_000}
 _CLAIM_STORAGE_DEPOSIT_LIMIT = 1_000_000_000
@@ -88,6 +90,9 @@ def resolve_metadata_path(explicit: str = "") -> str:
         path = Path(candidate).expanduser()
         if path.exists():
             return str(path.resolve())
+    bundled = resolve_bundled_metadata_path()
+    if bundled:
+        return bundled
     repo_root = Path(__file__).resolve().parents[2]
     fallbacks = [
         repo_root / "Pool" / "new_merkle" / "app" / "assets" / "merklepool.json",

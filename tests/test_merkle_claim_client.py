@@ -8,6 +8,7 @@ from gui.merkle_claim_client import (
     MerkleClaimClient,
     _normalize_claim_package,
     resolve_claim_endpoint,
+    resolve_metadata_path,
 )
 
 
@@ -208,3 +209,9 @@ def test_list_claim_packages_filters_locally_claimed_keys(monkeypatch, tmp_path:
     claims = client.list_claim_packages(hotkey="5MinerHotkey")
 
     assert [(claim.epoch, claim.index) for claim in claims] == [(4, 0)]
+
+
+def test_resolve_metadata_path_prefers_bundled_asset() -> None:
+    resolved = resolve_metadata_path("")
+
+    assert resolved.endswith(str(Path("gui") / "assets" / "merklepool.json"))

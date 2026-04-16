@@ -1636,6 +1636,10 @@ class MiningScreen(QWidget):
         if hasattr(self, 'pool_mining_widget') and self.pool_mining_widget:
             self.pool_mining_widget.update_wallet_status(wallet_name)
 
+    def refresh_runtime_config(self):
+        if hasattr(self, 'pool_mining_widget') and self.pool_mining_widget:
+            self.pool_mining_widget.reload_pools()
+
     def update_connection_status(self, connected: bool):
         status_text = "Connected" if connected else "Disconnected"
         self.connection_status_label.setText(status_text)

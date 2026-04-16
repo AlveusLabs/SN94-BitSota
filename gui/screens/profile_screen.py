@@ -265,8 +265,7 @@ class ProfileScreen(QWidget):
         client = self._build_claim_client()
         if not client.is_configured():
             self.pool_status_label.setText(
-                "Merkle claiming is not configured. Set `merkle_claim_endpoint`, "
-                "`onchain_ws_url`, `onchain_contract`, and `onchain_metadata_path` in `gui_config.json`."
+                "Merkle claiming is not configured. Open Research Setup and choose a network preset."
             )
             self._render_claim_rows([])
             return

@@ -9,6 +9,7 @@ from .invite_code_modal import InviteCodeModal
 from .coldkey_address_modal import ColdkeyAddressModal
 from .coming_soon_modal import ComingSoonModal
 from .update_modal import UpdateAvailableModal
+from .research_setup_modal import ResearchSetupModal
 from .common.select_input import SelectInput
 
 __all__ = [
@@ -22,5 +23,6 @@ __all__ = [
     "ColdkeyAddressModal",
     "ComingSoonModal",
     "UpdateAvailableModal",
+    "ResearchSetupModal",
     "SelectInput",
 ]

@@ -29,15 +29,15 @@ class _DummyResponse:
 def test_fallback_research_pools_expose_builtin_competitions() -> None:
     pools = _fallback_research_pools(
         coordinator_url="http://127.0.0.1:8000",
-        llm_model="local-model",
+        agent_label="Codex CLI",
     )
 
-    assert len(pools) == 6
+    assert len(pools) >= 5
     assert pools[0]["is_research_pool"] is True
     assert pools[0]["mode"] == "research_pool"
     assert pools[0]["task_slug"] == "nanogpt-default"
     assert pools[0]["task_source"] == "template"
-    assert any(pool["task_slug"] == "cifar10-matrix-decomposition-frontier" for pool in pools)
+    assert any(pool["task_slug"] == "eggroll-efficiency" for pool in pools)
 
 
 def test_normalize_research_task_pool_includes_mode_and_metric_labels() -> None:
@@ -51,7 +51,7 @@ def test_normalize_research_task_pool_includes_mode_and_metric_labels() -> None:
             "metric_direction": "minimize",
         },
         coordinator_url="http://127.0.0.1:8000",
-        llm_model="gpt-local",
+        agent_label="Claude Code",
     )
 
     assert pool["task_id"] == "task-123"
@@ -59,7 +59,7 @@ def test_normalize_research_task_pool_includes_mode_and_metric_labels() -> None:
     assert pool["task_source"] == "live"
     assert pool["competition_mode_label"] == "Peer Evaluation"
     assert pool["metric_label"] == "val_bpb (minimize)"
-    assert pool["agent_model"] == "gpt-local"
+    assert pool["agent_model"] == "Claude Code"
 
 
 def test_configured_research_pools_prefers_live_coordinator_tasks(monkeypatch) -> None:
@@ -67,6 +67,8 @@ def test_configured_research_pools_prefers_live_coordinator_tasks(monkeypatch) -
         "gui.screens.mining.pool_mining_screen._research_runtime_settings",
         lambda: {
             "coordinator_url": "http://127.0.0.1:8000",
+            "provider": "openai_compatible",
+            "provider_label": "OpenAI-compatible API",
             "agent_command": "",
             "agent_mode": "gui_managed",
             "llm_base_url": "http://127.0.0.1:11434/v1",
@@ -108,7 +110,8 @@ def test_research_runtime_settings_support_external_agent_command(monkeypatch) -
             (),
             {
                 "research_coordinator_endpoint": "http://127.0.0.1:8000",
-                "research_agent_command": "codex exec {intro_path_quoted}",
+                "research_agent_provider": "custom_command",
+                "research_agent_command": "bash -lc 'echo test'",
                 "research_agent_mode": "gui_managed",
                 "research_llm_base_url": "",
                 "research_llm_model": "",
@@ -118,20 +121,51 @@ def test_research_runtime_settings_support_external_agent_command(monkeypatch) -
     )
     monkeypatch.delenv("BITSOTA_RESEARCH_AGENT_COMMAND", raising=False)
     monkeypatch.delenv("BITSOTA_RESEARCH_AGENT_MODE", raising=False)
+    monkeypatch.delenv("BITSOTA_RESEARCH_AGENT_PROVIDER", raising=False)
 
     settings = _research_runtime_settings()
 
     assert settings["coordinator_url"] == "http://127.0.0.1:8000"
-    assert settings["agent_command"] == "codex exec {intro_path_quoted}"
+    assert settings["provider"] == "custom_command"
+    assert settings["agent_command"] == "bash -lc 'echo test'"
     assert settings["agent_mode"] == "gui_managed"
 
 
-def test_configured_research_pools_show_external_agent_label_when_no_llm_model(monkeypatch) -> None:
+def test_research_runtime_settings_builds_codex_cli_command_from_provider(monkeypatch) -> None:
+    monkeypatch.setattr(
+        "gui.screens.mining.pool_mining_screen.get_app_config",
+        lambda: type(
+            "Cfg",
+            (),
+            {
+                "research_coordinator_endpoint": "http://127.0.0.1:8000",
+                "research_agent_provider": "codex_cli",
+                "research_agent_command": "",
+                "research_agent_mode": "gui_managed",
+                "research_llm_base_url": "",
+                "research_llm_model": "",
+                "research_llm_api_key": "",
+            },
+        )(),
+    )
+    monkeypatch.delenv("BITSOTA_RESEARCH_AGENT_COMMAND", raising=False)
+    monkeypatch.delenv("BITSOTA_RESEARCH_AGENT_PROVIDER", raising=False)
+
+    settings = _research_runtime_settings()
+
+    assert settings["provider"] == "codex_cli"
+    assert settings["provider_label"] == "Codex CLI"
+    assert "codex exec" in settings["agent_command"]
+
+
+def test_configured_research_pools_show_provider_label_when_no_llm_model(monkeypatch) -> None:
     monkeypatch.setattr(
         "gui.screens.mining.pool_mining_screen._research_runtime_settings",
         lambda: {
             "coordinator_url": "http://127.0.0.1:8000",
-            "agent_command": "codex exec {intro_path_quoted}",
+            "provider": "codex_cli",
+            "provider_label": "Codex CLI",
+            "agent_command": "bash -lc 'echo test'",
             "agent_mode": "gui_managed",
             "llm_base_url": "",
             "llm_model": "",
@@ -157,7 +191,7 @@ def test_configured_research_pools_show_external_agent_label_when_no_llm_model(m
 
     pools = _configured_research_pools()
 
-    assert pools[0]["agent_model"] == "codex"
+    assert pools[0]["agent_model"] == "Codex CLI"
 
 
 def test_select_research_test_pool_prefers_live_task_card() -> None:

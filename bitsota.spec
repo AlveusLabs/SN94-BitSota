@@ -11,6 +11,8 @@ numpy_data = collect_data_files("numpy")
 
 datas = [
     ("gui/images", "gui/images"),
+    ("gui/assets", "gui/assets"),
+    ("docs/guides/autoresearch-agent-master-prompt.md", "docs/guides"),
 ]
 datas.extend(torch_data)
 datas.extend(numpy_data)

@@ -26,7 +26,12 @@ from PySide6.QtWidgets import (
 import requests
 from substrateinterface import Keypair
 
-from gui.app_config import get_app_config
+from gui.app_config import (
+    build_preset_research_agent_command,
+    get_app_config,
+    infer_research_agent_provider,
+    research_agent_provider_label,
+)
 from gui.components import PrimaryButton, SecondaryButton
 from gui.resource_path import resource_path
 from gui.screens.mining_screen import MiningScreen as LegacyMiningScreen
@@ -62,32 +67,59 @@ def _metric_label(metric_name: str | None, metric_direction: str | None) -> str:
 
 def _research_runtime_settings() -> dict[str, str]:
     cfg = get_app_config()
+    configured_provider = os.getenv("BITSOTA_RESEARCH_AGENT_PROVIDER") or str(
+        getattr(cfg, "research_agent_provider", "") or ""
+    )
+    configured_command = os.getenv("BITSOTA_RESEARCH_AGENT_COMMAND") or str(
+        getattr(cfg, "research_agent_command", "") or ""
+    )
+    llm_base_url = (
+        os.getenv("BITSOTA_RESEARCH_LLM_BASE_URL")
+        or str(getattr(cfg, "research_llm_base_url", "") or "")
+    ).strip()
+    llm_model = (
+        os.getenv("BITSOTA_RESEARCH_LLM_MODEL")
+        or str(getattr(cfg, "research_llm_model", "") or "")
+    ).strip()
+    llm_api_key = (
+        os.getenv("BITSOTA_RESEARCH_LLM_API_KEY")
+        or str(getattr(cfg, "research_llm_api_key", "") or "")
+    ).strip()
+    provider = infer_research_agent_provider(
+        configured_provider=configured_provider,
+        agent_command=configured_command,
+        llm_model=llm_model,
+        llm_base_url=llm_base_url,
+        llm_api_key=llm_api_key,
+    )
+    agent_command = str(configured_command or "").strip()
+    if not agent_command and provider in {"codex_cli", "claude_code"}:
+        agent_command = build_preset_research_agent_command(provider)
+    provider_label = research_agent_provider_label(provider)
+    if not provider_label and agent_command:
+        try:
+            provider_label = shlex.split(agent_command)[0]
+        except Exception:
+            provider_label = "Custom command"
+    if not provider_label and llm_model:
+        provider_label = llm_model
+
     return {
         "coordinator_url": (
             os.getenv("BITSOTA_RESEARCH_COORDINATOR_URL")
             or str(getattr(cfg, "research_coordinator_endpoint", "") or "")
         ).strip(),
-        "agent_command": (
-            os.getenv("BITSOTA_RESEARCH_AGENT_COMMAND")
-            or str(getattr(cfg, "research_agent_command", "") or "")
-        ).strip(),
+        "provider": provider,
+        "provider_label": provider_label or "Not configured",
+        "agent_command": agent_command,
         "agent_mode": (
             os.getenv("BITSOTA_RESEARCH_AGENT_MODE")
             or str(getattr(cfg, "research_agent_mode", "") or "")
         ).strip()
         or "gui_managed",
-        "llm_base_url": (
-            os.getenv("BITSOTA_RESEARCH_LLM_BASE_URL")
-            or str(getattr(cfg, "research_llm_base_url", "") or "")
-        ).strip(),
-        "llm_model": (
-            os.getenv("BITSOTA_RESEARCH_LLM_MODEL")
-            or str(getattr(cfg, "research_llm_model", "") or "")
-        ).strip(),
-        "llm_api_key": (
-            os.getenv("BITSOTA_RESEARCH_LLM_API_KEY")
-            or str(getattr(cfg, "research_llm_api_key", "") or "")
-        ).strip(),
+        "llm_base_url": llm_base_url,
+        "llm_model": llm_model,
+        "llm_api_key": llm_api_key,
     }
 
 
@@ -233,7 +265,7 @@ def _normalize_research_task_pool(
     *,
     task: dict[str, Any],
     coordinator_url: str,
-    llm_model: str,
+    agent_label: str,
 ) -> dict[str, Any]:
     parsed = urlparse(coordinator_url) if coordinator_url else None
     host = parsed.netloc or coordinator_url or "Not configured"
@@ -246,7 +278,7 @@ def _normalize_research_task_pool(
         "mode": RESEARCH_POOL_MODE,
         "mode_label": "Research Agent Pool",
         "endpoint": host,
-        "backend": "OpenAI-compatible agent",
+        "backend": agent_label or "Not configured",
         "workers": 1,
         "recommended": False,
         "is_research_pool": True,
@@ -257,17 +289,18 @@ def _normalize_research_task_pool(
         "competition_mode": competition_mode,
         "competition_mode_label": _humanize_competition_mode(competition_mode),
         "metric_label": _metric_label(metric_name, metric_direction),
-        "agent_model": llm_model or "Not configured",
+        "agent_model": agent_label or "Not configured",
         "card_rows": [
             ("Mode", "Research Agent Pool"),
             ("Rules", _humanize_competition_mode(competition_mode)),
             ("Metric", _metric_label(metric_name, metric_direction)),
+            ("Agent", agent_label or "Not configured"),
             ("Coordinator", host),
         ],
     }
 
 
-def _fallback_research_pools(*, coordinator_url: str, llm_model: str) -> list[dict[str, Any]]:
+def _fallback_research_pools(*, coordinator_url: str, agent_label: str) -> list[dict[str, Any]]:
     parsed = urlparse(coordinator_url) if coordinator_url else None
     host = parsed.netloc or coordinator_url or "Not configured"
     cards: list[dict[str, Any]] = []
@@ -279,7 +312,7 @@ def _fallback_research_pools(*, coordinator_url: str, llm_model: str) -> list[di
                 "mode": RESEARCH_POOL_MODE,
                 "mode_label": "Research Agent Pool",
                 "endpoint": host,
-                "backend": "OpenAI-compatible agent",
+                "backend": agent_label or "Not configured",
                 "workers": 1,
                 "recommended": False,
                 "is_research_pool": True,
@@ -290,11 +323,12 @@ def _fallback_research_pools(*, coordinator_url: str, llm_model: str) -> list[di
                 "competition_mode": "",
                 "competition_mode_label": "From coordinator",
                 "metric_label": _metric_label(template.metric_name, template.metric_direction.value),
-                "agent_model": llm_model or "Not configured",
+                "agent_model": agent_label or "Not configured",
                 "card_rows": [
                     ("Mode", "Research Agent Pool"),
                     ("Rules", "From coordinator"),
                     ("Metric", _metric_label(template.metric_name, template.metric_direction.value)),
+                    ("Agent", agent_label or "Not configured"),
                     ("Coordinator", host),
                 ],
             }
@@ -305,21 +339,21 @@ def _fallback_research_pools(*, coordinator_url: str, llm_model: str) -> list[di
 def _configured_research_pools() -> list[dict[str, Any]]:
     settings = _research_runtime_settings()
     coordinator_url = settings["coordinator_url"]
-    llm_model = settings["llm_model"] or (shlex.split(settings["agent_command"])[0] if settings["agent_command"] else "")
+    agent_label = settings["provider_label"]
     if not coordinator_url:
-        return _fallback_research_pools(coordinator_url=coordinator_url, llm_model=llm_model)
+        return _fallback_research_pools(coordinator_url=coordinator_url, agent_label=agent_label)
 
     try:
         payload = _fetch_research_tasks(coordinator_url=coordinator_url, timeout_s=1.5)
     except Exception:
-        return _fallback_research_pools(coordinator_url=coordinator_url, llm_model=llm_model)
+        return _fallback_research_pools(coordinator_url=coordinator_url, agent_label=agent_label)
 
     cards = [
-        _normalize_research_task_pool(task=dict(task or {}), coordinator_url=coordinator_url, llm_model=llm_model)
+        _normalize_research_task_pool(task=dict(task or {}), coordinator_url=coordinator_url, agent_label=agent_label)
         for task in payload
         if bool((task or {}).get("is_active", True))
     ]
-    return cards or _fallback_research_pools(coordinator_url=coordinator_url, llm_model=llm_model)
+    return cards or _fallback_research_pools(coordinator_url=coordinator_url, agent_label=agent_label)
 
 
 def _configured_pools() -> list[dict]:
@@ -736,19 +770,33 @@ class PoolDetailScreen(LegacyMiningScreen):
 
         settings = _research_runtime_settings()
         coordinator_url = str(self.pool_data.get("coordinator_url") or settings["coordinator_url"] or "").strip()
+        provider = str(settings.get("provider") or "").strip()
         agent_command = settings["agent_command"]
         agent_mode = settings["agent_mode"] or "gui_managed"
         llm_base_url = settings["llm_base_url"]
         llm_model = settings["llm_model"]
         if not coordinator_url:
-            self._append_log("ERROR: Research coordinator URL is missing. Set BITSOTA_RESEARCH_COORDINATOR_URL or gui config.")
+            self._append_log(
+                "ERROR: Research coordinator URL is missing. Open Research Setup and choose a network preset."
+            )
             return
-        if not agent_command and not llm_base_url:
-            self._append_log("ERROR: Research LLM base URL is missing. Set BITSOTA_RESEARCH_LLM_BASE_URL or gui config.")
-            return
-        if not agent_command and not llm_model:
-            self._append_log("ERROR: Research LLM model is missing. Set BITSOTA_RESEARCH_LLM_MODEL or gui config.")
-            return
+        if not agent_command:
+            if provider == "openai_compatible":
+                if not llm_base_url:
+                    self._append_log(
+                        "ERROR: Research API base URL is missing. Open Research Setup and configure the API endpoint."
+                    )
+                    return
+                if not llm_model:
+                    self._append_log(
+                        "ERROR: Research API model is missing. Open Research Setup and choose the model to use."
+                    )
+                    return
+            else:
+                self._append_log(
+                    "ERROR: Research agent is not configured. Open Research Setup and choose Codex CLI, Claude Code, or an OpenAI-compatible API."
+                )
+                return
 
         task_id = str(self.pool_data.get("task_id") or "").strip()
         task_slug = str(self.pool_data.get("task_slug") or "").strip()
@@ -1026,6 +1074,32 @@ class PoolMiningScreen(QWidget):
         container = QWidget()
         container_layout = QVBoxLayout(container)
         container_layout.setContentsMargins(0, 0, 0, 0)
+        container_layout.setSpacing(16)
+
+        header = QWidget()
+        header_layout = QHBoxLayout(header)
+        header_layout.setContentsMargins(0, 0, 0, 0)
+        header_layout.setSpacing(16)
+
+        title_box = QVBoxLayout()
+        title_box.setSpacing(6)
+        title = QLabel("Research Pools")
+        title.setObjectName("config_section_title")
+        title_box.addWidget(title)
+
+        subtitle = QLabel(
+            "Use the guided setup to choose a network preset and agent provider. The app will manage the runtime command for you."
+        )
+        subtitle.setWordWrap(True)
+        subtitle.setStyleSheet("color: rgba(21, 0, 73, 0.72);")
+        title_box.addWidget(subtitle)
+        header_layout.addLayout(title_box, 1)
+
+        self.research_setup_btn = SecondaryButton("Research Setup", width=220, height=48)
+        self.research_setup_btn.clicked.connect(self._open_research_setup)
+        header_layout.addWidget(self.research_setup_btn, 0, Qt.AlignmentFlag.AlignTop)
+
+        container_layout.addWidget(header)
 
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
@@ -1047,6 +1121,12 @@ class PoolMiningScreen(QWidget):
 
         self.reload_pools()
         return container
+
+    def _open_research_setup(self) -> None:
+        if self.main_window and hasattr(self.main_window, "open_research_setup_modal"):
+            saved = bool(self.main_window.open_research_setup_modal())
+            if saved:
+                self.reload_pools()
 
     def research_gui_test_enabled(self) -> bool:
         return bool(self._research_test_settings.get("enabled"))
