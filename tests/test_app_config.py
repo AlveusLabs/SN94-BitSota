@@ -7,6 +7,7 @@ from gui.app_config import (
     get_app_config,
     needs_research_setup,
     resolve_bundled_metadata_path,
+    resolve_pool_coldkey_update_endpoint,
 )
 
 
@@ -87,3 +88,21 @@ def test_needs_research_setup_false_when_provider_configured(tmp_path, monkeypat
     cfg = get_app_config(force_reload=True)
 
     assert needs_research_setup(cfg) is False
+
+
+def test_resolve_pool_coldkey_update_endpoint_defaults_to_pool_base_url() -> None:
+    endpoint = resolve_pool_coldkey_update_endpoint(
+        explicit="",
+        pool_endpoint="https://3fhi3ukpyw.eu-central-1.awsapprunner.com/",
+    )
+
+    assert endpoint == "https://3fhi3ukpyw.eu-central-1.awsapprunner.com"
+
+
+def test_resolve_pool_coldkey_update_endpoint_prefers_explicit_override() -> None:
+    endpoint = resolve_pool_coldkey_update_endpoint(
+        explicit="https://claims.bitsota.example/custom-recipient",
+        pool_endpoint="https://3fhi3ukpyw.eu-central-1.awsapprunner.com/",
+    )
+
+    assert endpoint == "https://claims.bitsota.example/custom-recipient"

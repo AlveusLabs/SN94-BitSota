@@ -6,20 +6,23 @@ One end-to-end guide for testing the shared autoresearch testnet from either:
 2. the GUI with a GUI-managed external agent.
 
 This guide also covers the missing piece that older docs glossed over: how submissions become accepted.
+It also documents the recipient coldkey split so miners can tell local wallet state apart from published claim state.
 
 ## Scope
 
 The shared testnet flow spans three systems:
 
 - coordinator: tasks, claims, submissions, verification state, best results
-- SN94 GUI or agent miner: claim, run, and submit
-- Pool claim service: epoch publication and Merkle claim packages
+- SN94 GUI or agent miner: claim, run, submit, and declare recipient coldkey
+- Pool claim service: recipient mapping, epoch publication, and Merkle claim packages
 
 Important:
 
 - `autoresearch-bittensor` itself does not do Merkle claims or chain publishing.
 - For `standard` and `centerless` tasks, submission creation is not enough. A validator must verify the submission.
 - For `peer_evaluation` tasks, miners judge miners through peer consensus instead of `/verify`.
+- The miner hotkey is how claim packages are discovered. The published `recipient_coldkey` is where the Pool claim path pays.
+- A locally declared recipient coldkey is not the same thing as a published claim recipient unless Pool has stored and republished that mapping into the epoch.
 
 ## Live Endpoints
 
@@ -41,6 +44,7 @@ Operational notes:
 - Use task `slug`, not a hardcoded task ID.
 - Claim publication is windowed, so Merkle packages appear after the next pool rollover, not immediately.
 - Reward success is not measured by free balance on the miner hotkey.
+- For testnet claims, think in this order: GUI declaration -> Pool storage -> consensus publication -> claim package -> `claim_single`.
 
 ## Validation Modes
 
@@ -243,7 +247,19 @@ Expected workspace artifacts:
 
 ## GUI E2E
 
-Set GUI config for shared testnet plus the external agent command:
+Set GUI config for shared testnet plus the external agent command.
+
+If you are using the current guided setup flow, configure the same values through `Research Setup` and wallet setup instead of hand-editing JSON.
+
+The recipient coldkey expectations are:
+
+- wallet setup stores the miner's declared recipient coldkey locally
+- Pool, not the coordinator, owns the published claim recipient mapping
+- the claim table `Recipient` value comes from the published claim package for that epoch
+- if the local declaration and the claim row differ, do not assume the GUI is wrong; check Pool publication
+- the GUI should make the local split visible by showing both the connected hotkey and the declared recipient coldkey near the claims view
+
+Example JSON for a manual source/dev run:
 
 ```json
 {
@@ -291,7 +307,8 @@ What to verify in the GUI path:
 4. the coordinator records a submission
 5. validation accepts the submission
 6. the claim service later exposes a Merkle package
-7. the claim client submits successfully
+7. the claim package includes the expected `recipient_coldkey`
+8. the claim client submits successfully against that published recipient
 
 ## Planner-Driven Pool Path
 
@@ -455,9 +472,10 @@ After a submission is accepted:
 
 1. the coordinator best result should update
 2. the reward snapshot should include the accepted competition state
-3. Pool should publish the next Merkle epoch on rollover
-4. the claim API should serve a package for the miner hotkey
-5. the GUI or local claim client should submit `claim_single`
+3. Pool should resolve the miner hotkey to a stored recipient coldkey
+4. Pool should publish the next Merkle epoch on rollover with that `recipient_coldkey` in the `claim_list`
+5. the claim API should serve a package for the miner hotkey that includes the same `recipient_coldkey`
+6. the GUI or local claim client should submit `claim_single` against the published recipient
 
 Useful checks:
 
@@ -471,6 +489,12 @@ curl -fsS https://3fhi3ukpyw.eu-central-1.awsapprunner.com/claims/epochs | jq
 curl -fsS https://3fhi3ukpyw.eu-central-1.awsapprunner.com/claims/epoch/<epoch>/claim/<hotkey> | jq
 ```
 
+When inspecting a claim package, check these fields explicitly:
+
+- `hotkey`: miner identity used for lookup and reward attribution
+- `recipient_coldkey`: payout recipient published into the Merkle leaf
+- `proof` / `amount_units` / `index`: proof material for `claim_single`
+
 ## Success Criteria
 
 The flow is only truly end-to-end when all of these happen:
@@ -481,8 +505,9 @@ The flow is only truly end-to-end when all of these happen:
 4. the task best result updates
 5. the next claim window publishes an epoch
 6. a claim package appears for the miner hotkey
-7. the claim is submitted successfully
-8. no remaining claim packages exist for that hotkey
+7. the claim package recipient matches the intended declared payout path
+8. the claim is submitted successfully
+9. no remaining claim packages exist for that hotkey
 
 ## Common Gotchas
 
@@ -490,5 +515,7 @@ The flow is only truly end-to-end when all of these happen:
 - Do not hardcode task IDs across reseeds.
 - Do not use fallback template cards as proof that the live coordinator path works.
 - Do not check miner hotkey free balance as the reward success signal.
+- Do not assume the GUI's locally declared coldkey automatically controls claim payout. Pool publication is the source of truth for each epoch.
+- Do not assume `POST /coldkey_address/update` on the legacy relay path controls autoresearch Merkle claims.
 - If `/api/v1/submissions/{id}/verify` returns `503`, validator allowlisting or validator deployment is wrong.
 - If accepted submissions never show up in `/claims/epochs`, the reward publication side is broken even if coordinator validation is healthy.

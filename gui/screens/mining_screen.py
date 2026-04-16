@@ -26,6 +26,7 @@ from gui.components.modal import ConfirmationModal
 from gui.components.invite_code_modal import InviteCodeModal
 from gui.app_config import get_app_config
 from gui.components.coming_soon_modal import ComingSoonModal
+from gui.pool_coldkey_sync import sync_declared_coldkey_to_pool_backend
 from gui.screens.pool_mining_screen import PoolMiningScreen
 from gui.resource_path import resource_path
 import requests
@@ -580,7 +581,7 @@ class MiningScreen(QWidget):
 
                 if not self._send_coldkey_address():
                     self._append_log(
-                        "ERROR: Failed to send coldkey address to relay. Please try again."
+                        "ERROR: Failed to send recipient coldkey to Pool backend. Please try again."
                     )
                     return
 
@@ -690,42 +691,17 @@ class MiningScreen(QWidget):
 
     def _send_coldkey_address(self) -> bool:
         if self._no_relay_test_enabled():
-            self._append_log("NO_RELAY_TEST enabled: skipping coldkey update call to relay.")
+            self._append_log("NO_RELAY_TEST enabled: skipping recipient coldkey update call to Pool backend.")
             return True
         try:
-            relay_url = self.main_window._get_relay_endpoint_from_config()
-            msg = f"auth:{int(time.time())}"
-            sig = self.main_window.wallet.hotkey.sign(msg).hex()
-
-            response = requests.post(
-                f"{relay_url}/coldkey_address/update",
-                json={"coldkey_address": self.main_window.coldkey_address},
-                headers={
-                    "X-Key": self.main_window.wallet.hotkey.ss58_address,
-                    "X-Signature": sig,
-                    "X-Timestamp": msg
-                },
-                timeout=10
+            sync_declared_coldkey_to_pool_backend(
+                wallet=self.main_window.wallet,
+                coldkey_address=str(self.main_window.coldkey_address or "").strip(),
             )
-
-            response.raise_for_status()
-            result = response.json()
-            if result.get("status") == "success":
-                self._append_log(f"Coldkey address sent to relay successfully")
-                return True
-            else:
-                self._append_log(f"Failed to send coldkey address: {result}")
-                return False
-        except requests.exceptions.HTTPError as e:
-            detail = ""
-            try:
-                detail = f" Response: {e.response.text}"
-            except Exception:
-                pass
-            self._append_log(f"Error sending coldkey address: {e}{detail}")
-            return False
+            self._append_log("Recipient coldkey sent to Pool backend successfully")
+            return True
         except Exception as e:
-            self._append_log(f"Error sending coldkey address: {e}")
+            self._append_log(f"Error sending recipient coldkey to Pool backend: {e}")
             return False
 
     def _show_invite_code_modal(self):

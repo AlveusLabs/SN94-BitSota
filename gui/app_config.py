@@ -55,6 +55,7 @@ class AppConfig:
     relay_endpoint: str = "https://relay.bitsota.com"
     update_manifest_url: str = "https://relay.bitsota.com/version.json"
     pool_endpoint: str = _TESTNET_PRESET_VALUES["pool_endpoint"]
+    pool_coldkey_update_endpoint: str = ""
     merkle_claim_endpoint: str = _TESTNET_PRESET_VALUES["merkle_claim_endpoint"]
     onchain_ws_url: str = _TESTNET_PRESET_VALUES["onchain_ws_url"]
     onchain_contract: str = _TESTNET_PRESET_VALUES["onchain_contract"]
@@ -160,12 +161,28 @@ def _resolve_resource_path(relative_path: str) -> str:
     return ""
 
 
+def _normalize_endpoint(value: str) -> str:
+    return str(value or "").strip().rstrip("/")
+
+
 def resolve_master_prompt_path() -> str:
     return _resolve_resource_path(DEFAULT_MASTER_PROMPT_RESOURCE)
 
 
 def resolve_bundled_metadata_path() -> str:
     return _resolve_resource_path(DEFAULT_MERKLE_METADATA_RESOURCE)
+
+
+def resolve_pool_coldkey_update_endpoint(*, explicit: str, pool_endpoint: str) -> str:
+    endpoint = _normalize_endpoint(explicit)
+    if endpoint:
+        return endpoint
+
+    pool_base = _normalize_endpoint(pool_endpoint)
+    if pool_base:
+        return pool_base
+
+    return ""
 
 
 def infer_research_agent_provider(
@@ -247,6 +264,7 @@ def _apply_overrides(defaults: AppConfig, overrides: Dict[str, Any]) -> AppConfi
         "relay_endpoint",
         "update_manifest_url",
         "pool_endpoint",
+        "pool_coldkey_update_endpoint",
         "merkle_claim_endpoint",
         "onchain_ws_url",
         "onchain_contract",

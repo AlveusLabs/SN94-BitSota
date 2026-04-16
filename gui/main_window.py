@@ -13,6 +13,7 @@ import webbrowser
 
 from bittensor_network.wallet import Wallet
 from miner.client import BittensorDirectClient
+from gui.pool_coldkey_sync import sync_declared_coldkey_to_pool_backend
 from gui.theme import BitSOTATheme
 from gui.screens import StartScreen, WalletScreen, MiningScreen, ProfileScreen
 from gui.components import (
@@ -134,6 +135,22 @@ class MiningWindow(QMainWindow):
         self.sidebar.set_active_tab("setup_wallet")
         self.screen_stack.setCurrentWidget(self.wallet_screen)
 
+    @staticmethod
+    def _short_address(address: str, *, fallback: str = "Unknown") -> str:
+        value = str(address or "").strip()
+        if not value:
+            return fallback
+        if len(value) <= 10:
+            return value
+        return f"{value[:6]}...{value[-4:]}"
+
+    def _update_sidebar_wallet_info(self, wallet_name: str, hotkey_address: str = "", coldkey_address: str = "") -> None:
+        self.sidebar.set_wallet_identities(
+            wallet_name,
+            self._short_address(hotkey_address),
+            self._short_address(coldkey_address, fallback="Not set") if coldkey_address else "Not set",
+        )
+
     def _on_wallet_loaded(self, wallet_name: str, hotkey_name: str, use_existing_coldkey: bool, coldkey_address: str):
         from gui.wallet_utils_gui import (
             get_wallet_dir, get_bittensor_wallet_dir, discover_wallets,
@@ -158,8 +175,7 @@ class MiningWindow(QMainWindow):
         try:
             hotkey = self.wallet.get_hotkey()
             address = hotkey.ss58_address
-            short_address = f"{address[:6]}...{address[-4:]}" if address else "Unknown"
-            self.sidebar.set_wallet_info(wallet_name, short_address)
+            self._update_sidebar_wallet_info(wallet_name, address, "")
         except Exception as e:
             print(f"Error loading hotkey: {e}")
             self.sidebar.set_wallet_info(wallet_name, "Error loading")
@@ -170,8 +186,8 @@ class MiningWindow(QMainWindow):
             save_coldkey_address(coldkey_address)
             save_wallet_settings(wallet_name, hotkey_name, coldkey_address)
             print(f"Using existing coldkey address: {coldkey_address}")
-            short_coldkey = f"{coldkey_address[:6]}...{coldkey_address[-4:]}" if coldkey_address and len(coldkey_address) > 10 else coldkey_address
-            self.sidebar.set_wallet_info(wallet_name, short_coldkey)
+            self._update_sidebar_wallet_info(wallet_name, address, coldkey_address)
+            self._sync_declared_coldkey_to_pool()
 
         self._initialize_client()
         self._update_mining_screen_status()
@@ -261,6 +277,27 @@ class MiningWindow(QMainWindow):
             self.mining_screen.update_wallet_status(self.wallet.name)
             self.mining_screen.update_global_sota()
 
+    def _sync_declared_coldkey_to_pool(self, *, log_errors: bool = True) -> bool:
+        if not self.wallet or not self.coldkey_address:
+            return False
+        try:
+            payload = sync_declared_coldkey_to_pool_backend(
+                wallet=self.wallet,
+                coldkey_address=self.coldkey_address,
+            )
+            recipient = str(
+                payload.get("recipient_coldkey")
+                or payload.get("coldkey_address")
+                or self.coldkey_address
+            ).strip()
+            if recipient:
+                self.coldkey_address = recipient
+            return True
+        except Exception as e:
+            if log_errors:
+                print(f"Failed syncing declared recipient coldkey to Pool: {e}")
+            return False
+
     def _prompt_for_coldkey_address(self):
         coldkey_modal = ColdkeyAddressModal(parent=self)
         coldkey_modal.address_submitted.connect(self._on_coldkey_address_submitted)
@@ -273,9 +310,13 @@ class MiningWindow(QMainWindow):
         save_coldkey_address(address)
         print(f"Coldkey address saved: {address}")
 
-        short_address = f"{address[:6]}...{address[-4:]}" if address and len(address) > 10 else address
         if self.wallet:
-            self.sidebar.set_wallet_info(self.wallet.name, short_address)
+            try:
+                hotkey_address = self.wallet.get_hotkey().ss58_address
+            except Exception:
+                hotkey_address = ""
+            self._update_sidebar_wallet_info(self.wallet.name, hotkey_address, address)
+            self._sync_declared_coldkey_to_pool()
 
     def get_current_sota(self) -> Optional[float]:
         try:
@@ -306,8 +347,9 @@ class MiningWindow(QMainWindow):
 
             hotkey = self.wallet.get_hotkey()
             address = hotkey.ss58_address
-            short_address = f"{address[:6]}...{address[-4:]}" if address else "Unknown"
-            self.sidebar.set_wallet_info(wallet_name, short_address)
+            self._update_sidebar_wallet_info(wallet_name, address, self.coldkey_address or "")
+            if self.coldkey_address:
+                self._sync_declared_coldkey_to_pool()
 
             if not self.coldkey_address:
                 self._prompt_for_coldkey_address()
@@ -360,13 +402,9 @@ class MiningWindow(QMainWindow):
             address = hotkey.ss58_address
 
             self.coldkey_address = get_coldkey_address()
-
+            self._update_sidebar_wallet_info(last_wallet_name, address, self.coldkey_address or "")
             if self.coldkey_address:
-                short_address = f"{self.coldkey_address[:6]}...{self.coldkey_address[-4:]}" if self.coldkey_address and len(self.coldkey_address) > 10 else self.coldkey_address
-            else:
-                short_address = f"{address[:6]}...{address[-4:]}" if address else "Unknown"
-
-            self.sidebar.set_wallet_info(last_wallet_name, short_address)
+                self._sync_declared_coldkey_to_pool(log_errors=False)
 
             self._initialize_client()
             self._update_mining_screen_status()

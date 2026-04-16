@@ -24,7 +24,7 @@ Every response includes an `X-Request-ID` header for log correlation.
 | GET | `/invitation_code/list/{page}/{size}` | admin | List invite codes |
 | GET | `/invitation_code/linked` | miner | Get invite linked to this miner |
 | POST | `/invitation_code/link` | miner | Link invite to this miner |
-| POST | `/coldkey_address/update` | miner | Associate coldkey with miner |
+| POST | `/coldkey_address/update` | miner | Associate coldkey with miner for the legacy relay path |
 | POST | `/test/submit_solution` | validator uid0 | Submit a test solution for logging only |
 | GET | `/test/submissions` | validator uid0 | Claim and fetch queued test submissions |
 | GET | `/admin/dashboard` | admin | Password-protected HTML dashboard |
@@ -84,6 +84,17 @@ The response returns:
 - `403` miner not invited or miner blacklisted
 - `400` score is missing, below SOTA, duplicate within the duplicate window, or invalid input
  
+## Recipient coldkey note
+
+`POST /coldkey_address/update` is not the source of truth for autoresearch Merkle claim recipients.
+
+Use this distinction:
+
+- relay path: this endpoint records a relay-side coldkey association for legacy/non-Merkle flows
+- Pool Merkle claim path: the published `recipient_coldkey` in the Pool claim package controls claim behavior
+
+For autoresearch testnet claims, the GUI can still show a locally declared recipient coldkey, but the claim contract call must follow the `recipient_coldkey` published by Pool for that epoch.
+
 ## Source of truth
 
 See `relay/main.py` for the complete behavior and `relay/schemas.py` for request and response models.

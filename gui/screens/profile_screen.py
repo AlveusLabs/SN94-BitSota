@@ -20,6 +20,7 @@ from gui.merkle_claim_client import (
     resolve_claim_endpoint,
     resolve_metadata_path,
 )
+from gui.wallet_utils_gui import get_coldkey_address
 
 
 class _ClaimLoadWorker(QRunnable):
@@ -191,6 +192,12 @@ class ProfileScreen(QWidget):
         layout.addWidget(header)
         layout.addWidget(self._separator(0.12))
 
+        self.pool_identity_label = QLabel("Connected hotkey: -\nDeclared recipient coldkey: -")
+        self.pool_identity_label.setObjectName("form_label")
+        self.pool_identity_label.setWordWrap(True)
+        self.pool_identity_label.setStyleSheet("color: rgba(21, 0, 73, 0.72); padding: 16px 0 8px 0;")
+        layout.addWidget(self.pool_identity_label)
+
         self.pool_status_label = QLabel("Open this tab to load claimable pool rewards.")
         self.pool_status_label.setObjectName("form_label")
         self.pool_status_label.setWordWrap(True)
@@ -258,9 +265,17 @@ class ProfileScreen(QWidget):
     def refresh_data(self) -> None:
         wallet = getattr(self.main_window, "wallet", None) if self.main_window else None
         if wallet is None:
+            self.pool_identity_label.setText("Connected hotkey: -\nDeclared recipient coldkey: -")
             self.pool_status_label.setText("Load a wallet to view claimable pool rewards.")
             self._render_claim_rows([])
             return
+
+        hotkey_address = str(getattr(wallet.hotkey, "ss58_address", "") or "").strip()
+        declared_coldkey = str(get_coldkey_address() or "").strip()
+        self.pool_identity_label.setText(
+            f"Connected hotkey: {self._shorten(hotkey_address, head=10, tail=8) or '-'}\n"
+            f"Declared recipient coldkey: {self._shorten(declared_coldkey, head=10, tail=8) if declared_coldkey else 'Not set'}"
+        )
 
         client = self._build_claim_client()
         if not client.is_configured():

@@ -236,23 +236,37 @@ class Sidebar(QWidget):
         address_container = QHBoxLayout()
         address_container.setSpacing(8)
 
-        self.wallet_address_label = QLabel("0x4892...81ae")
-        self.wallet_address_label.setObjectName("sidebar_wallet_address")
-        address_container.addWidget(self.wallet_address_label)
+        labels_column = QVBoxLayout()
+        labels_column.setContentsMargins(0, 0, 0, 0)
+        labels_column.setSpacing(6)
 
-        copy_icon = QSvgWidget(resource_path("gui/images/copy-06.svg"))
-        copy_icon.setFixedSize(16, 16)
-        copy_icon.setCursor(Qt.CursorShape.PointingHandCursor)
-        address_container.addWidget(copy_icon)
+        self.wallet_hotkey_label = QLabel("Hotkey: 0x4892...81ae")
+        self.wallet_hotkey_label.setObjectName("sidebar_wallet_address")
+        labels_column.addWidget(self.wallet_hotkey_label)
 
-        address_container.addStretch()
+        self.wallet_coldkey_label = QLabel("Recipient coldkey: Not set")
+        self.wallet_coldkey_label.setObjectName("sidebar_wallet_address")
+        labels_column.addWidget(self.wallet_coldkey_label)
+
+        address_container.addLayout(labels_column, 1)
         wallet_layout.addLayout(address_container)
 
         return wallet_box
 
     def set_wallet_info(self, wallet_name: str, wallet_address: str):
+        self.set_wallet_identities(wallet_name, wallet_address, "")
+
+    def set_wallet_identities(
+        self,
+        wallet_name: str,
+        hotkey_address: str,
+        recipient_coldkey: str = "",
+    ):
         self.wallet_name_label.setText(wallet_name)
-        self.wallet_address_label.setText(wallet_address)
+        hotkey_text = str(hotkey_address or "").strip() or "Unknown"
+        coldkey_text = str(recipient_coldkey or "").strip() or "Not set"
+        self.wallet_hotkey_label.setText(f"Hotkey: {hotkey_text}")
+        self.wallet_coldkey_label.setText(f"Recipient coldkey: {coldkey_text}")
         self.connect_wallet_btn.hide()
         self.wallet_info_box.show()
 

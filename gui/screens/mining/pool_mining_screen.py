@@ -33,6 +33,7 @@ from gui.app_config import (
     research_agent_provider_label,
 )
 from gui.components import PrimaryButton, SecondaryButton
+from gui.pool_coldkey_sync import sync_declared_coldkey_to_pool_backend
 from gui.resource_path import resource_path
 from gui.screens.mining_screen import MiningScreen as LegacyMiningScreen
 from miner.research_competitions import CompetitionMode, list_builtin_research_competitions
@@ -813,6 +814,18 @@ class PoolDetailScreen(LegacyMiningScreen):
             if resolved_task_id:
                 task_id = resolved_task_id
                 self.pool_data["task_id"] = resolved_task_id
+
+        declared_coldkey = str(getattr(self.main_window, "coldkey_address", "") or "").strip()
+        if wallet is not None and declared_coldkey:
+            try:
+                sync_declared_coldkey_to_pool_backend(
+                    wallet=wallet,
+                    coldkey_address=declared_coldkey,
+                )
+                self._append_log("[research-pool] recipient coldkey synced to Pool backend.")
+            except Exception as exc:
+                self._append_log(f"ERROR: Failed to sync recipient coldkey to Pool backend: {exc}")
+                return
 
         cmd = [
             sys.executable,
