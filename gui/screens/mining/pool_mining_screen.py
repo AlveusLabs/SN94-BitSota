@@ -1136,6 +1136,49 @@ class PoolMiningScreen(QWidget):
         self._load_pools(pools)
         return pools
 
+    def refresh_runtime_config(self) -> list[dict[str, Any]]:
+        current_pool = dict(self.pool_detail_view.pool_data) if self.pool_detail_view is not None else None
+        showing_detail = self.pool_detail_view is not None and self.stack.currentWidget() is self.pool_detail_view
+        pools = self.reload_pools()
+
+        if not current_pool:
+            return pools
+
+        if self.pool_detail_view is not None and self.pool_detail_view.is_mining:
+            return pools
+
+        match = self._find_matching_pool(pools, current_pool)
+        if match is None:
+            if showing_detail:
+                self.show_pool_list()
+            return pools
+
+        if showing_detail:
+            self._on_join_pool(match)
+        return pools
+
+    @staticmethod
+    def _find_matching_pool(pools: list[dict[str, Any]], current_pool: dict[str, Any]) -> Optional[dict[str, Any]]:
+        current_task_id = str(current_pool.get("task_id") or "").strip()
+        current_task_slug = str(current_pool.get("task_slug") or "").strip().lower()
+        current_id = str(current_pool.get("id") or "").strip()
+
+        if current_task_id:
+            for pool in pools:
+                if str(pool.get("task_id") or "").strip() == current_task_id:
+                    return dict(pool)
+
+        if current_task_slug:
+            for pool in pools:
+                if str(pool.get("task_slug") or "").strip().lower() == current_task_slug:
+                    return dict(pool)
+
+        if current_id:
+            for pool in pools:
+                if str(pool.get("id") or "").strip() == current_id:
+                    return dict(pool)
+        return None
+
     def _load_pools(self, pools: list[dict]):
         for card in self.pool_cards:
             card.deleteLater()

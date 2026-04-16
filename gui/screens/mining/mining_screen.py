@@ -125,6 +125,10 @@ class MiningScreen(QWidget):
         """Fetch and update the global SOTA score."""
         self.direct_content.update_global_sota()
 
+    def refresh_runtime_config(self):
+        """Reload pool/runtime configuration after setup changes."""
+        self.pool_content.refresh_runtime_config()
+
     def _on_invite_code_verified(self):
         """Forward invite code verification to direct mining screen."""
         self.direct_content._on_invite_code_verified()
