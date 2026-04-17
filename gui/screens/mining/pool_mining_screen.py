@@ -43,6 +43,8 @@ POOL_GRID_COLUMNS = 2
 POOL_GRID_SPACING = 24
 RESEARCH_POOL_MODE = "research_pool"
 DEFAULT_RESEARCH_TEST_TASK_SLUG = "cifar10-matrix-decomposition-frontier"
+RESEARCH_COORDINATOR_CONNECT_TIMEOUT_S = 5.0
+RESEARCH_COORDINATOR_READ_TIMEOUT_S = 30.0
 
 
 def _humanize_competition_mode(mode: str | None) -> str:
@@ -64,6 +66,13 @@ def _metric_label(metric_name: str | None, metric_direction: str | None) -> str:
     if direction == "minimize":
         return f"{name} (minimize)"
     return name
+
+
+def _research_coordinator_timeout() -> tuple[float, float]:
+    return (
+        float(RESEARCH_COORDINATOR_CONNECT_TIMEOUT_S),
+        float(RESEARCH_COORDINATOR_READ_TIMEOUT_S),
+    )
 
 
 def _research_runtime_settings() -> dict[str, str]:
@@ -209,7 +218,11 @@ def _select_research_test_pool(pools: list[dict[str, Any]], task_slug: str) -> O
     return preferred or fallback
 
 
-def _fetch_research_tasks(*, coordinator_url: str, timeout_s: float = 1.5) -> list[dict[str, Any]]:
+def _fetch_research_tasks(
+    *,
+    coordinator_url: str,
+    timeout_s: float | tuple[float, float] = (RESEARCH_COORDINATOR_CONNECT_TIMEOUT_S, RESEARCH_COORDINATOR_READ_TIMEOUT_S),
+) -> list[dict[str, Any]]:
     response = requests.get(
         f"{coordinator_url.rstrip('/')}/api/v1/tasks",
         timeout=timeout_s,
@@ -244,7 +257,7 @@ def _resolve_research_launch_task(
     coordinator_url: str,
     task_id: str = "",
     task_slug: str = "",
-    timeout_s: float = 2.0,
+    timeout_s: float | tuple[float, float] = (RESEARCH_COORDINATOR_CONNECT_TIMEOUT_S, RESEARCH_COORDINATOR_READ_TIMEOUT_S),
 ) -> tuple[Optional[dict[str, Any]], Optional[str]]:
     try:
         tasks = _fetch_research_tasks(coordinator_url=coordinator_url, timeout_s=timeout_s)
@@ -345,7 +358,10 @@ def _configured_research_pools() -> list[dict[str, Any]]:
         return _fallback_research_pools(coordinator_url=coordinator_url, agent_label=agent_label)
 
     try:
-        payload = _fetch_research_tasks(coordinator_url=coordinator_url, timeout_s=1.5)
+        payload = _fetch_research_tasks(
+            coordinator_url=coordinator_url,
+            timeout_s=_research_coordinator_timeout(),
+        )
     except Exception:
         return _fallback_research_pools(coordinator_url=coordinator_url, agent_label=agent_label)
 
