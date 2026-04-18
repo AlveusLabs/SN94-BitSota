@@ -160,6 +160,68 @@ def test_submit_claim_uses_explicit_gas_limit(monkeypatch) -> None:
     assert calls["closed"] is True
 
 
+def test_submit_claim_falls_back_to_cargo_contract_for_v5_metadata(monkeypatch) -> None:
+    calls = {}
+
+    class _RuntimeConfig:
+        def update_type_registry_types(self, types):
+            calls["runtime_types"] = dict(types)
+
+    class _Substrate:
+        def __init__(self, url: str):
+            calls["url"] = url
+            self.runtime_config = _RuntimeConfig()
+
+        def close(self):
+            calls["closed"] = True
+
+    def _unsupported_metadata(**kwargs):
+        raise RuntimeError("Unsupported metadata version")
+
+    def _fake_run(command, capture_output, text, check):
+        calls["command"] = list(command)
+        assert capture_output is True
+        assert text is True
+        assert check is False
+        return SimpleNamespace(returncode=0, stdout='{"extrinsic_hash":"0xfeed"}', stderr="")
+
+    monkeypatch.setattr("gui.merkle_claim_client.SubstrateInterface", _Substrate)
+    monkeypatch.setattr("gui.merkle_claim_client.ContractInstance.create_from_address", _unsupported_metadata)
+    monkeypatch.setattr("gui.merkle_claim_client.subprocess.run", _fake_run)
+
+    client = MerkleClaimClient(
+        claim_endpoint="http://127.0.0.1:8844",
+        onchain_ws_url="ws://127.0.0.1:9944",
+        contract_address="5ContractAddr",
+        metadata_path=__file__,
+    )
+    claim = _normalize_claim_package(
+        {
+            "epoch": 2,
+            "index": 1,
+            "recipient_coldkey": "5ColdkeyAddr",
+            "hotkey": "5MinerHotkey",
+            "amount": 35_000_000_000,
+            "proof": ["0x" + ("11" * 32)],
+            "root": "0x" + ("22" * 32),
+        }
+    )
+
+    result = client.submit_claim(
+        signer=SimpleNamespace(mnemonic="example mnemonic"),
+        claim=claim,
+    )
+
+    assert result["ok"] is True
+    assert result["extrinsic_hash"] == "0xfeed"
+    assert "--message" in calls["command"]
+    assert "claim_single" in calls["command"]
+    assert "--skip-dry-run" in calls["command"]
+    assert "-y" in calls["command"]
+    assert "ws://127.0.0.1:9944" in calls["command"]
+    assert "example mnemonic" in calls["command"]
+
+
 def test_list_claim_packages_filters_locally_claimed_keys(monkeypatch, tmp_path: Path) -> None:
     state_path = tmp_path / "merkle_claim_state.json"
     state_path.write_text(

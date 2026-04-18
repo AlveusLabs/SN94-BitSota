@@ -4,6 +4,7 @@ from dataclasses import dataclass
 import json
 import os
 from pathlib import Path
+import subprocess
 from typing import Any, Optional
 from urllib.parse import urlparse, urlunparse
 
@@ -28,6 +29,55 @@ def _to_int(value: Any) -> int:
 
 def _normalize_endpoint(value: str) -> str:
     return str(value or "").strip().rstrip("/")
+
+
+def _extract_json_object(raw: str) -> dict[str, Any]:
+    text = str(raw or "").strip()
+    if not text:
+        return {}
+    try:
+        payload = json.loads(text)
+        return payload if isinstance(payload, dict) else {}
+    except Exception:
+        pass
+    for idx in range(len(text) - 1, -1, -1):
+        if text[idx] != "{":
+            continue
+        try:
+            payload = json.loads(text[idx:])
+        except Exception:
+            continue
+        return payload if isinstance(payload, dict) else {}
+    return {}
+
+
+def _find_mapping_value(payload: Any, *keys: str) -> str:
+    wanted = {str(key).strip() for key in keys if str(key).strip()}
+    if isinstance(payload, dict):
+        for key, value in payload.items():
+            if str(key) in wanted and value not in (None, ""):
+                return str(value)
+        for value in payload.values():
+            found = _find_mapping_value(value, *wanted)
+            if found:
+                return found
+    elif isinstance(payload, list):
+        for value in payload:
+            found = _find_mapping_value(value, *wanted)
+            if found:
+                return found
+    return ""
+
+
+def _hex_to_byte_array(value: str) -> list[int]:
+    text = str(value or "").strip()
+    if text.startswith("0x"):
+        text = text[2:]
+    if len(text) % 2 != 0:
+        text = f"0{text}"
+    if not text:
+        return []
+    return list(bytes.fromhex(text))
 
 
 def _claim_state_path() -> Path:
@@ -232,16 +282,99 @@ class MerkleClaimClient:
             claims.append(claim)
         return claims
 
+    @staticmethod
+    def _supports_python_contract_metadata(exc: Exception) -> bool:
+        return "Unsupported metadata version" not in str(exc or "")
+
+    def _submit_claim_with_cargo_contract(
+        self,
+        *,
+        signer: Keypair,
+        claim: MerkleClaimPackage,
+        transfer: bool,
+    ) -> dict[str, Any]:
+        mnemonic = str(getattr(signer, "mnemonic", "") or "").strip()
+        if not mnemonic:
+            raise RuntimeError("claim signer mnemonic unavailable for cargo-contract fallback")
+        proof_bytes = [_hex_to_byte_array(p) for p in claim.proof]
+        claim_data_json = json.dumps(
+            {
+                "epoch": int(claim.epoch),
+                "index": int(claim.index),
+                "recipient_coldkey": claim.recipient_address,
+                "amount": int(claim.amount_rao),
+                "proof": proof_bytes,
+            },
+            separators=(",", ":"),
+        )
+        command = [
+            "cargo",
+            "contract",
+            "call",
+            str(Path(self.metadata_path).expanduser()),
+            "--contract",
+            self.contract_address,
+            "--message",
+            "claim_single",
+            "--suri",
+            mnemonic,
+            "--url",
+            self.onchain_ws_url,
+            "--execute",
+            "--skip-dry-run",
+            "-y",
+            "--gas",
+            str(int(_CLAIM_GAS_LIMIT["ref_time"])),
+            "--proof-size",
+            str(int(_CLAIM_GAS_LIMIT["proof_size"])),
+            "--storage-deposit-limit",
+            str(int(_CLAIM_STORAGE_DEPOSIT_LIMIT)),
+            "--output-json",
+            "--args",
+            claim_data_json,
+            str(bool(transfer)).lower(),
+        ]
+        result = subprocess.run(command, capture_output=True, text=True, check=False)
+        combined_output = "\n".join(
+            part for part in [str(result.stdout or "").strip(), str(result.stderr or "").strip()] if part
+        )
+        if int(result.returncode) != 0:
+            raise RuntimeError(combined_output or "cargo contract call failed")
+        payload = _extract_json_object(str(result.stdout or ""))
+        extrinsic_hash = _find_mapping_value(
+            payload,
+            "extrinsic_hash",
+            "extrinsicHash",
+            "tx_hash",
+            "transaction_hash",
+        )
+        self.mark_locally_claimed(claim)
+        return {
+            "ok": True,
+            "epoch": claim.epoch,
+            "index": claim.index,
+            "extrinsic_hash": extrinsic_hash,
+        }
+
     def submit_claim(self, *, signer: Keypair, claim: MerkleClaimPackage, transfer: bool = True) -> dict[str, Any]:
         self.assert_configured()
         substrate = SubstrateInterface(url=self.onchain_ws_url)
         try:
             substrate.runtime_config.update_type_registry_types({"Balance": "u64"})
-            contract = ContractInstance.create_from_address(
-                contract_address=self.contract_address,
-                metadata_file=str(Path(self.metadata_path).expanduser()),
-                substrate=substrate,
-            )
+            try:
+                contract = ContractInstance.create_from_address(
+                    contract_address=self.contract_address,
+                    metadata_file=str(Path(self.metadata_path).expanduser()),
+                    substrate=substrate,
+                )
+            except Exception as exc:
+                if self._supports_python_contract_metadata(exc):
+                    raise
+                return self._submit_claim_with_cargo_contract(
+                    signer=signer,
+                    claim=claim,
+                    transfer=transfer,
+                )
             proof_hex = [p if str(p).startswith("0x") else f"0x{p}" for p in claim.proof]
             receipt = contract.exec(
                 signer,
