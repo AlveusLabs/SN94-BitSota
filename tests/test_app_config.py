@@ -20,7 +20,7 @@ def test_get_app_config_defaults_to_shared_testnet_endpoints(monkeypatch, tmp_pa
     assert cfg.pool_endpoint == "https://3fhi3ukpyw.eu-central-1.awsapprunner.com"
     assert cfg.merkle_claim_endpoint == "https://3fhi3ukpyw.eu-central-1.awsapprunner.com/claims"
     assert cfg.onchain_ws_url == "wss://test.finney.opentensor.ai:443"
-    assert cfg.onchain_contract == "5GUw1gZVfUTXWLEbA7G6Xdp8QsUHAy2xpVmaj5fRc1gW1Xyy"
+    assert cfg.onchain_contract == "5G1fuA6RPVCUu7K5ep7SWJLzQaqzdJAwchQHppkfVKzEVv49"
     assert cfg.research_coordinator_endpoint == "https://chvp2wytst.eu-central-1.awsapprunner.com"
     assert cfg.onchain_metadata_path == ""
     assert resolve_bundled_metadata_path().endswith(

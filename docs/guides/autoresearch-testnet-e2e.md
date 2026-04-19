@@ -34,7 +34,7 @@ Current shared testnet endpoints:
   "research_coordinator_endpoint": "https://chvp2wytst.eu-central-1.awsapprunner.com",
   "merkle_claim_endpoint": "https://3fhi3ukpyw.eu-central-1.awsapprunner.com/claims",
   "onchain_ws_url": "wss://test.finney.opentensor.ai:443",
-  "onchain_contract": "5GUw1gZVfUTXWLEbA7G6Xdp8QsUHAy2xpVmaj5fRc1gW1Xyy",
+  "onchain_contract": "5G1fuA6RPVCUu7K5ep7SWJLzQaqzdJAwchQHppkfVKzEVv49",
   "onchain_metadata_path": "/home/mekaneeky/repos/Pool/new_merkle/app/assets/merklepool.json"
 }
 ```
@@ -45,6 +45,7 @@ Operational notes:
 - Claim publication is windowed, so Merkle packages appear after the next pool rollover, not immediately.
 - Reward success is not measured by free balance on the miner hotkey.
 - For testnet claims, think in this order: GUI declaration -> Pool storage -> consensus publication -> claim package -> `claim_single`.
+- Only the latest published epoch is claimable; the published `amount_units` are cumulative for that hotkey/recipient pair.
 
 ## Validation Modes
 
@@ -266,7 +267,7 @@ Example JSON for a manual source/dev run:
   "pool_endpoint": "https://3fhi3ukpyw.eu-central-1.awsapprunner.com",
   "merkle_claim_endpoint": "https://3fhi3ukpyw.eu-central-1.awsapprunner.com/claims",
   "onchain_ws_url": "wss://test.finney.opentensor.ai:443",
-  "onchain_contract": "5GUw1gZVfUTXWLEbA7G6Xdp8QsUHAy2xpVmaj5fRc1gW1Xyy",
+  "onchain_contract": "5G1fuA6RPVCUu7K5ep7SWJLzQaqzdJAwchQHppkfVKzEVv49",
   "onchain_metadata_path": "/home/mekaneeky/repos/Pool/new_merkle/app/assets/merklepool.json",
   "research_coordinator_endpoint": "https://chvp2wytst.eu-central-1.awsapprunner.com",
   "research_agent_mode": "gui_managed",

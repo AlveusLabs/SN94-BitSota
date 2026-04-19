@@ -22,7 +22,7 @@ _TESTNET_PRESET_VALUES: Dict[str, str] = {
     "pool_endpoint": "https://3fhi3ukpyw.eu-central-1.awsapprunner.com",
     "merkle_claim_endpoint": "https://3fhi3ukpyw.eu-central-1.awsapprunner.com/claims",
     "onchain_ws_url": "wss://test.finney.opentensor.ai:443",
-    "onchain_contract": "5GUw1gZVfUTXWLEbA7G6Xdp8QsUHAy2xpVmaj5fRc1gW1Xyy",
+    "onchain_contract": "5G1fuA6RPVCUu7K5ep7SWJLzQaqzdJAwchQHppkfVKzEVv49",
     "onchain_metadata_path": "",
     "research_coordinator_endpoint": "https://chvp2wytst.eu-central-1.awsapprunner.com",
 }

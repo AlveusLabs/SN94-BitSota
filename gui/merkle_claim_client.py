@@ -301,6 +301,7 @@ class MerkleClaimClient:
             {
                 "epoch": int(claim.epoch),
                 "index": int(claim.index),
+                "hotkey": claim.identity_address,
                 "recipient_coldkey": claim.recipient_address,
                 "amount": int(claim.amount_rao),
                 "proof": proof_bytes,
@@ -383,6 +384,7 @@ class MerkleClaimClient:
                     "data": {
                         "epoch": int(claim.epoch),
                         "index": int(claim.index),
+                        "hotkey": claim.identity_address,
                         "recipient_coldkey": claim.recipient_address,
                         "amount": int(claim.amount_rao),
                         "proof": proof_hex,

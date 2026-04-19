@@ -1,11 +1,11 @@
 {
   "source": {
-    "hash": "0xe05e46c9486b9327c877ba2ed0a3d94dce9f355c719f345cf28a07f68bc20408",
+    "hash": "0xfbfde592a683577b0b01c22c6fcb6b21835280c732b41369ca0c23ed2fe010e9",
     "language": "ink! 5.1.1",
     "compiler": "rustc 1.89.0",
     "build_info": {
       "build_mode": "Release",
-      "cargo_contract_version": "5.0.3",
+      "cargo_contract_version": "5.0.0",
       "rust_toolchain": "stable-x86_64-unknown-linux-gnu",
       "wasm_opt_settings": {
         "keep_debug_symbols": false,
@@ -55,7 +55,7 @@
             "ink_primitives",
             "ConstructorResult"
           ],
-          "type": 18
+          "type": 21
         },
         "selector": "0x9bae9d5e"
       },
@@ -91,7 +91,7 @@
             "ink_primitives",
             "ConstructorResult"
           ],
-          "type": 18
+          "type": 21
         },
         "selector": "0xed4b9d1b"
       }
@@ -120,7 +120,7 @@
         "displayName": [
           "ChainExtension"
         ],
-        "type": 33
+        "type": 38
       },
       "hash": {
         "displayName": [
@@ -222,7 +222,7 @@
               "displayName": [
                 "String"
               ],
-              "type": 30
+              "type": 35
             }
           }
         ],
@@ -258,6 +258,17 @@
           {
             "docs": [],
             "indexed": false,
+            "label": "hotkey",
+            "type": {
+              "displayName": [
+                "AccountId"
+              ],
+              "type": 2
+            }
+          },
+          {
+            "docs": [],
+            "indexed": false,
             "label": "recipient",
             "type": {
               "displayName": [
@@ -281,7 +292,7 @@
         "docs": [],
         "label": "Claimed",
         "module_path": "merklepool::merklepool",
-        "signature_topic": "0x8ecf406429eb45d02c3053cf07f29d762ff9856b2d51e12570896f7033275904"
+        "signature_topic": "0xc2ee6bb17a1e9dd4e6b4bd0a855e819b5f8cc42c2cd6eb5adf20e8bd75ab428b"
       },
       {
         "args": [
@@ -330,7 +341,7 @@
         "ink",
         "LangError"
       ],
-      "type": 19
+      "type": 22
     },
     "messages": [
       {
@@ -345,7 +356,7 @@
             "ink",
             "MessageResult"
           ],
-          "type": 20
+          "type": 23
         },
         "selector": "0x5ac14eb8"
       },
@@ -361,9 +372,51 @@
             "ink",
             "MessageResult"
           ],
-          "type": 20
+          "type": 23
         },
         "selector": "0x07fcd0b1"
+      },
+      {
+        "args": [],
+        "default": false,
+        "docs": [],
+        "label": "get_gate",
+        "mutates": false,
+        "payable": false,
+        "returnType": {
+          "displayName": [
+            "ink",
+            "MessageResult"
+          ],
+          "type": 23
+        },
+        "selector": "0x6f14ca57"
+      },
+      {
+        "args": [
+          {
+            "label": "gate",
+            "type": {
+              "displayName": [
+                "AccountId"
+              ],
+              "type": 2
+            }
+          }
+        ],
+        "default": false,
+        "docs": [],
+        "label": "set_gate",
+        "mutates": true,
+        "payable": false,
+        "returnType": {
+          "displayName": [
+            "ink",
+            "MessageResult"
+          ],
+          "type": 24
+        },
+        "selector": "0xae7f58bc"
       },
       {
         "args": [],
@@ -377,7 +430,7 @@
             "ink",
             "MessageResult"
           ],
-          "type": 21
+          "type": 27
         },
         "selector": "0xfa7d505b"
       },
@@ -403,7 +456,7 @@
             "ink",
             "MessageResult"
           ],
-          "type": 22
+          "type": 28
         },
         "selector": "0x3e2d99a0"
       },
@@ -419,7 +472,7 @@
             "ink",
             "MessageResult"
           ],
-          "type": 22
+          "type": 28
         },
         "selector": "0x405cc296"
       },
@@ -435,9 +488,51 @@
             "ink",
             "MessageResult"
           ],
-          "type": 22
+          "type": 28
         },
         "selector": "0x9246e370"
+      },
+      {
+        "args": [],
+        "default": false,
+        "docs": [],
+        "label": "get_latest_published_epoch",
+        "mutates": false,
+        "payable": false,
+        "returnType": {
+          "displayName": [
+            "ink",
+            "MessageResult"
+          ],
+          "type": 29
+        },
+        "selector": "0x73c7aa3a"
+      },
+      {
+        "args": [
+          {
+            "label": "hotkey",
+            "type": {
+              "displayName": [
+                "AccountId"
+              ],
+              "type": 2
+            }
+          }
+        ],
+        "default": false,
+        "docs": [],
+        "label": "get_claimed_cumulative_rao",
+        "mutates": false,
+        "payable": false,
+        "returnType": {
+          "displayName": [
+            "ink",
+            "MessageResult"
+          ],
+          "type": 28
+        },
+        "selector": "0x0d12e708"
       },
       {
         "args": [],
@@ -451,7 +546,7 @@
             "ink",
             "MessageResult"
           ],
-          "type": 22
+          "type": 28
         },
         "selector": "0x466e89b1"
       },
@@ -467,7 +562,7 @@
             "ink",
             "MessageResult"
           ],
-          "type": 22
+          "type": 28
         },
         "selector": "0x58bd614b"
       },
@@ -483,7 +578,7 @@
             "ink",
             "MessageResult"
           ],
-          "type": 22
+          "type": 28
         },
         "selector": "0x62c4af50"
       },
@@ -509,7 +604,7 @@
             "ink",
             "MessageResult"
           ],
-          "type": 23
+          "type": 24
         },
         "selector": "0x69baac01"
       },
@@ -525,7 +620,7 @@
             "ink",
             "MessageResult"
           ],
-          "type": 26
+          "type": 31
         },
         "selector": "0x99993e1f"
       },
@@ -551,7 +646,7 @@
             "ink",
             "MessageResult"
           ],
-          "type": 28
+          "type": 33
         },
         "selector": "0x85b1df5b"
       },
@@ -567,7 +662,7 @@
             "ink",
             "MessageResult"
           ],
-          "type": 23
+          "type": 24
         },
         "selector": "0x81e0c604"
       },
@@ -583,7 +678,7 @@
             "ink",
             "MessageResult"
           ],
-          "type": 23
+          "type": 24
         },
         "selector": "0x67616649"
       },
@@ -618,7 +713,7 @@
             "ink",
             "MessageResult"
           ],
-          "type": 23
+          "type": 24
         },
         "selector": "0xa3728d8b"
       },
@@ -634,7 +729,7 @@
             "ink",
             "MessageResult"
           ],
-          "type": 23
+          "type": 24
         },
         "selector": "0xa1f42fc0"
       },
@@ -682,7 +777,7 @@
               "displayName": [
                 "String"
               ],
-              "type": 30
+              "type": 35
             }
           }
         ],
@@ -696,7 +791,7 @@
             "ink",
             "MessageResult"
           ],
-          "type": 23
+          "type": 24
         },
         "selector": "0x2c139004"
       },
@@ -731,7 +826,7 @@
             "ink",
             "MessageResult"
           ],
-          "type": 23
+          "type": 24
         },
         "selector": "0x0c74856a"
       },
@@ -775,7 +870,7 @@
             "ink",
             "MessageResult"
           ],
-          "type": 23
+          "type": 24
         },
         "selector": "0x64911ae8"
       },
@@ -787,7 +882,7 @@
               "displayName": [
                 "ClaimData"
               ],
-              "type": 31
+              "type": 36
             }
           },
           {
@@ -810,7 +905,7 @@
             "ink",
             "MessageResult"
           ],
-          "type": 23
+          "type": 24
         },
         "selector": "0xc8284e97"
       }
@@ -1010,13 +1105,46 @@
                 }
               },
               "name": "claimed_map"
+            },
+            {
+              "layout": {
+                "root": {
+                  "layout": {
+                    "leaf": {
+                      "key": "0xf7aa71fe",
+                      "ty": 5
+                    }
+                  },
+                  "root_key": "0xf7aa71fe",
+                  "ty": 17
+                }
+              },
+              "name": "claimed_cumulative_rao"
+            },
+            {
+              "layout": {
+                "leaf": {
+                  "key": "0x00000000",
+                  "ty": 5
+                }
+              },
+              "name": "latest_published_epoch"
+            },
+            {
+              "layout": {
+                "leaf": {
+                  "key": "0x00000000",
+                  "ty": 0
+                }
+              },
+              "name": "has_latest_published_epoch"
             }
           ],
           "name": "Merklepool"
         }
       },
       "root_key": "0x00000000",
-      "ty": 17
+      "ty": 20
     }
   },
   "types": [
@@ -1327,6 +1455,76 @@
       "id": 17,
       "type": {
         "def": {
+          "composite": {}
+        },
+        "params": [
+          {
+            "name": "K",
+            "type": 2
+          },
+          {
+            "name": "V",
+            "type": 5
+          },
+          {
+            "name": "KeyType",
+            "type": 18
+          }
+        ],
+        "path": [
+          "ink_storage",
+          "lazy",
+          "mapping",
+          "Mapping"
+        ]
+      }
+    },
+    {
+      "id": 18,
+      "type": {
+        "def": {
+          "composite": {}
+        },
+        "params": [
+          {
+            "name": "L",
+            "type": 10
+          },
+          {
+            "name": "R",
+            "type": 19
+          }
+        ],
+        "path": [
+          "ink_storage_traits",
+          "impls",
+          "ResolverKey"
+        ]
+      }
+    },
+    {
+      "id": 19,
+      "type": {
+        "def": {
+          "composite": {}
+        },
+        "params": [
+          {
+            "name": "ParentKey",
+            "type": 12
+          }
+        ],
+        "path": [
+          "ink_storage_traits",
+          "impls",
+          "ManualKey"
+        ]
+      }
+    },
+    {
+      "id": 20,
+      "type": {
+        "def": {
           "composite": {
             "fields": [
               {
@@ -1388,6 +1586,21 @@
                 "name": "claimed_map",
                 "type": 13,
                 "typeName": "<Mapping<Hash, bool> as::ink::storage::traits::AutoStorableHint<\n::ink::storage::traits::ManualKey<3295282726u32, ()>,>>::Type"
+              },
+              {
+                "name": "claimed_cumulative_rao",
+                "type": 17,
+                "typeName": "<Mapping<AccountId, u64> as::ink::storage::traits::\nAutoStorableHint<::ink::storage::traits::ManualKey<4268862199u32,\n()>,>>::Type"
+              },
+              {
+                "name": "latest_published_epoch",
+                "type": 5,
+                "typeName": "<u64 as::ink::storage::traits::AutoStorableHint<::ink::storage\n::traits::ManualKey<3419543953u32, ()>,>>::Type"
+              },
+              {
+                "name": "has_latest_published_epoch",
+                "type": 0,
+                "typeName": "<bool as::ink::storage::traits::AutoStorableHint<::ink::storage\n::traits::ManualKey<3465678471u32, ()>,>>::Type"
               }
             ]
           }
@@ -1400,7 +1613,7 @@
       }
     },
     {
-      "id": 18,
+      "id": 21,
       "type": {
         "def": {
           "variant": {
@@ -1417,7 +1630,7 @@
               {
                 "fields": [
                   {
-                    "type": 19
+                    "type": 22
                   }
                 ],
                 "index": 1,
@@ -1433,7 +1646,7 @@
           },
           {
             "name": "E",
-            "type": 19
+            "type": 22
           }
         ],
         "path": [
@@ -1442,7 +1655,7 @@
       }
     },
     {
-      "id": 19,
+      "id": 22,
       "type": {
         "def": {
           "variant": {
@@ -1461,7 +1674,7 @@
       }
     },
     {
-      "id": 20,
+      "id": 23,
       "type": {
         "def": {
           "variant": {
@@ -1478,7 +1691,7 @@
               {
                 "fields": [
                   {
-                    "type": 19
+                    "type": 22
                   }
                 ],
                 "index": 1,
@@ -1494,133 +1707,7 @@
           },
           {
             "name": "E",
-            "type": 19
-          }
-        ],
-        "path": [
-          "Result"
-        ]
-      }
-    },
-    {
-      "id": 21,
-      "type": {
-        "def": {
-          "variant": {
-            "variants": [
-              {
-                "fields": [
-                  {
-                    "type": 0
-                  }
-                ],
-                "index": 0,
-                "name": "Ok"
-              },
-              {
-                "fields": [
-                  {
-                    "type": 19
-                  }
-                ],
-                "index": 1,
-                "name": "Err"
-              }
-            ]
-          }
-        },
-        "params": [
-          {
-            "name": "T",
-            "type": 0
-          },
-          {
-            "name": "E",
-            "type": 19
-          }
-        ],
-        "path": [
-          "Result"
-        ]
-      }
-    },
-    {
-      "id": 22,
-      "type": {
-        "def": {
-          "variant": {
-            "variants": [
-              {
-                "fields": [
-                  {
-                    "type": 5
-                  }
-                ],
-                "index": 0,
-                "name": "Ok"
-              },
-              {
-                "fields": [
-                  {
-                    "type": 19
-                  }
-                ],
-                "index": 1,
-                "name": "Err"
-              }
-            ]
-          }
-        },
-        "params": [
-          {
-            "name": "T",
-            "type": 5
-          },
-          {
-            "name": "E",
-            "type": 19
-          }
-        ],
-        "path": [
-          "Result"
-        ]
-      }
-    },
-    {
-      "id": 23,
-      "type": {
-        "def": {
-          "variant": {
-            "variants": [
-              {
-                "fields": [
-                  {
-                    "type": 24
-                  }
-                ],
-                "index": 0,
-                "name": "Ok"
-              },
-              {
-                "fields": [
-                  {
-                    "type": 19
-                  }
-                ],
-                "index": 1,
-                "name": "Err"
-              }
-            ]
-          }
-        },
-        "params": [
-          {
-            "name": "T",
-            "type": 24
-          },
-          {
-            "name": "E",
-            "type": 19
+            "type": 22
           }
         ],
         "path": [
@@ -1637,6 +1724,48 @@
               {
                 "fields": [
                   {
+                    "type": 25
+                  }
+                ],
+                "index": 0,
+                "name": "Ok"
+              },
+              {
+                "fields": [
+                  {
+                    "type": 22
+                  }
+                ],
+                "index": 1,
+                "name": "Err"
+              }
+            ]
+          }
+        },
+        "params": [
+          {
+            "name": "T",
+            "type": 25
+          },
+          {
+            "name": "E",
+            "type": 22
+          }
+        ],
+        "path": [
+          "Result"
+        ]
+      }
+    },
+    {
+      "id": 25,
+      "type": {
+        "def": {
+          "variant": {
+            "variants": [
+              {
+                "fields": [
+                  {
                     "type": 12
                   }
                 ],
@@ -1646,7 +1775,7 @@
               {
                 "fields": [
                   {
-                    "type": 25
+                    "type": 26
                   }
                 ],
                 "index": 1,
@@ -1662,7 +1791,7 @@
           },
           {
             "name": "E",
-            "type": 25
+            "type": 26
           }
         ],
         "path": [
@@ -1671,7 +1800,7 @@
       }
     },
     {
-      "id": 25,
+      "id": 26,
       "type": {
         "def": {
           "variant": {
@@ -1694,48 +1823,6 @@
       }
     },
     {
-      "id": 26,
-      "type": {
-        "def": {
-          "variant": {
-            "variants": [
-              {
-                "fields": [
-                  {
-                    "type": 27
-                  }
-                ],
-                "index": 0,
-                "name": "Ok"
-              },
-              {
-                "fields": [
-                  {
-                    "type": 19
-                  }
-                ],
-                "index": 1,
-                "name": "Err"
-              }
-            ]
-          }
-        },
-        "params": [
-          {
-            "name": "T",
-            "type": 27
-          },
-          {
-            "name": "E",
-            "type": 19
-          }
-        ],
-        "path": [
-          "Result"
-        ]
-      }
-    },
-    {
       "id": 27,
       "type": {
         "def": {
@@ -1744,7 +1831,7 @@
               {
                 "fields": [
                   {
-                    "type": 5
+                    "type": 0
                   }
                 ],
                 "index": 0,
@@ -1753,7 +1840,7 @@
               {
                 "fields": [
                   {
-                    "type": 25
+                    "type": 22
                   }
                 ],
                 "index": 1,
@@ -1765,11 +1852,11 @@
         "params": [
           {
             "name": "T",
-            "type": 5
+            "type": 0
           },
           {
             "name": "E",
-            "type": 25
+            "type": 22
           }
         ],
         "path": [
@@ -1786,7 +1873,7 @@
               {
                 "fields": [
                   {
-                    "type": 29
+                    "type": 5
                   }
                 ],
                 "index": 0,
@@ -1795,7 +1882,7 @@
               {
                 "fields": [
                   {
-                    "type": 19
+                    "type": 22
                   }
                 ],
                 "index": 1,
@@ -1807,11 +1894,11 @@
         "params": [
           {
             "name": "T",
-            "type": 29
+            "type": 5
           },
           {
             "name": "E",
-            "type": 19
+            "type": 22
           }
         ],
         "path": [
@@ -1828,6 +1915,207 @@
               {
                 "fields": [
                   {
+                    "type": 30
+                  }
+                ],
+                "index": 0,
+                "name": "Ok"
+              },
+              {
+                "fields": [
+                  {
+                    "type": 22
+                  }
+                ],
+                "index": 1,
+                "name": "Err"
+              }
+            ]
+          }
+        },
+        "params": [
+          {
+            "name": "T",
+            "type": 30
+          },
+          {
+            "name": "E",
+            "type": 22
+          }
+        ],
+        "path": [
+          "Result"
+        ]
+      }
+    },
+    {
+      "id": 30,
+      "type": {
+        "def": {
+          "variant": {
+            "variants": [
+              {
+                "index": 0,
+                "name": "None"
+              },
+              {
+                "fields": [
+                  {
+                    "type": 5
+                  }
+                ],
+                "index": 1,
+                "name": "Some"
+              }
+            ]
+          }
+        },
+        "params": [
+          {
+            "name": "T",
+            "type": 5
+          }
+        ],
+        "path": [
+          "Option"
+        ]
+      }
+    },
+    {
+      "id": 31,
+      "type": {
+        "def": {
+          "variant": {
+            "variants": [
+              {
+                "fields": [
+                  {
+                    "type": 32
+                  }
+                ],
+                "index": 0,
+                "name": "Ok"
+              },
+              {
+                "fields": [
+                  {
+                    "type": 22
+                  }
+                ],
+                "index": 1,
+                "name": "Err"
+              }
+            ]
+          }
+        },
+        "params": [
+          {
+            "name": "T",
+            "type": 32
+          },
+          {
+            "name": "E",
+            "type": 22
+          }
+        ],
+        "path": [
+          "Result"
+        ]
+      }
+    },
+    {
+      "id": 32,
+      "type": {
+        "def": {
+          "variant": {
+            "variants": [
+              {
+                "fields": [
+                  {
+                    "type": 5
+                  }
+                ],
+                "index": 0,
+                "name": "Ok"
+              },
+              {
+                "fields": [
+                  {
+                    "type": 26
+                  }
+                ],
+                "index": 1,
+                "name": "Err"
+              }
+            ]
+          }
+        },
+        "params": [
+          {
+            "name": "T",
+            "type": 5
+          },
+          {
+            "name": "E",
+            "type": 26
+          }
+        ],
+        "path": [
+          "Result"
+        ]
+      }
+    },
+    {
+      "id": 33,
+      "type": {
+        "def": {
+          "variant": {
+            "variants": [
+              {
+                "fields": [
+                  {
+                    "type": 34
+                  }
+                ],
+                "index": 0,
+                "name": "Ok"
+              },
+              {
+                "fields": [
+                  {
+                    "type": 22
+                  }
+                ],
+                "index": 1,
+                "name": "Err"
+              }
+            ]
+          }
+        },
+        "params": [
+          {
+            "name": "T",
+            "type": 34
+          },
+          {
+            "name": "E",
+            "type": 22
+          }
+        ],
+        "path": [
+          "Result"
+        ]
+      }
+    },
+    {
+      "id": 34,
+      "type": {
+        "def": {
+          "variant": {
+            "variants": [
+              {
+                "fields": [
+                  {
                     "type": 8
                   }
                 ],
@@ -1837,7 +2125,7 @@
               {
                 "fields": [
                   {
-                    "type": 25
+                    "type": 26
                   }
                 ],
                 "index": 1,
@@ -1853,7 +2141,7 @@
           },
           {
             "name": "E",
-            "type": 25
+            "type": 26
           }
         ],
         "path": [
@@ -1862,7 +2150,7 @@
       }
     },
     {
-      "id": 30,
+      "id": 35,
       "type": {
         "def": {
           "primitive": "str"
@@ -1870,7 +2158,7 @@
       }
     },
     {
-      "id": 31,
+      "id": 36,
       "type": {
         "def": {
           "composite": {
@@ -1886,6 +2174,11 @@
                 "typeName": "u32"
               },
               {
+                "name": "hotkey",
+                "type": 2,
+                "typeName": "AccountId"
+              },
+              {
                 "name": "recipient_coldkey",
                 "type": 2,
                 "typeName": "AccountId"
@@ -1897,7 +2190,7 @@
               },
               {
                 "name": "proof",
-                "type": 32,
+                "type": 37,
                 "typeName": "Vec<Hash>"
               }
             ]
@@ -1911,7 +2204,7 @@
       }
     },
     {
-      "id": 32,
+      "id": 37,
       "type": {
         "def": {
           "sequence": {
@@ -1921,7 +2214,7 @@
       }
     },
     {
-      "id": 33,
+      "id": 38,
       "type": {
         "def": {
           "variant": {}
