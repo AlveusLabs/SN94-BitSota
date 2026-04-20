@@ -357,8 +357,28 @@ class MerkleClaimClient:
             "extrinsic_hash": extrinsic_hash,
         }
 
+    @staticmethod
+    def _cargo_contract_available() -> bool:
+        try:
+            result = subprocess.run(
+                ["cargo", "contract", "--version"],
+                capture_output=True,
+                text=True,
+                check=False,
+                timeout=10,
+            )
+        except Exception:
+            return False
+        return int(result.returncode) == 0
+
     def submit_claim(self, *, signer: Keypair, claim: MerkleClaimPackage, transfer: bool = True) -> dict[str, Any]:
         self.assert_configured()
+        if self._cargo_contract_available():
+            return self._submit_claim_with_cargo_contract(
+                signer=signer,
+                claim=claim,
+                transfer=transfer,
+            )
         substrate = SubstrateInterface(url=self.onchain_ws_url)
         try:
             substrate.runtime_config.update_type_registry_types({"Balance": "u64"})
