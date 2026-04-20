@@ -1004,8 +1004,8 @@ class MiningScreen(QWidget):
         if not pool_endpoint:
             raise RuntimeError("Pool endpoint missing in config")
 
-        pool_client = PoolApiClient(pool_endpoint, self.main_window.wallet, timeout_s=2.0)
-        sidecar_jobs = SidecarJobClient(sidecar_url, run_id, timeout_s=0.5)
+        pool_client = PoolApiClient(pool_endpoint, self.main_window.wallet, timeout_s=30.0)
+        sidecar_jobs = SidecarJobClient(sidecar_url, run_id, timeout_s=30.0)
         if str(pool_mode) == "pool_lease":
             self._pool_coordinator = PoolLeaseCoordinator(
                 pool_client=pool_client,

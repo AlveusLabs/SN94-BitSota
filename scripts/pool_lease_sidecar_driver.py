@@ -95,8 +95,8 @@ def main(argv: Optional[list[str]] = None) -> int:
 
     from gui.pool_task_driver import PoolApiClient, PoolLeaseCoordinator, SidecarJobClient
 
-    pool_client = PoolApiClient(pool_url, wallet, timeout_s=2.0)
-    sidecar_jobs = SidecarJobClient(sidecar_url, run_id, timeout_s=0.5)
+    pool_client = PoolApiClient(pool_url, wallet, timeout_s=30.0)
+    sidecar_jobs = SidecarJobClient(sidecar_url, run_id, timeout_s=30.0)
     coord = PoolLeaseCoordinator(
         pool_client=pool_client,
         sidecar_jobs=sidecar_jobs,
