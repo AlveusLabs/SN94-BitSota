@@ -3,6 +3,7 @@ import threading
 import time
 from typing import TYPE_CHECKING, List, Optional
 
+from validator.backend_weight_policy import BackendWeightPolicyClient
 from validator.sota_schedule import SOTAEvent, active_event
 
 logger = logging.getLogger(__name__)
@@ -35,6 +36,7 @@ class CapacitorlessWeightManager:
         poll_interval_s: float = 6.0,
         retry_interval_s: float = 5.0,
         event_fetch_failure_grace_s: float = 120.0,
+        backend_weight_policy_client: Optional[BackendWeightPolicyClient] = None,
     ):
         self.network = bittensor_network
         self.relay_client = relay_client
@@ -49,6 +51,7 @@ class CapacitorlessWeightManager:
         self.event_fetch_failure_grace_s = max(
             0.0, float(event_fetch_failure_grace_s)
         )
+        self.backend_weight_policy_client = backend_weight_policy_client
 
         self.lock = threading.Lock()
         self.background_thread: Optional[threading.Thread] = None
@@ -63,6 +66,7 @@ class CapacitorlessWeightManager:
         self._last_interval_success: bool = False
         self._last_attempt_ts = 0.0
         self._last_applied_target: Optional[str] = None
+        self._last_backend_signature: Optional[str] = None
         self._last_good_events: List[SOTAEvent] = []
         self._last_good_events_ts = 0.0
 
@@ -121,6 +125,27 @@ class CapacitorlessWeightManager:
             except Exception as e:
                 logger.warning(f"Metagraph refresh failed: {e}")
             self._last_metagraph_refresh_ts = now
+
+        backend_override = self._get_backend_override()
+        if backend_override is not None:
+            scores, signature, description = backend_override
+            should_gate = hasattr(self.network, "should_set_weights") and not self.network.should_set_weights()
+            if signature == self._last_backend_signature and self._last_interval_success:
+                return
+            if self.retry_interval_s and (now - self._last_attempt_ts) < self.retry_interval_s:
+                return
+            if should_gate and signature == self._last_backend_signature:
+                logger.debug("Skipping backend override weight set (rate-limited)")
+                self._last_attempt_ts = now
+                return
+            success = self._set_explicit_weights(scores, description)
+            self._last_attempt_ts = now
+            self._last_backend_signature = signature
+            self._last_interval_success = success
+            if success:
+                self._last_applied_target = f"backend:{description}"
+            return
+        self._last_backend_signature = None
 
         with getattr(self.network, "subtensor_lock", threading.Lock()):
             current_block = int(self.network.subtensor.get_current_block())
@@ -207,6 +232,22 @@ class CapacitorlessWeightManager:
                 continue
         return parsed
 
+    def _get_backend_override(self):
+        if self.backend_weight_policy_client is None:
+            return None
+        override = self.backend_weight_policy_client.get_override()
+        if override is None:
+            return None
+        return dict(override.scores), str(override.signature), str(override.description)
+
+    def _set_explicit_weights(self, scores: dict, description: str) -> bool:
+        ok = bool(self.network.set_weights(scores))
+        if ok:
+            logger.info("Set weights → backend override (%s)", description)
+        else:
+            logger.warning("Set weights failed → backend override (%s)", description)
+        return ok
+
     def _set_single_target_weight(self, target_hotkey: str) -> bool:
         metagraph = self.network.metagraph
         if not metagraph or not getattr(metagraph, "hotkeys", None):
@@ -259,4 +300,9 @@ class CapacitorlessWeightManager:
                 "alignment_mod": self.alignment_mod,
                 "burn_hotkey": self.burn_hotkey,
                 "cached_events": len(self._cached_events),
+                "backend_weight_policy": (
+                    self.backend_weight_policy_client.get_status()
+                    if self.backend_weight_policy_client is not None
+                    else None
+                ),
             }

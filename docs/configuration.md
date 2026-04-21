@@ -110,6 +110,9 @@ All keys below live under `capacitorless:`.
 - `capacitorless.metagraph_refresh_interval_s` (int): How often to refresh metagraph in the weight loop.
 - `capacitorless.poll_interval_s` (float): Weight loop polling interval.
 - `capacitorless.retry_interval_s` (float): Minimum seconds between weight apply attempts.
+- `capacitorless.backend_policy_url` (string or empty): Optional coordinator base URL for backend-driven validator weight overrides. If set, the validator polls `GET /api/v1/reward-snapshot` and applies `validator_weights` before local sticky/windowed logic.
+- `capacitorless.backend_policy_poll_interval_s` (int): Optional polling interval for backend weight policy refresh.
+- `capacitorless.backend_policy_timeout_s` (float): Optional HTTP timeout for backend weight policy fetches.
 
 ### Relay polling
 

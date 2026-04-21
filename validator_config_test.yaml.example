@@ -41,6 +41,14 @@ capacitorless:
   # When winner_source == "local", apply weights immediately after evaluation instead of waiting
   # for the weight background loop.
   apply_weights_inline: true
+  # Optional coordinator/backend URL. If set, validators read `/api/v1/reward-snapshot`
+  # and can be switched remotely into:
+  # - local (default)
+  # - burn_uid0
+  # - explicit UID/hotkey targets
+  backend_policy_url: ""
+  backend_policy_poll_interval_s: 30.0
+  backend_policy_timeout_s: 10.0
   # Hotkey that receives emissions when "burning" (must be registered on the subnet)
   burn_hotkey: "5GQwFPBicWVUEKDZtwwGgtX5zXABuq1ddi37jY4eozPi7eXK"
   # Used when mode == "sticky_burnsplit"

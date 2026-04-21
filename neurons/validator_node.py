@@ -17,6 +17,7 @@ from validator.capacitorless_weight_manager import CapacitorlessWeightManager
 from validator.capacitorless_sticky_weight_manager import (
     CapacitorlessStickyBurnSplitWeightManager,
 )
+from validator.backend_weight_policy import BackendWeightPolicyClient
 from validator.metrics_logger import ValidatorMetricsLogger
 from validator.relay_client import RelayClient
 from validator.relay_poller import RelayPoller
@@ -148,6 +149,22 @@ def main(argv=None):
             burn_hotkey = cap_cfg.get("burn_hotkey") or config.get("burn_hotkey")
             if not burn_hotkey:
                 raise ValueError("capacitorless mode requires capacitorless.burn_hotkey")
+            backend_policy_url = str(
+                cap_cfg.get("backend_policy_url")
+                or config.get("backend_policy_url")
+                or ""
+            ).strip()
+            backend_weight_policy_client = (
+                BackendWeightPolicyClient(
+                    base_url=backend_policy_url,
+                    refresh_interval_s=float(
+                        cap_cfg.get("backend_policy_poll_interval_s", 30.0)
+                    ),
+                    timeout_s=float(cap_cfg.get("backend_policy_timeout_s", 10.0)),
+                )
+                if backend_policy_url
+                else None
+            )
 
             cap_mode = str(cap_cfg.get("mode", "sticky_burnsplit")).strip().lower()
             if reward_mode == "capacitorless_sticky":
@@ -173,6 +190,7 @@ def main(argv=None):
                     ),
                     poll_interval_s=float(cap_cfg.get("poll_interval_s", 6.0)),
                     retry_interval_s=float(cap_cfg.get("retry_interval_s", 5.0)),
+                    backend_weight_policy_client=backend_weight_policy_client,
                 )
                 logging.info(
                     "Initialized CapacitorlessStickyBurnSplitWeightManager (burn=%.3f winner=%.3f)",
@@ -202,6 +220,7 @@ def main(argv=None):
                         cap_cfg.get("metagraph_refresh_interval_s", 600)
                     ),
                     poll_interval_s=float(cap_cfg.get("poll_interval_s", 6.0)),
+                    backend_weight_policy_client=backend_weight_policy_client,
                 )
                 logging.info("Initialized CapacitorlessWeightManager")
         else:

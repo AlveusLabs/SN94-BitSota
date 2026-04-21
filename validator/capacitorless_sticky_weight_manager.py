@@ -3,6 +3,8 @@ import threading
 import time
 from typing import TYPE_CHECKING, Dict, List, Optional, Tuple
 
+from validator.backend_weight_policy import BackendWeightPolicyClient
+
 logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:  # pragma: no cover
@@ -35,6 +37,7 @@ class CapacitorlessStickyBurnSplitWeightManager:
         metagraph_refresh_interval_s: int = 600,
         poll_interval_s: float = 6.0,
         retry_interval_s: float = 5.0,
+        backend_weight_policy_client: Optional[BackendWeightPolicyClient] = None,
     ):
         self.network = bittensor_network
         self.relay_client = relay_client
@@ -62,6 +65,7 @@ class CapacitorlessStickyBurnSplitWeightManager:
         self.metagraph_refresh_interval_s = int(metagraph_refresh_interval_s)
         self.poll_interval_s = float(poll_interval_s)
         self.retry_interval_s = max(0.0, float(retry_interval_s))
+        self.backend_weight_policy_client = backend_weight_policy_client
 
         self.lock = threading.Lock()
         self.background_thread: Optional[threading.Thread] = None
@@ -80,6 +84,7 @@ class CapacitorlessStickyBurnSplitWeightManager:
 
         self._last_applied_signature: Optional[Tuple[str, int, Optional[str]]] = None
         self._last_apply_success: bool = False
+        self._last_backend_signature: Optional[str] = None
 
         # Back-compat status fields (relay mode semantics).
         self._last_applied_event_id: Optional[int] = None
@@ -210,6 +215,34 @@ class CapacitorlessStickyBurnSplitWeightManager:
             else None
         )
 
+        backend_override = self._get_backend_override()
+        if backend_override is not None:
+            scores, signature, description = backend_override
+            if signature == self._last_backend_signature and self._last_apply_success:
+                return
+            if self.retry_interval_s and (now - self._last_attempt_ts) < self.retry_interval_s:
+                return
+            try:
+                if hasattr(self.network, "should_set_weights") and not bool(self.network.should_set_weights()):
+                    if signature == self._last_backend_signature:
+                        self._last_attempt_ts = now
+                        return
+            except Exception:
+                pass
+            ok = bool(self.network.set_weights(scores))
+            self._last_attempt_ts = now
+            self._last_backend_signature = signature
+            self._last_applied_event_id = None
+            self._last_applied_winner = None
+            self._last_applied_signature = ("backend", 0, description)
+            self._last_apply_success = ok
+            if ok:
+                logger.info("Set weights → backend override (%s)", description)
+            else:
+                logger.warning("Set weights failed → backend override (%s)", description)
+            return
+        self._last_backend_signature = None
+
         if hasattr(self.network, "should_set_weights"):
             try:
                 if not bool(self.network.should_set_weights()):
@@ -280,6 +313,14 @@ class CapacitorlessStickyBurnSplitWeightManager:
             if self._best_event is None or event_id > self._best_event[0]:
                 self._best_event = (event_id, miner_hotkey)
         return self._best_event
+
+    def _get_backend_override(self) -> Optional[Tuple[Dict[object, float], str, str]]:
+        if self.backend_weight_policy_client is None:
+            return None
+        override = self.backend_weight_policy_client.get_override()
+        if override is None:
+            return None
+        return dict(override.scores), str(override.signature), str(override.description)
 
     def _apply_weights(self, winner_hotkey: Optional[str]) -> Tuple[bool, Optional[str]]:
         metagraph = self.network.metagraph
@@ -362,4 +403,9 @@ class CapacitorlessStickyBurnSplitWeightManager:
                 "last_applied_event_id": self._last_applied_event_id,
                 "last_applied_winner": self._last_applied_winner,
                 "last_apply_success": self._last_apply_success,
+                "backend_weight_policy": (
+                    self.backend_weight_policy_client.get_status()
+                    if self.backend_weight_policy_client is not None
+                    else None
+                ),
             }

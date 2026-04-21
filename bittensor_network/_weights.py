@@ -55,9 +55,32 @@ def set_weights(
                 base_scores = torch.zeros(metagraph_size, dtype=torch.float32, device=S.WalletHolder.device)
                 S.WalletHolder.base_scores = base_scores
 
+            direct_uid_scores: Dict[int, float] = {}
+            direct_hotkey_scores: Dict[str, float] = {}
+            for raw_key, raw_weight in dict(scores or {}).items():
+                try:
+                    weight_value = float(raw_weight)
+                except Exception:
+                    logging.warning("Ignoring non-numeric weight target %r=%r", raw_key, raw_weight)
+                    continue
+                if weight_value <= 0.0:
+                    continue
+                if isinstance(raw_key, int):
+                    direct_uid_scores[int(raw_key)] = direct_uid_scores.get(int(raw_key), 0.0) + weight_value
+                    continue
+                key_text = str(raw_key or "").strip()
+                if not key_text:
+                    continue
+                if key_text.isdigit():
+                    uid_value = int(key_text)
+                    direct_uid_scores[uid_value] = direct_uid_scores.get(uid_value, 0.0) + weight_value
+                    continue
+                direct_hotkey_scores[key_text] = direct_hotkey_scores.get(key_text, 0.0) + weight_value
+
             uids = []
             for uid, hk in enumerate(S.WalletHolder.metagraph.hotkeys):
-                base_scores[uid] = scores.get(hk, 0.0)
+                weight_value = float(direct_uid_scores.get(uid, 0.0)) + float(direct_hotkey_scores.get(str(hk), 0.0))
+                base_scores[uid] = weight_value
                 uids.append(uid)
 
             uids_tensor = torch.tensor(uids)

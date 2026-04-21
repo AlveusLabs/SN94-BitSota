@@ -10,6 +10,25 @@ This repo supports multiple **validator reward modes** (configured via `reward_m
 | `capacitorless` + `windowed` | **On-chain weights**: 100% to winner during event window, else burn | On event boundaries (`alignment_mod`) and window end | Yes | `relay` or `local` |
 | `capacitor` (deprecated) | Capacitor EVM contract vote (`releaseReward`) | Not miner-targeted by default | Optional | N/A (uses contract) |
 
+## Backend Weight Override
+
+Capacitorless validators can now consume a backend policy override from the coordinator reward snapshot.
+
+This is separate from Pool/Merkle publication. It only affects the validator's `set_weights(...)` behavior on Bittensor.
+
+Supported backend modes:
+
+- `local`
+  - keep the validator's local sticky/windowed behavior
+- `burn_uid0`
+  - ignore local winner logic and set weights to UID `0`
+- `targets`
+  - ignore local winner logic and set explicit backend-provided UID/hotkey targets
+
+Precedence:
+1. If a backend override is configured and valid, the validator applies it first.
+2. If there is no backend override, the validator falls back to the local reward mode behavior described below.
+
 ## `capacitorless_sticky` (Default - Yuma Consensus)
 
 In `reward_mode: capacitorless_sticky` or `reward_mode: capacitorless`, validators use on-chain weight setting to direct emissions.
@@ -116,6 +135,27 @@ Why use it:
 - Emissions return to burn unless network keeps improving
 - Creates urgency for continuous innovation
 
+## Backend Override Config
+
+Example:
+```yaml
+reward_mode: "capacitorless_sticky"
+relay:
+  url: "https://relay.bitsota.com"
+capacitorless:
+  burn_hotkey: "5GrwvaEF5zXb26Fz9rcQpDWS57CtERHpNehXCPcNoHGKutQY"
+  backend_policy_url: "https://coordinator.example.com"
+  backend_policy_poll_interval_s: 60
+  backend_policy_timeout_s: 10
+```
+
+Behavior:
+- The validator polls `GET /api/v1/reward-snapshot` on the configured backend.
+- It reads `validator_weights`.
+- If the backend says `burn_uid0`, the validator sets weights to UID `0`.
+- If the backend says `targets`, the validator sets weights to those explicit UID/hotkey targets.
+- If the backend says `local` or the fetch fails, the validator keeps using local sticky/windowed logic.
+
 ## Block Number / Sync Requirements
 
 - All capacitorless modes need a block number when submitting relay SOTA votes (`seen_block`)
@@ -178,4 +218,3 @@ Behavior:
 - Weight setting separate from contract voting
 
 This mode is deprecated in favor of capacitorless modes using Yuma consensus.
-
