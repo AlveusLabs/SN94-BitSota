@@ -12,16 +12,16 @@ This guide adds Docker recipes for:
 ```bash
 mkdir -p ~/bitsota-dev
 cd ~/bitsota-dev
-git clone https://github.com/AlveusLabs/SN94-BitSota.git current-sn-2
+git clone https://github.com/AlveusLabs/SN94-BitSota.git
 git clone https://github.com/AlveusLabs/Relay.git Relay
 git clone https://github.com/AlveusLabs/Pool.git Pool
 # Needed for the C++ sidecar worker flow used by the new GUI and section 7 below.
 git clone https://github.com/mekaneeky/automl_zero_cpp.git automl_zero_cpp
-cd current-sn-2
+cd SN94-BitSota
 git fetch origin
-git switch testnet-new-gui-pool
+git switch testnet-net-gui-pool-agents
 git -C ../Pool fetch origin
-git -C ../Pool switch testnet-pool-v1
+git -C ../Pool switch testing
 test -f ../automl_zero_cpp/automl_zero/tools/baseline_sidecar_bridge.py
 ```
 
@@ -82,12 +82,12 @@ If relay image build fails with:
 unable to prepare context: path "<...>" not found
 ```
 
-set `RELAY_SOURCE_DIR` to the actual checkout path, or clone beside `current-sn-2`:
+set `RELAY_SOURCE_DIR` to the actual checkout path, or clone beside `SN94-BitSota`:
 
 ```bash
 cd ..
 git clone https://github.com/AlveusLabs/Relay.git Relay
-cd current-sn-2
+cd SN94-BitSota
 ```
 
 or run hosted relay mode (no local `relay` service build, no `BitSota` checkout required).
@@ -263,7 +263,7 @@ Terminal 0 (Pool API):
 
 ```bash
 cd "${BITSOTA_DEV_ROOT}/Pool"
-git switch testnet-pool-v1
+git switch testing
 
 export PYENV_VERSION=automl_pool
 export POSTGRES_USER=pooler
@@ -286,14 +286,14 @@ curl -sS http://127.0.0.1:8434/health
 Terminal A (sidecar):
 
 ```bash
-cd "${BITSOTA_DEV_ROOT}/current-sn-2"
+cd "${BITSOTA_DEV_ROOT}/SN94-BitSota"
 PYENV_VERSION=automl_pool python3 -m sidecar --host 127.0.0.1 --port 8123
 ```
 
 Terminal B (C++ worker bridge, real mode):
 
 ```bash
-cd "${BITSOTA_DEV_ROOT}/current-sn-2"
+cd "${BITSOTA_DEV_ROOT}/SN94-BitSota"
 export AUTOML_ZERO_CPP_ROOT="${BITSOTA_DEV_ROOT}/automl_zero_cpp/automl_zero"
 PYENV_VERSION=automl_pool python3 -m scripts.miner_cpp_sidecar \
   --cpp-mode lease \
@@ -309,7 +309,7 @@ PYENV_VERSION=automl_pool python3 -m scripts.miner_cpp_sidecar \
 Terminal C (lease coordinator driver, real pool leases):
 
 ```bash
-cd "${BITSOTA_DEV_ROOT}/current-sn-2"
+cd "${BITSOTA_DEV_ROOT}/SN94-BitSota"
 PYENV_VERSION=automl_pool BITSOTA_CPP_BACKEND=1 python3 -m scripts.pool_lease_sidecar_driver \
   --pool-url http://127.0.0.1:8434 \
   --sidecar-url http://127.0.0.1:8123 \
@@ -327,7 +327,7 @@ If you see repeated register failures or the GUI looks idle, check the Pool API 
 Simple pass/fail check after Terminal C starts submitting work:
 
 ```bash
-cd "${BITSOTA_DEV_ROOT}/current-sn-2"
+cd "${BITSOTA_DEV_ROOT}/SN94-BitSota"
 PYENV_VERSION=automl_pool python3 -m scripts.check_local_pool_stack \
   --pool-url http://127.0.0.1:8434 \
   --sidecar-url http://127.0.0.1:8123 \
@@ -337,7 +337,8 @@ PYENV_VERSION=automl_pool python3 -m scripts.check_local_pool_stack \
 Verify pool published a non-zero payout epoch:
 
 ```bash
-docker logs --since=30m pool-testnet-pool-v1-consensus_publisher-1 2>&1 | rg "onchain publish epoch="
+cd "${BITSOTA_DEV_ROOT}/Pool"
+docker compose --env-file .env.testnet -f docker-compose.testnet.yaml logs --since=30m consensus_publisher 2>&1 | rg "onchain publish epoch="
 ```
 
 Look for at least one line like:

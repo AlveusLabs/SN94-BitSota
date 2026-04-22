@@ -47,8 +47,8 @@ Validators must have sufficient ALPHA stake to be recognized by the metagraph an
 
 **1. Install Dependencies**
 ```bash
-git clone https://github.com/AlveusLabs/BitSota.git
-cd BitSota
+git clone https://github.com/AlveusLabs/SN94-BitSota.git
+cd SN94-BitSota
 pip install -r requirements.txt
 pip install -e .
 ```

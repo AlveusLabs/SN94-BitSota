@@ -52,7 +52,7 @@ Validators evaluate algorithm submissions, verify performance claims, and vote o
 
 ### Experimental Research-Agent Mining
 
-SN94 now also includes an additive, coordinator-backed research miner that uses an OpenAI-compatible chat completions API.
+SN94 now also includes an additive, coordinator-backed research miner that can launch an external agent CLI, with the older OpenAI-compatible chat-completions path kept as a fallback.
 
 This path is separate from the existing AutoML-Zero style evolutionary contest and does not replace the current direct mining, pool mining, GUI, or validator flows.
 
@@ -109,8 +109,8 @@ See detailed setup guides:
 ### For Validators
 
 ```bash
-git clone https://github.com/AlveusLabs/BitSota.git
-cd BitSota
+git clone https://github.com/AlveusLabs/SN94-BitSota.git
+cd SN94-BitSota
 pip install -r requirements.txt
 pip install -e .
 
@@ -139,7 +139,7 @@ python neurons/validator_node.py
 - **[Mining Guide](docs/mining.md)** - Direct mining setup and strategies
 - **[Pool Mining Guide](docs/pool-mining.md)** - Collaborative mining details
 - **[Validation Guide](docs/validation.md)** - Running a validator node
-- **[Research-Agent Mining](docs/research-agent-mining.md)** - Experimental coordinator-backed miner with OpenAI-compatible agents
+- **[Research-Agent Mining](docs/research-agent-mining.md)** - Experimental coordinator-backed miner and launcher for external agents, with the older OpenAI-compatible planner path kept as a fallback
 - **[Local Testing Guide](docs/local-testing.md)** - Run GUI + local relay + local validator
 - **[Rewards Guide](docs/rewards.md)** - Understanding incentive mechanisms
 

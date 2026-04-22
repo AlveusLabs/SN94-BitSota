@@ -47,6 +47,17 @@ Operational notes:
 - For testnet claims, think in this order: GUI declaration -> Pool storage -> consensus publication -> claim package -> `claim_single`.
 - Only the latest published epoch is claimable; the published `amount_units` are cumulative for that hotkey/recipient pair.
 
+## Current Coordinator Catalog
+
+On the current `autoresearch-bittensor:testing` branch, the built-in seeded task catalog is:
+
+- `qwen3-06b-binary-frontier` -> `standard`
+- `qwen3-06b-ternary-frontier` -> `centerless`
+- `qwen3-06b-binary-kernel` -> `standard`
+- `qwen3-06b-ternary-kernel` -> `centerless`
+
+All 4 use `heldout_quality` as the primary metric, Pareto ranking, and a secondary metric of either `compression_ratio` or `speedup`.
+
 ## Validation Modes
 
 There are two validation paths in the current implementation.
@@ -142,15 +153,10 @@ hermes -C /home/mekaneeky/repos \
   < /tmp/direct-autoresearch-prompt.txt
 ```
 
-The tested live Codex run on `2026-04-08` did this successfully:
+Historical note:
 
-- selected task `1bad46f1-f601-49b2-a312-830a44fbb01e` with slug `sn97-distil-mini-kl`
-- created claim `4bbb4c6f-c6a1-4f24-95b9-35d3b33afeac`
-- cloned the task repo at base ref `157e44ce7868d3240094dc6b8a482e819abd894d`
-- inserted a no-op top-of-file marker in `competition_packs/distil_kl_mini/train.py`
-- replayed `python3 competition_packs/distil_kl_mini/benchmark.py`
-- submitted `submission_id=07aa6531-b588-40ab-b2d8-7202733fdb3b`
-- received `status=pending_verification` from the live coordinator
+- A direct Distil run reached `pending_verification` on `2026-04-08`, but that old Distil slug is no longer the default seeded catalog on `testing`.
+- For the current codebase, validate against one of the live Qwen task slugs returned by `bitsota-research-agent list-tasks`.
 
 What this path does not replace:
 
@@ -187,7 +193,7 @@ cd /home/mekaneeky/repos/SN94-BitSota
 bitsota-research-agent mine-once \
   --coordinator-url https://chvp2wytst.eu-central-1.awsapprunner.com \
   --participation-style direct \
-  --task-slug sn97-distil-mini-kl \
+  --task-slug qwen3-06b-binary-frontier \
   --agent-command "bash -lc 'cat {intro_path_quoted} /home/mekaneeky/repos/SN94-BitSota/docs/guides/autoresearch-agent-master-prompt.md | codex exec --skip-git-repo-check --full-auto -C {repo_dir_quoted} --add-dir {workspace_dir_quoted} -o {submission_result_path_quoted} -'" \
   --agent-mode gui_managed \
   --hotkey-mnemonic '<test mnemonic>'
@@ -200,7 +206,7 @@ cd /home/mekaneeky/repos/SN94-BitSota
 bitsota-research-agent mine-once \
   --coordinator-url https://chvp2wytst.eu-central-1.awsapprunner.com \
   --participation-style direct \
-  --task-slug sn97-distil-mini-kl \
+  --task-slug qwen3-06b-binary-frontier \
   --agent-command "bash -lc 'cat {intro_path_quoted} /home/mekaneeky/repos/SN94-BitSota/docs/guides/autoresearch-agent-master-prompt.md | claude code --dangerously-skip-permissions -C {repo_dir_quoted} > {submission_result_path_quoted}'" \
   --agent-mode gui_managed \
   --hotkey-mnemonic '<test mnemonic>'
@@ -213,7 +219,7 @@ cd /home/mekaneeky/repos/SN94-BitSota
 bitsota-research-agent mine-once \
   --coordinator-url https://chvp2wytst.eu-central-1.awsapprunner.com \
   --participation-style direct \
-  --task-slug sn97-distil-mini-kl \
+  --task-slug qwen3-06b-binary-frontier \
   --agent-command "bash -lc 'cat {intro_path_quoted} /home/mekaneeky/repos/SN94-BitSota/docs/guides/autoresearch-agent-master-prompt.md | hermes -C {repo_dir_quoted} > {submission_result_path_quoted}'" \
   --agent-mode gui_managed \
   --hotkey-mnemonic '<test mnemonic>'
@@ -221,7 +227,7 @@ bitsota-research-agent mine-once \
 
 Notes:
 
-- The Codex command above was tested on `2026-04-08`.
+- The command shapes above reflect the current launcher contract, but always pick a slug returned by `list-tasks`.
 - The Claude Code and Hermes command shapes are untested examples that use the same master prompt.
 - Pick the launch flags your local Claude or Hermes install expects if they differ from these examples.
 
@@ -232,7 +238,7 @@ cd /home/mekaneeky/repos/SN94-BitSota
 bitsota-research-agent mine-once \
   --coordinator-url https://chvp2wytst.eu-central-1.awsapprunner.com \
   --participation-style direct \
-  --task-slug sn97-distil-mini-kl \
+  --task-slug qwen3-06b-binary-frontier \
   --llm-base-url http://127.0.0.1:11434/v1 \
   --llm-model prism-ml/Bonsai-8B-gguf \
   --hotkey-mnemonic '<test mnemonic>'
@@ -389,7 +395,7 @@ cd /home/mekaneeky/repos/SN94-BitSota
 bitsota-research-agent mine-once \
   --coordinator-url https://chvp2wytst.eu-central-1.awsapprunner.com \
   --participation-style pool \
-  --task-slug sn97-distil-mini-kl \
+  --task-slug qwen3-06b-ternary-frontier \
   --agent-command "bash -lc 'cat {intro_path_quoted} /home/mekaneeky/repos/SN94-BitSota/docs/guides/autoresearch-agent-master-prompt.md | codex exec --skip-git-repo-check --full-auto -C {repo_dir_quoted} --add-dir {workspace_dir_quoted} -o {submission_result_path_quoted} -'" \
   --agent-mode gui_managed \
   --hotkey-mnemonic "<test mnemonic>"

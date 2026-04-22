@@ -7,7 +7,7 @@ It does **not** replace the current SN94 evolutionary miner.
 Keep this mental model simple:
 
 - `neurons/miner.py` is the existing SN94 miner for the evolutionary AutoML-Zero style contest.
-- `bitsota-research-agent` is a new local miner that talks to a coordinator API and an OpenAI-compatible LLM API.
+- `bitsota-research-agent` is a new local miner that talks to a coordinator API and either an external agent CLI or the older OpenAI-compatible LLM path.
 
 ## What stays intact
 
@@ -32,16 +32,25 @@ The research-agent miner can:
 
 ## Built-in research competitions
 
-The new miner ships with 6 built-in research competition templates:
+The new miner ships with 5 built-in research competition templates:
 
 - `nanogpt-default`
 - `gpt2-145m-ternary-2x`
 - `gpt2-145m-compression-2x`
-- `cifar10-matrix-decomposition-frontier`
 - `eggroll-efficiency`
 - `bitnet-cpu-ternary-kernel`
 
 These are local templates for discovery and alignment. The actual tasks still come from the coordinator you point the miner at.
+
+Important distinction:
+
+- `list-builtins` shows the local template catalog in this repo.
+- `mine-once`, `loop`, and `peer-evaluate-once` select tasks from the coordinator via `list-tasks`.
+- The default `autoresearch-bittensor:testing` coordinator currently seeds these 4 task slugs:
+  - `qwen3-06b-binary-frontier`
+  - `qwen3-06b-ternary-frontier`
+  - `qwen3-06b-binary-kernel`
+  - `qwen3-06b-ternary-kernel`
 
 Important clarification:
 
@@ -72,7 +81,7 @@ Simple mapping:
 The production direction is now:
 
 - keep the coordinator in `autoresearch-bittensor` as the source of truth
-- keep `current-sn-2` as a thin launcher/orchestrator
+- keep `SN94-BitSota` as a thin launcher/orchestrator
 - prefer external agent CLIs such as Codex CLI, Claude Code CLI, or Hermes
 - keep the older built-in OpenAI-compatible planner path only as a fallback
 
@@ -168,7 +177,7 @@ bitsota-research-agent mine-once \
   --coordinator-url http://127.0.0.1:8000 \
   --llm-base-url http://127.0.0.1:11434/v1 \
   --llm-model gpt-4o-mini \
-  --task-slug nanogpt-default \
+  --task-slug qwen3-06b-binary-frontier \
   --participation-style direct \
   --wallet-name default \
   --wallet-hotkey default
@@ -181,11 +190,13 @@ bitsota-research-agent mine-once \
   --coordinator-url http://127.0.0.1:8000 \
   --llm-base-url http://127.0.0.1:11434/v1 \
   --llm-model gpt-4o-mini \
-  --task-slug nanogpt-default \
+  --task-slug qwen3-06b-ternary-frontier \
   --participation-style pool \
   --wallet-name default \
   --wallet-hotkey default
 ```
+
+This requires open planner-created work items for the selected task.
 
 Run one peer evaluation:
 
@@ -194,10 +205,12 @@ bitsota-research-agent peer-evaluate-once \
   --coordinator-url http://127.0.0.1:8000 \
   --llm-base-url http://127.0.0.1:11434/v1 \
   --llm-model gpt-4o-mini \
-  --task-slug nanogpt-default \
+  --task-slug <peer_evaluation_task_slug> \
   --wallet-name default \
   --wallet-hotkey default
 ```
+
+`peer-evaluate-once` only works when the selected coordinator task is actually `peer_evaluation`. The default Qwen catalog does not include a peer-evaluation task.
 
 Run one shared-task pass with an external agent CLI:
 
@@ -206,7 +219,7 @@ bitsota-research-agent mine-once \
   --coordinator-url http://127.0.0.1:8000 \
   --agent-command 'codex exec {intro_path_quoted}' \
   --agent-mode gui_managed \
-  --task-slug nanogpt-default \
+  --task-slug qwen3-06b-ternary-frontier \
   --participation-style pool \
   --hotkey-mnemonic 'replace with test mnemonic'
 ```
@@ -218,7 +231,7 @@ bitsota-research-agent loop \
   --coordinator-url http://127.0.0.1:8000 \
   --agent-command 'codex exec {intro_path_quoted}' \
   --agent-mode gui_managed \
-  --task-slug nanogpt-default \
+  --task-slug qwen3-06b-ternary-frontier \
   --participation-style pool
 ```
 
@@ -240,10 +253,12 @@ bitsota-research-agent loop \
   --coordinator-url http://127.0.0.1:8000 \
   --llm-base-url http://127.0.0.1:11434/v1 \
   --llm-model gpt-4o-mini \
-  --task-slug nanogpt-default \
+  --task-slug qwen3-06b-binary-frontier \
   --participation-style pool \
   --allow-peer-evaluation
 ```
+
+`--allow-peer-evaluation` is only active when the selected task is `peer_evaluation`; otherwise the loop skips peer judging and mines normally.
 
 ## Wallet options
 

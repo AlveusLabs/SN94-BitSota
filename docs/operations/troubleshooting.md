@@ -32,7 +32,7 @@ unable to prepare context: path "<...>" not found
 
 local relay is configured to build from `RELAY_SOURCE_DIR` in `.env.relay-validators`.
 
-Either set `RELAY_SOURCE_DIR` to your local checkout path, or from `current-sn-2` create `../BitSota`:
+Either set `RELAY_SOURCE_DIR` to your local checkout path, or from `SN94-BitSota` create `../BitSota`:
 
 ```bash
 cd ..

@@ -27,7 +27,7 @@ flowchart LR
 
 ## 0) Install (dev environment)
 
-From `current-sn-2` repo root:
+From the `SN94-BitSota` repo root:
 
 ```bash
 python3 -m venv .venv
@@ -44,7 +44,7 @@ cd ../BitSota
 python3 -m pip install -U pip
 python3 -m pip install -r requirements.txt -r relay/requirements.txt
 python3 -m pip install -e .
-cd ../current-sn-2
+cd ../SN94-BitSota
 ```
 
 ## 1a) Sidecar defaults (local only)
@@ -190,17 +190,17 @@ export BITSOTA_DEV_ROOT=~/bitsota-dev
 
 Use this checklist first:
 
-- `current-sn-2` checkout on branch `testnet-new-gui-pool`
-- separate `Pool` checkout on branch `testnet-pool-v1`
+- `SN94-BitSota` checkout on branch `testnet-net-gui-pool-agents`
+- separate `Pool` checkout on branch `testing`
 - `automl_zero_cpp` checkout with `automl_zero/tools/baseline_sidecar_bridge.py`
 - GUI and Pool API both running from `PYENV_VERSION=automl_pool`
-- the `Pool` checkout is a separate repo beside `current-sn-2`; it is not vendored into this repo
+- the `Pool` checkout is a separate repo beside `SN94-BitSota`; it is not vendored into this repo
 
 If you already have a working compose stack for Pool, you can keep using it. If not, this direct `uvicorn` path is the verified local flow:
 
 ```bash
 cd "${BITSOTA_DEV_ROOT}/Pool"
-git switch testnet-pool-v1
+git switch testing
 
 export PYENV_VERSION=automl_pool
 export POSTGRES_USER=pooler
@@ -248,13 +248,13 @@ Then restart the Pool API command above.
 
 ### Start the sidecar + pool compute worker
 
-If you have not cloned the C++ backend checkout yet, do that once beside `current-sn-2`:
+If you have not cloned the C++ backend checkout yet, do that once beside `SN94-BitSota`:
 
 ```bash
 cd "${BITSOTA_DEV_ROOT}"
 git clone https://github.com/mekaneeky/automl_zero_cpp.git automl_zero_cpp
 test -f "${BITSOTA_DEV_ROOT}/automl_zero_cpp/automl_zero/tools/baseline_sidecar_bridge.py"
-cd "${BITSOTA_DEV_ROOT}/current-sn-2"
+cd "${BITSOTA_DEV_ROOT}/SN94-BitSota"
 ```
 
 Replace the clone URL above if you use a different `automl_zero_cpp` fork internally.

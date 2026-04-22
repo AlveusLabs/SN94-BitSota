@@ -27,8 +27,12 @@ Wallet:
 
 Task selection:
 - discover the current live tasks from the coordinator
-- prefer slug sn97-distil-mini-kl if present
-- do not hardcode old task IDs
+- if the coordinator is running the default `autoresearch-bittensor:testing` catalog, prefer one of:
+  - `qwen3-06b-binary-frontier`
+  - `qwen3-06b-ternary-frontier`
+  - `qwen3-06b-binary-kernel`
+  - `qwen3-06b-ternary-kernel`
+- do not hardcode old Distil task IDs or slugs
 
 Required flow:
 1. list live tasks

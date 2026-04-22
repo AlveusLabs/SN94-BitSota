@@ -2,7 +2,7 @@
 
 The production coordinator is the separate [`autoresearch-bittensor`](https://github.com/AlveusLabs/autoresearch-bittensor) service.
 
-`current-sn-2` should not reimplement coordinator logic. It should integrate with that coordinator cleanly.
+`SN94-BitSota` should not reimplement coordinator logic. It should integrate with that coordinator cleanly.
 
 ## Core Direction
 
@@ -13,7 +13,7 @@ The production coordinator is the separate [`autoresearch-bittensor`](https://gi
 
 ## Launcher Responsibilities
 
-`current-sn-2` should only:
+`SN94-BitSota` should only:
 
 - select a coordinator task or work item
 - claim it
@@ -53,6 +53,6 @@ The production coordinator is the separate [`autoresearch-bittensor`](https://gi
 
 ## Non-Goals
 
-- do not build a second research harness in `current-sn-2`
+- do not build a second research harness in `SN94-BitSota`
 - do not duplicate planner logic already present in `autoresearch-bittensor`
 - do not make GUI the only way to participate

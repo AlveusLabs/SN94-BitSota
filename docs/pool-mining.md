@@ -75,13 +75,13 @@ export BITSOTA_DEV_ROOT=~/bitsota-dev
 
 Known-good local checklist:
 
-- `current-sn-2` on branch `testnet-new-gui-pool`
-- separate `Pool` checkout on branch `testnet-pool-v1`
+- `SN94-BitSota` on branch `testnet-net-gui-pool-agents`
+- separate `Pool` checkout on branch `testing`
 - `automl_zero_cpp` checkout available locally
 - Pool API reachable at `http://127.0.0.1:8434`
-- `Pool` is a separate checkout beside `current-sn-2`, not a folder inside this repo
+- `Pool` is a separate checkout beside `SN94-BitSota`, not a folder inside this repo
 
-Create `gui_config.json` in the `current-sn-2` repo root and set:
+Create `gui_config.json` in the `SN94-BitSota` repo root and set:
 
 ```json
 {
@@ -93,7 +93,7 @@ Start the local Pool API first if you are not using a compose stack:
 
 ```bash
 cd "${BITSOTA_DEV_ROOT}/Pool"
-git switch testnet-pool-v1
+git switch testing
 
 export PYENV_VERSION=automl_pool
 export POSTGRES_USER=pooler
@@ -132,7 +132,7 @@ What good looks like:
 Simple pass/fail check after you click `Start Mining`:
 
 ```bash
-cd "${BITSOTA_DEV_ROOT}/current-sn-2"
+cd "${BITSOTA_DEV_ROOT}/SN94-BitSota"
 PYENV_VERSION=automl_pool python3 -m scripts.check_local_pool_stack \
   --pool-url http://127.0.0.1:8434 \
   --sidecar-url http://127.0.0.1:8123 \
@@ -157,7 +157,7 @@ Terminal 0 (Pool API):
 
 ```bash
 cd "${BITSOTA_DEV_ROOT}/Pool"
-git switch testnet-pool-v1
+git switch testing
 
 export PYENV_VERSION=automl_pool
 export POSTGRES_USER=pooler
@@ -174,14 +174,14 @@ python3 -m uvicorn app.main:app --host 127.0.0.1 --port 8434
 Terminal 1 (sidecar):
 
 ```bash
-cd "${BITSOTA_DEV_ROOT}/current-sn-2"
+cd "${BITSOTA_DEV_ROOT}/SN94-BitSota"
 PYENV_VERSION=automl_pool python3 -m sidecar --host 127.0.0.1 --port 8123
 ```
 
 Terminal 2 (C++ worker):
 
 ```bash
-cd "${BITSOTA_DEV_ROOT}/current-sn-2"
+cd "${BITSOTA_DEV_ROOT}/SN94-BitSota"
 export BITSOTA_MINER_BACKEND=cpp
 export AUTOML_ZERO_CPP_ROOT="${BITSOTA_DEV_ROOT}/automl_zero_cpp/automl_zero"
 PYENV_VERSION=automl_pool python3 -m scripts.miner_cpp_sidecar \
@@ -197,7 +197,7 @@ PYENV_VERSION=automl_pool python3 -m scripts.miner_cpp_sidecar \
 Terminal 3 (lease driver):
 
 ```bash
-cd "${BITSOTA_DEV_ROOT}/current-sn-2"
+cd "${BITSOTA_DEV_ROOT}/SN94-BitSota"
 PYENV_VERSION=automl_pool python3 -m scripts.pool_lease_sidecar_driver \
   --pool-url http://127.0.0.1:8434 \
   --sidecar-url http://127.0.0.1:8123 \
@@ -208,7 +208,7 @@ PYENV_VERSION=automl_pool python3 -m scripts.pool_lease_sidecar_driver \
 Smoke-check:
 
 ```bash
-cd "${BITSOTA_DEV_ROOT}/current-sn-2"
+cd "${BITSOTA_DEV_ROOT}/SN94-BitSota"
 PYENV_VERSION=automl_pool python3 -m scripts.check_local_pool_stack \
   --pool-url http://127.0.0.1:8434 \
   --sidecar-url http://127.0.0.1:8123 \
