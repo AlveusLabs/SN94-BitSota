@@ -71,13 +71,14 @@ The path is:
 1. miner claims task or work item
 2. miner submits patch plus `submission.json`
 3. submission is stored as `pending_verification`
-4. validator replay records `accepted`, `rejected`, or `error` through `POST /api/v1/submissions/{id}/verify`
+4. validator replay records `accepted`, `rejected`, or `error` through a signed validator job result
 5. accepted submission updates the task best result
 
 Implemented validation paths:
 
-- background validator worker via `autoresearch-validate`
-- manual signed `POST /api/v1/submissions/{id}/verify` from an allowlisted validator hotkey
+- public SN94 validator runner: signed `POST /api/v1/validator/jobs/claim`, local replay from the returned `replay_spec`, then signed `POST /api/v1/validator/jobs/{job_id}/result`
+- legacy public signed `POST /api/v1/submissions/{id}/verify` from an allowlisted validator hotkey, using SN94-BitSota signing helpers
+- backend-owned background validator worker via `autoresearch-validate`
 
 ### `peer_evaluation`
 
@@ -114,14 +115,15 @@ python -m neurons.research_agent_miner ...
 
 If you want to skip `bitsota-research-agent` entirely, you can drive the coordinator manually with an agent.
 
-Use the master prompt in [autoresearch-agent-master-prompt.md](/home/mekaneeky/repos/SN94-BitSota/docs/guides/autoresearch-agent-master-prompt.md) and point the agent at the SN94 checkout only:
+Use the direct testnet prompt in [autoresearch-testnet-direct-prompt.md](/home/mekaneeky/repos/SN94-BitSota/docs/guides/autoresearch-testnet-direct-prompt.md) when you want the direct independent-agent path, or the more general [autoresearch-agent-master-prompt.md](/home/mekaneeky/repos/SN94-BitSota/docs/guides/autoresearch-agent-master-prompt.md) when you want the launcher-oriented prompt. In either case, point the agent at the SN94 checkout only:
 
 - `/home/mekaneeky/repos/SN94-BitSota`
 
-The signing helper the agent should use is:
+The public helpers the agent should use are:
 
-- `/home/mekaneeky/repos/SN94-BitSota/miner/research_auth.py`
-- `/home/mekaneeky/repos/SN94-BitSota/miner/research_coordinator_client.py`
+- `/home/mekaneeky/repos/SN94-BitSota/scripts/research_signed_request.py`
+- `/home/mekaneeky/repos/SN94-BitSota/scripts/claim_merkle_rewards.py`
+- `bitsota-research-agent submit-workspace`
 
 Tested direct Codex launch shape:
 
@@ -415,38 +417,117 @@ This is the part older docs under-described.
 
 For `standard` and `centerless` tasks, you still need validator replay after the agent produces a patch and `submission.json`.
 
-### Option A: background validator worker
+### Public validator path
 
-Run the coordinator-side validator worker from `autoresearch-bittensor`:
+Public validators should use the SN94-BitSota checkout and talk to the live
+coordinator over signed HTTP requests. They do not need `autoresearch-bittensor`
+DB access, AWS credentials, `DATABASE_URL`, or `ADMIN_TOKEN`.
+
+The validator hotkey must still be allowlisted by the live backend. The backend
+checks `X-Hotkey`, `X-Timestamp`, and `X-Signature`; use the SN94 helper to build
+those headers instead of hand-rolling them.
+
+```bash
+git clone https://github.com/AlveusLabs/SN94-BitSota.git
+cd SN94-BitSota
+git checkout testnet-net-gui-pool-agents
+python -m venv .venv
+source .venv/bin/activate
+pip install -e .
+```
+
+Inspect pending submissions through the public API:
+
+```bash
+bitsota-research-agent signed-request \
+  --coordinator-url https://chvp2wytst.eu-central-1.awsapprunner.com \
+  --method GET \
+  --path /api/v1/submissions \
+  --params-json '{"status":"pending_verification"}' \
+  --wallet-name <validator_wallet> \
+  --wallet-hotkey <validator_hotkey>
+```
+
+Fetch the submission detail and task onboarding for the candidate you will
+replay:
+
+```bash
+bitsota-research-agent signed-request \
+  --coordinator-url https://chvp2wytst.eu-central-1.awsapprunner.com \
+  --method GET \
+  --path /api/v1/submissions/<submission_id>/detail \
+  --wallet-name <validator_wallet> \
+  --wallet-hotkey <validator_hotkey>
+
+bitsota-research-agent signed-request \
+  --coordinator-url https://chvp2wytst.eu-central-1.awsapprunner.com \
+  --method GET \
+  --path /api/v1/tasks/<task_id>/onboard.md \
+  --wallet-name <validator_wallet> \
+  --wallet-hotkey <validator_hotkey>
+```
+
+Preferred unattended public validator path:
+
+```bash
+python -m validator.research_validator_runner \
+  --once \
+  --coordinator-url https://chvp2wytst.eu-central-1.awsapprunner.com \
+  --wallet-name <validator_wallet> \
+  --wallet-hotkey <validator_hotkey> \
+  --allow-unsafe-host-replay
+```
+
+For manual fallback, replay the submission in a clean local workspace using the
+task repository, base ref, allowed patch paths, and benchmark instructions from
+the submission detail and task onboarding output. Then record the observed
+result through the legacy `/verify` route:
+
+```bash
+cat >/tmp/verify-submission.json <<'JSON'
+{
+  "status": "accepted",
+  "observed_metrics": {
+    "heldout_quality": 0.0
+  },
+  "notes": "validator replay completed; replace this with task, commit, and benchmark summary",
+  "replay_log": "replace this with bounded replay output or failure summary"
+}
+JSON
+
+bitsota-research-agent signed-request \
+  --coordinator-url https://chvp2wytst.eu-central-1.awsapprunner.com \
+  --method POST \
+  --path /api/v1/submissions/<submission_id>/verify \
+  --body-file /tmp/verify-submission.json \
+  --wallet-name <validator_wallet> \
+  --wallet-hotkey <validator_hotkey>
+```
+
+Use `rejected` or `error` instead of `accepted` when replay fails. Do not send
+`accepted` from claimed miner metrics; the canonical score is the validator's
+observed replay metric.
+
+Public runner notes:
+
+- The SN94 public runner is the shared-testnet path for validators that should not hold backend database or AWS credentials.
+- The legacy signed `/verify` path remains useful for manual replay and for testing an older backend.
+
+### Backend-owned validator worker
+
+Only backend operators with the `autoresearch-bittensor` checkout and database
+credentials should run the coordinator-local worker:
 
 ```bash
 cd /home/mekaneeky/repos/autoresearch-bittensor
-python -m venv .venv
-source .venv/bin/activate
-pip install -e .[test]
 autoresearch-validate \
-  --validator-hotkey <allowlisted_validator_hotkey> \
+  --wallet-name <validator_wallet> \
+  --wallet-hotkey <validator_hotkey> \
   --workspace-root ./data/validator-workspaces
 ```
 
-For a single pass:
-
-```bash
-autoresearch-validate \
-  --validator-hotkey <allowlisted_validator_hotkey> \
-  --workspace-root ./data/validator-workspaces \
-  --once
-```
-
-This polls pending submissions, replays them, and records `accepted`, `rejected`, or `error`.
-
-### Option B: manual signed verify
-
-If a validator worker is not running, an allowlisted validator hotkey can manually call:
-
-- `POST /api/v1/submissions/{id}/verify`
-
-Use this only with a current live submission ID and real observed metrics from replay.
+This worker is not the public validator runbook for shared testnet operators
+because it reads and writes the coordinator database directly.
 
 ### Peer-evaluation exception
 
@@ -524,5 +605,5 @@ The flow is only truly end-to-end when all of these happen:
 - Do not check miner hotkey free balance as the reward success signal.
 - Do not assume the GUI's locally declared coldkey automatically controls claim payout. Pool publication is the source of truth for each epoch.
 - Do not assume `POST /coldkey_address/update` on the legacy relay path controls autoresearch Merkle claims.
-- If `/api/v1/submissions/{id}/verify` returns `503`, validator allowlisting or validator deployment is wrong.
+- If `/api/v1/validator/jobs/claim` or `/api/v1/submissions/{id}/verify` returns `503`, validator allowlisting or validator deployment is wrong.
 - If accepted submissions never show up in `/claims/epochs`, the reward publication side is broken even if coordinator validation is healthy.

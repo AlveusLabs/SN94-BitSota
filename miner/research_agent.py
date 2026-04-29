@@ -121,7 +121,7 @@ def build_agent_intro_markdown(
             "- Edit the checked-out repository files directly.",
             f"- Write a JSON sidecar to `{submission_file.name}` in the workspace root.",
             "- Required sidecar fields: `summary`, `claimed_metrics`.",
-            "- Optional sidecar fields: `base_ref`, `proposed_idea`, `implemented_submission_id`, `artifact_uri`, `execution_log`, `notes`.",
+            "- Optional sidecar fields: `base_ref`, `proposed_idea`, `implemented_submission_id`, `artifact_uri`, `artifact_sha256`, `artifact_size_bytes`, `execution_log`, `notes`.",
             "- Do not put the patch in the sidecar. The launcher derives the patch from `git diff` in the repo checkout.",
             "",
         ]
@@ -273,6 +273,16 @@ def submit_claimed_workspace(
             artifact_uri=(
                 str(payload.get("artifact_uri")).strip()
                 if payload.get("artifact_uri") is not None
+                else None
+            ),
+            artifact_sha256=(
+                str(payload.get("artifact_sha256")).strip()
+                if payload.get("artifact_sha256") is not None
+                else None
+            ),
+            artifact_size_bytes=(
+                int(payload.get("artifact_size_bytes"))
+                if payload.get("artifact_size_bytes") is not None
                 else None
             ),
             execution_log=(

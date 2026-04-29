@@ -667,6 +667,9 @@ def test_submit_claimed_workspace_uses_submission_json_and_git_diff(tmp_path: Pa
             {
                 "summary": "External agent changed the training script.",
                 "claimed_metrics": {"val_bpb": 1.11},
+                "artifact_uri": "https://example.com/artifact.bin",
+                "artifact_sha256": "b" * 64,
+                "artifact_size_bytes": 456,
                 "notes": "managed by external cli",
             }
         ),
@@ -691,6 +694,9 @@ def test_submit_claimed_workspace_uses_submission_json_and_git_diff(tmp_path: Pa
     assert coordinator.submissions[0]["base_ref"] == head_commit
     assert coordinator.submissions[0]["summary"] == "External agent changed the training script."
     assert coordinator.submissions[0]["claimed_metrics"]["val_bpb"] == 1.11
+    assert coordinator.submissions[0]["artifact_uri"] == "https://example.com/artifact.bin"
+    assert coordinator.submissions[0]["artifact_sha256"] == "b" * 64
+    assert coordinator.submissions[0]["artifact_size_bytes"] == 456
     assert coordinator.submissions[0]["patch"].startswith("diff --git a/train.py b/train.py")
     assert coordinator.submissions[0]["patch"].endswith("\n")
 

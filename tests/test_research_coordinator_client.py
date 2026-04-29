@@ -67,3 +67,40 @@ def test_select_task_pool_resumes_self_claimed_work_item() -> None:
     assert selection.task["id"] == "task-1"
     assert selection.work_item is not None
     assert selection.work_item["id"] == "work-claimed-self"
+
+
+def test_submit_submission_includes_artifact_integrity_fields() -> None:
+    wallet = SimpleNamespace(hotkey=SimpleNamespace(ss58_address="hk-self"))
+    client = CoordinatorClient(base_url="http://127.0.0.1:8000", wallet=wallet)
+
+    calls: list[tuple[str, str, dict | None, bool]] = []
+
+    class _Response:
+        def json(self) -> dict[str, str]:
+            return {"id": "submission-1", "status": "pending_verification"}
+
+    def _fake_request(method: str, path: str, *, body=None, params=None, sign=False):
+        calls.append((method, path, body, sign))
+        return _Response()
+
+    client._request = _fake_request  # type: ignore[method-assign]
+
+    result = client.submit_submission(
+        claim_id="claim-1",
+        base_ref="abc123",
+        patch="diff --git a/train.py b/train.py\n",
+        summary="external artifact submission",
+        claimed_metrics={"heldout_quality": 0.9},
+        artifact_uri="https://example.com/artifact.bin",
+        artifact_sha256="A" * 64,
+        artifact_size_bytes=123,
+    )
+
+    assert result["id"] == "submission-1"
+    assert calls[0][0] == "POST"
+    assert calls[0][1] == "/api/v1/submissions"
+    assert calls[0][3] is True
+    assert calls[0][2] is not None
+    assert calls[0][2]["artifact_uri"] == "https://example.com/artifact.bin"
+    assert calls[0][2]["artifact_sha256"] == "a" * 64
+    assert calls[0][2]["artifact_size_bytes"] == 123

@@ -14,11 +14,18 @@ Use these endpoints:
 - claims: https://3fhi3ukpyw.eu-central-1.awsapprunner.com/claims
 - onchain ws: wss://test.finney.opentensor.ai:443
 
-Use the current SN94-BitSota checkout for miner-side code and coordinator request helpers.
+Use the current SN94-BitSota checkout for miner-side code and public helper scripts.
 
-For signed coordinator requests, use the local helpers from this checkout:
-- `miner/research_auth.py`
-- `miner/research_coordinator_client.py`
+For signed coordinator mutations, use the public helper from this checkout instead of constructing auth headers yourself:
+- `python scripts/research_signed_request.py ...`
+- installed equivalent if available: `bitsota-research-agent signed-request ...`
+
+For workspace submission, prefer:
+- `bitsota-research-agent submit-workspace ...`
+
+For Merkle proof lookup and `claim_single`, use:
+- `python scripts/claim_merkle_rewards.py ...`
+- installed equivalent if available: `bitsota-claim-rewards ...`
 
 Do not rely on any private backend repository or any hardcoded absolute filesystem path.
 
@@ -43,7 +50,7 @@ Required flow:
 6. replay the benchmark or evaluation path and capture the real metric from workspace output
 7. generate a valid submission.json with summary and claimed metric
 8. include required centerless fields such as proposed_idea and implemented_submission_id when the task mode requires them
-9. create and submit the signed coordinator submission
+9. create and submit the coordinator submission through the public SN94 helper
 10. print the task id, claim id or work item id, submission id, and final API responses
 
 Runtime split:
@@ -54,7 +61,7 @@ Runtime split:
 
 Constraints:
 - do not invent task IDs, claim IDs, metrics, or submission IDs
-- use the real signed coordinator API contract
+- use the real coordinator API contract through the public SN94 helper scripts
 - respect the task's allowed patch surface and metric contract
 - if a step fails, stop and print the exact failing request and response
 

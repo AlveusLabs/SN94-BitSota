@@ -75,3 +75,64 @@ def test_submit_workspace_delegates_to_helper(monkeypatch, capsys, tmp_path: Pat
     assert calls[0]["repo_dir"] == str(tmp_path / "repo")
     assert calls[0]["submission_file"] == str(tmp_path / "submission.json")
     assert '"id":"submission-1"' in output
+
+
+def test_signed_request_uses_wallet_file(monkeypatch, capsys, tmp_path: Path) -> None:
+    wallet_file = tmp_path / "Wallet mine.txt"
+    wallet_file.write_text("Hotkey mnemonic: " + "abandon " * 11 + "about\n", encoding="utf-8")
+
+    calls: list[dict] = []
+
+    class _Response:
+        text = ""
+
+        def json(self) -> dict[str, str]:
+            return {"status": "ok"}
+
+    class _FakeCoordinatorClient:
+        def __init__(self, *, base_url: str, wallet) -> None:
+            calls.append(
+                {
+                    "base_url": base_url,
+                    "wallet_hotkey": wallet.hotkey.ss58_address,
+                }
+            )
+
+        def request(self, method: str, path: str, *, body=None, params=None, sign=False):
+            calls.append(
+                {
+                    "method": method,
+                    "path": path,
+                    "body": body,
+                    "params": params,
+                    "sign": sign,
+                }
+            )
+            return _Response()
+
+    monkeypatch.setattr(research_agent_miner, "CoordinatorClient", _FakeCoordinatorClient)
+
+    result = research_agent_miner.main(
+        [
+            "signed-request",
+            "--coordinator-url",
+            "http://127.0.0.1:8000",
+            "--method",
+            "POST",
+            "--path",
+            "/api/v1/tasks/task-1/claim",
+            "--body-json",
+            '{"claim_description":"test"}',
+            "--wallet-file",
+            str(wallet_file),
+        ]
+    )
+
+    output = capsys.readouterr().out
+    assert result == 0
+    assert calls[0]["base_url"] == "http://127.0.0.1:8000"
+    assert calls[1]["method"] == "POST"
+    assert calls[1]["path"] == "/api/v1/tasks/task-1/claim"
+    assert calls[1]["body"] == {"claim_description": "test"}
+    assert calls[1]["sign"] is True
+    assert '"status": "ok"' in output

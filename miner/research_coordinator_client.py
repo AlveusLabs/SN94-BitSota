@@ -98,6 +98,23 @@ class CoordinatorClient:
             raise CoordinatorApiError(f"{method.upper()} {rel_path} failed: HTTP {response.status_code} ({payload})")
         return response
 
+    def request(
+        self,
+        method: str,
+        path: str,
+        *,
+        body: Any = None,
+        params: dict[str, Any] | None = None,
+        sign: bool = False,
+    ) -> requests.Response:
+        return self._request(
+            method,
+            path,
+            body=body,
+            params=params,
+            sign=sign,
+        )
+
     def list_tasks(self) -> list[dict[str, Any]]:
         return list(self._request("GET", "/api/v1/tasks").json() or [])
 
@@ -206,6 +223,8 @@ class CoordinatorClient:
         proposed_idea: str | None = None,
         implemented_submission_id: str | None = None,
         artifact_uri: str | None = None,
+        artifact_sha256: str | None = None,
+        artifact_size_bytes: int | None = None,
         execution_log: str | None = None,
     ) -> dict[str, Any]:
         body: dict[str, Any] = {
@@ -221,6 +240,10 @@ class CoordinatorClient:
             body["implemented_submission_id"] = str(implemented_submission_id)
         if artifact_uri:
             body["artifact_uri"] = str(artifact_uri)
+        if artifact_sha256:
+            body["artifact_sha256"] = str(artifact_sha256).strip().lower()
+        if artifact_size_bytes is not None:
+            body["artifact_size_bytes"] = int(artifact_size_bytes)
         if execution_log:
             body["execution_log"] = str(execution_log)
         return dict(self._request("POST", "/api/v1/submissions", body=body, sign=True).json() or {})

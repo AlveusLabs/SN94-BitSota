@@ -1,13 +1,10 @@
 from __future__ import annotations
 
 import argparse
-from dataclasses import dataclass
 import json
 from pathlib import Path
 import time
 from typing import Any, Sequence
-
-from substrateinterface import Keypair
 
 from miner.research_agent import (
     AgentMinerConfig,
@@ -17,11 +14,7 @@ from miner.research_agent import (
 )
 from miner.research_competitions import ParticipationStyle, list_builtin_research_competitions
 from miner.research_coordinator_client import CoordinatorClient
-
-
-@dataclass(slots=True)
-class EphemeralWallet:
-    hotkey: Keypair
+from miner.wallet_inputs import EphemeralWallet, load_wallet
 
 
 def _build_parser() -> argparse.ArgumentParser:
@@ -64,6 +57,24 @@ def _build_parser() -> argparse.ArgumentParser:
     submit_workspace.add_argument("--wallet-name", default="default")
     submit_workspace.add_argument("--wallet-hotkey", default="default")
     submit_workspace.add_argument("--wallet-path", default="~/.bittensor/wallets/")
+    submit_workspace.add_argument("--wallet-file", default="")
+
+    signed_request = subparsers.add_parser(
+        "signed-request",
+        help="Send a coordinator request with SN94 wallet signing handled by the public client.",
+    )
+    signed_request.add_argument("--coordinator-url", required=True)
+    signed_request.add_argument("--method", required=True)
+    signed_request.add_argument("--path", required=True)
+    signed_request.add_argument("--body-json", default="")
+    signed_request.add_argument("--body-file", default="")
+    signed_request.add_argument("--params-json", default="")
+    signed_request.add_argument("--unsigned", action="store_true")
+    signed_request.add_argument("--hotkey-mnemonic", default="")
+    signed_request.add_argument("--wallet-name", default="default")
+    signed_request.add_argument("--wallet-hotkey", default="default")
+    signed_request.add_argument("--wallet-path", default="~/.bittensor/wallets/")
+    signed_request.add_argument("--wallet-file", default="")
 
     return parser
 
@@ -95,18 +106,16 @@ def _add_agent_args(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--wallet-name", default="default")
     parser.add_argument("--wallet-hotkey", default="default")
     parser.add_argument("--wallet-path", default="~/.bittensor/wallets/")
+    parser.add_argument("--wallet-file", default="")
 
 
 def _load_wallet(args: argparse.Namespace) -> EphemeralWallet | Any:
-    mnemonic = str(getattr(args, "hotkey_mnemonic", "") or "").strip()
-    if mnemonic:
-        return EphemeralWallet(hotkey=Keypair.create_from_mnemonic(mnemonic))
-    from bittensor_network.wallet import Wallet
-
-    return Wallet(
-        name=str(getattr(args, "wallet_name", "default")),
-        hotkey=str(getattr(args, "wallet_hotkey", "default")),
-        path=str(getattr(args, "wallet_path", "~/.bittensor/wallets/")),
+    return load_wallet(
+        hotkey_mnemonic=str(getattr(args, "hotkey_mnemonic", "") or ""),
+        wallet_file=str(getattr(args, "wallet_file", "") or ""),
+        wallet_name=str(getattr(args, "wallet_name", "default")),
+        wallet_hotkey=str(getattr(args, "wallet_hotkey", "default")),
+        wallet_path=str(getattr(args, "wallet_path", "~/.bittensor/wallets/")),
     )
 
 
@@ -153,6 +162,8 @@ def _build_agent(args: argparse.Namespace) -> ResearchAgentMiner:
 
 
 def _list_tasks(args: argparse.Namespace) -> int:
+    from substrateinterface import Keypair
+
     wallet = EphemeralWallet(hotkey=Keypair.create_from_mnemonic(Keypair.generate_mnemonic()))
     coordinator = CoordinatorClient(base_url=str(args.coordinator_url), wallet=wallet)
     tasks = coordinator.list_tasks()
@@ -247,6 +258,55 @@ def _submit_workspace(args: argparse.Namespace) -> int:
     return 0
 
 
+def _load_optional_json(value: str, *, source_name: str) -> Any:
+    raw = str(value or "").strip()
+    if not raw:
+        return None
+    try:
+        return json.loads(raw)
+    except json.JSONDecodeError as exc:
+        raise ValueError(f"{source_name} is not valid JSON") from exc
+
+
+def _load_request_body(args: argparse.Namespace) -> Any:
+    body_json = str(getattr(args, "body_json", "") or "").strip()
+    body_file = str(getattr(args, "body_file", "") or "").strip()
+    if body_json and body_file:
+        raise ValueError("use either --body-json or --body-file, not both")
+    if body_json:
+        return _load_optional_json(body_json, source_name="--body-json")
+    if body_file:
+        raw = Path(body_file).expanduser().read_text(encoding="utf-8")
+        return _load_optional_json(raw, source_name="--body-file")
+    return None
+
+
+def _signed_request(args: argparse.Namespace) -> int:
+    wallet = _load_wallet(args)
+    coordinator = CoordinatorClient(
+        base_url=str(args.coordinator_url),
+        wallet=wallet,
+    )
+    body = _load_request_body(args)
+    params = _load_optional_json(str(getattr(args, "params_json", "") or ""), source_name="--params-json")
+    if params is not None and not isinstance(params, dict):
+        raise ValueError("--params-json must decode to a JSON object")
+    response = coordinator.request(
+        str(args.method),
+        str(args.path),
+        body=body,
+        params=params,
+        sign=not bool(getattr(args, "unsigned", False)),
+    )
+    try:
+        payload = response.json()
+    except Exception:
+        print(str(response.text or ""))  # noqa: T201
+        return 0
+    print(json.dumps(payload, indent=2))  # noqa: T201
+    return 0
+
+
 def main(argv: Sequence[str] | None = None) -> int:
     args = _build_parser().parse_args(argv)
     if args.command == "list-builtins":
@@ -261,6 +321,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         return _loop(args)
     if args.command == "submit-workspace":
         return _submit_workspace(args)
+    if args.command == "signed-request":
+        return _signed_request(args)
     raise SystemExit(f"unknown command: {args.command}")
 
 
