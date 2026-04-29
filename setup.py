@@ -20,6 +20,7 @@ setuptools.setup(
     entry_points={
         "console_scripts": [
             "bitsota-research-agent=neurons.research_agent_miner:main",
+            "bitsota-research-validator=validator.research_validator_runner:main",
         ],
     },
 )
