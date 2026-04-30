@@ -12,7 +12,7 @@ from validator.public_replay import PublicReplayEngine
 from validator.research_validator_client import (
     AutoresearchValidatorClient,
     DEFAULT_RESEARCH_COORDINATOR_URL,
-    DEFAULT_VALIDATOR_JOB_CLAIM_PATH,
+    DEFAULT_VALIDATOR_WORKLIST_PATH,
 )
 
 
@@ -22,7 +22,7 @@ class PublicValidatorRunnerConfig:
     workspace_root: Path = Path(".bitsota_public_validator_workspaces")
     task_id: str | None = None
     task_slug: str | None = None
-    claim_path: str | None = DEFAULT_VALIDATOR_JOB_CLAIM_PATH
+    claim_path: str | None = DEFAULT_VALIDATOR_WORKLIST_PATH
     interval_seconds: float = 30.0
     cycles: int = 0
     timeout_s: float = 30.0
@@ -57,13 +57,21 @@ class PublicValidatorRunner:
         self.log = log or (lambda _message: None)
 
     def run_once(self) -> PublicValidatorRunOutcome:
-        job = self.client.claim_replay_job(
-            task_id=self.config.task_id,
-            task_slug=self.config.task_slug,
-            claim_path=self.config.claim_path,
-        )
-        if job is None:
-            self.log("[public-validator] idle: no pending replay job")
+        if hasattr(self.client, "claim_replay_jobs"):
+            jobs = self.client.claim_replay_jobs(
+                task_id=self.config.task_id,
+                task_slug=self.config.task_slug,
+                claim_path=self.config.claim_path,
+            )
+        else:
+            job = self.client.claim_replay_job(
+                task_id=self.config.task_id,
+                task_slug=self.config.task_slug,
+                claim_path=self.config.claim_path,
+            )
+            jobs = [job] if job is not None else []
+        if not jobs:
+            self.log("[public-validator] idle: no pending replay jobs")
             return PublicValidatorRunOutcome(
                 job_id=None,
                 submission_id=None,
@@ -72,36 +80,42 @@ class PublicValidatorRunner:
                 verification=None,
                 dry_run=self.config.dry_run,
             )
-        self.log(f"[public-validator] claimed submission={job.submission_id} source={job.source}")
-        replay = self.engine.run(job)
-        self.log(
-            "[public-validator] replay "
-            f"submission={replay.submission_id} status={replay.status} metrics={replay.observed_metrics}"
-        )
-        verification = None
-        if self.config.dry_run:
-            self.log("[public-validator] dry-run: verification result was not submitted")
-        else:
-            verification = self.client.submit_verification(
+        self.log(f"[public-validator] received {len(jobs)} replay job(s)")
+        latest_outcome: PublicValidatorRunOutcome | None = None
+        for job in jobs:
+            self.log(f"[public-validator] checking submission={job.submission_id} source={job.source}")
+            replay = self.engine.run(job)
+            self.log(
+                "[public-validator] replay "
+                f"submission={replay.submission_id} status={replay.status} metrics={replay.observed_metrics}"
+            )
+            verification = None
+            if self.config.dry_run:
+                self.log("[public-validator] dry-run: verification result was not submitted")
+            else:
+                verification = self.client.submit_verification(
+                    submission_id=replay.submission_id,
+                    status=replay.status,
+                    observed_metrics=replay.observed_metrics,
+                    notes=replay.notes,
+                    replay_log=replay.replay_log,
+                    job_id=job.job_id,
+                )
+                self.log(
+                    "[public-validator] submitted verification "
+                    f"job={job.job_id or 'legacy'} submission={replay.submission_id} status={verification.get('status')}"
+                )
+            latest_outcome = PublicValidatorRunOutcome(
+                job_id=job.job_id,
                 submission_id=replay.submission_id,
                 status=replay.status,
-                observed_metrics=replay.observed_metrics,
-                notes=replay.notes,
-                replay_log=replay.replay_log,
-                job_id=job.job_id,
+                observed_metrics=dict(replay.observed_metrics),
+                verification=verification,
+                dry_run=self.config.dry_run,
             )
-            self.log(
-                "[public-validator] submitted verification "
-                f"job={job.job_id or 'legacy'} submission={replay.submission_id} status={verification.get('status')}"
-            )
-        return PublicValidatorRunOutcome(
-            job_id=job.job_id,
-            submission_id=replay.submission_id,
-            status=replay.status,
-            observed_metrics=dict(replay.observed_metrics),
-            verification=verification,
-            dry_run=self.config.dry_run,
-        )
+        if latest_outcome is None:
+            raise RuntimeError("validator worklist produced no outcomes")
+        return latest_outcome
 
     def run_loop(self) -> list[PublicValidatorRunOutcome]:
         outcomes: list[PublicValidatorRunOutcome] = []
@@ -131,15 +145,15 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--task-slug", default="", help="Optional task slug filter.")
     parser.add_argument(
         "--claim-path",
-        default=DEFAULT_VALIDATOR_JOB_CLAIM_PATH,
+        default=DEFAULT_VALIDATOR_WORKLIST_PATH,
         help=(
-            "Signed backend replay-job claim path. Defaults to the public validator lease endpoint."
+            "Signed backend worklist path. Defaults to the public validator scan endpoint."
         ),
     )
     parser.add_argument(
         "--pending-submissions-fallback",
         action="store_true",
-        help="Use the legacy pending-submissions scan instead of the backend validator lease endpoint.",
+        help="Use the legacy pending-submissions scan instead of the backend validator worklist endpoint.",
     )
     parser.add_argument(
         "--workspace-root",

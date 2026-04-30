@@ -10,6 +10,7 @@ from validator.public_replay import PublicReplayEngine, ReplayResult
 from validator.research_validator_client import (
     AutoresearchValidatorClient,
     DEFAULT_VALIDATOR_JOB_CLAIM_PATH,
+    DEFAULT_VALIDATOR_WORKLIST_PATH,
     ReplayJob,
 )
 from validator.research_validator_runner import (
@@ -119,6 +120,75 @@ def test_validator_client_claims_signed_backend_job() -> None:
     request = session.requests[0]
     assert request["method"] == "POST"
     assert request["url"] == "http://127.0.0.1:8000/api/v1/validator/jobs/claim"
+    assert request["json"] == {"task_id": "task-1"}
+    assert request["headers"]["X-Hotkey"] == keypair.ss58_address
+    assert request["headers"]["X-Signature"]
+
+
+def test_validator_client_scans_signed_worklist() -> None:
+    keypair = Keypair.create_from_mnemonic(Keypair.generate_mnemonic())
+    wallet = SimpleNamespace(hotkey=keypair)
+
+    class _WorklistSession:
+        def __init__(self) -> None:
+            self.requests: list[dict] = []
+
+        def request(self, **kwargs):
+            self.requests.append(kwargs)
+            return _Response(
+                {
+                    "jobs": [
+                        {
+                            "job_id": "job-1",
+                            "submission": {
+                                "id": "submission-1",
+                                "task_id": "task-1",
+                                "base_ref": "main",
+                                "patch": "",
+                            },
+                            "replay_spec": {
+                                "repository": "https://github.com/example/repo",
+                                "base_ref": "main",
+                                "benchmark_command": "python benchmark.py",
+                                "metric_name": "score",
+                                "time_budget_seconds": 60,
+                            },
+                        },
+                        {
+                            "job_id": "job-2",
+                            "submission": {
+                                "id": "submission-2",
+                                "task_id": "task-1",
+                                "base_ref": "main",
+                                "patch": "",
+                            },
+                            "replay_spec": {
+                                "repository": "https://github.com/example/repo",
+                                "base_ref": "main",
+                                "benchmark_command": "python benchmark.py",
+                                "metric_name": "score",
+                                "time_budget_seconds": 60,
+                            },
+                        },
+                    ]
+                }
+            )
+
+    session = _WorklistSession()
+    client = AutoresearchValidatorClient(
+        base_url="http://127.0.0.1:8000",
+        wallet=wallet,
+        session=session,  # type: ignore[arg-type]
+    )
+
+    jobs = client.claim_replay_jobs(task_id="task-1")
+
+    assert [job.job_id for job in jobs] == ["job-1", "job-2"]
+    assert [job.submission_id for job in jobs] == ["submission-1", "submission-2"]
+    assert len(session.requests) == 1
+    request = session.requests[0]
+    assert request["method"] == "POST"
+    assert request["url"] == "http://127.0.0.1:8000/api/v1/validator/submissions/scan"
     assert request["json"] == {"task_id": "task-1"}
     assert request["headers"]["X-Hotkey"] == keypair.ss58_address
     assert request["headers"]["X-Signature"]
@@ -320,7 +390,7 @@ def test_public_validator_runner_submits_replay_result(tmp_path: Path) -> None:
     assert calls[0]["claim"] == {
         "task_id": None,
         "task_slug": None,
-        "claim_path": DEFAULT_VALIDATOR_JOB_CLAIM_PATH,
+        "claim_path": DEFAULT_VALIDATOR_WORKLIST_PATH,
     }
     assert calls[1]["submit"]["job_id"] == "job-1"
     assert calls[1]["submit"]["submission_id"] == "submission-1"
