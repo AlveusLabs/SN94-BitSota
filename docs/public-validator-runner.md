@@ -63,8 +63,8 @@ Current backend compatibility:
 - The matching backend exposes signed `POST /api/v1/validator/submissions/scan`
   and `POST /api/v1/validator/jobs/{job_id}/result`.
 - The worklist response includes all recent unseen `submission`/`replay_spec`
-  jobs for the validator, plus validator-only benchmark env including hidden
-  holdout handles and sync numbers.
+  jobs for the validator, plus validator-only replay parameters including
+  hidden holdout handles and sync numbers.
   Validators do not need prod database, App Runner, or admin credentials.
 - The fallback path is only for older backends or backends with legacy direct
   verification explicitly enabled. It uses `GET /api/v1/submissions?status=pending_verification`,
@@ -72,15 +72,15 @@ Current backend compatibility:
   `POST /api/v1/submissions/{id}/verify`.
 - The pending-submissions fallback can only rebuild a replay spec from public task
   metadata. If a competition depends on a backend-pinned `replay_spec` or hidden
-  validator environment that is not exposed by the public API, use a backend lease
-  endpoint that returns those fields.
+  validator replay parameter that is not exposed by the public API, use the
+  signed validator worklist endpoint that returns those fields.
 
 Security note:
 
 The incremental runner uses host execution for setup and benchmark commands and
 therefore requires `--allow-unsafe-host-replay`. Run it only on an isolated
 validator machine or container. Benchmark commands receive a scrubbed environment
-containing only minimal process variables and backend-supplied benchmark env.
+containing only minimal process variables and backend-supplied replay parameters.
 The script signs `/verify` requests with the validator hotkey in fallback mode
 and signs validator job requests in the default mode. The backend still enforces
 validator allowlisting.

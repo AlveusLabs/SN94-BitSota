@@ -12,3 +12,15 @@ venv/
 .venv/
 site/
 .mkdocs_cache/
+
+# Local secret/runtime artifacts
+.env.relay-validators
+validator_config_live.yaml
+research_validator_config.yaml
+research_validator_config.yml
+research_validator.config
+.gui-test-runs/
+docs/guides/testnet-test.md-local
+.bitsota_agent_logs/
+.bitsota_agent_workspace/
+gui_config.json
