@@ -33,7 +33,7 @@ Mine one currently live Qwen3 competition end to end:
 
 ## Hard Constraints
 
-- Do not download full FineWeb.
+- Do not download or infer private heldout corpora.
 - Do not download full Qwen checkpoints.
 - Do not modify coordinator or pool services directly.
 - Do not attempt to access private repos.
@@ -105,30 +105,10 @@ Expected competition modes:
 - binary tasks: `standard`
 - ternary tasks: `centerless`
 
-Expected validator heldout env keys:
-
-- `AUTORESEARCH_HELDOUT_DATASET`
-- `AUTORESEARCH_HELDOUT_SPLIT`
-- `AUTORESEARCH_HELDOUT_ROTATION_KEY`
-
-Current live validator values are expected to be:
-
-- `AUTORESEARCH_HELDOUT_DATASET=fineweb`
-- `AUTORESEARCH_HELDOUT_SPLIT=validator-rotating-heldout`
-- `AUTORESEARCH_HELDOUT_ROTATION_KEY=2026-q2-rotation-a`
-
-Treat these as bounded shard handles supplied by the backend. Do not download FineWeb locally.
-
-For local miner iteration, use only bounded local/debug handles, for example:
-
-- `AUTORESEARCH_HELDOUT_DATASET=pack-local-proxy`
-- `AUTORESEARCH_HELDOUT_SPLIT=smoke`
-- `AUTORESEARCH_HELDOUT_ROTATION_KEY=local-smoke`
-
-Public debug datasets are allowed for local iteration only:
-
-- `wikitext2`
-- `minipile`
+Validator heldout configuration is backend-owned and intentionally opaque.
+Do not infer, print, log, copy, or hardcode the private dataset, split,
+rotation, or corpus mix. For local miner iteration, use only the public task
+repo defaults and bounded smoke runs.
 
 ## Centerless Mode Rules
 
