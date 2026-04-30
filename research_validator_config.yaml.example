@@ -1,0 +1,40 @@
+# Public autoresearch validator runner config.
+# Copy this file to research_validator_config.yaml and edit the wallet values.
+
+# Testnet coordinator. Replace with the production coordinator URL when running
+# against production.
+coordinator_url: "https://chvp2wytst.eu-central-1.awsapprunner.com"
+
+# Optional task filter. Leave unset to scan every available recent submission.
+# task_id: ""
+# task_slug: ""
+
+# Default signed worklist endpoint. Use pending_submissions_fallback only against
+# old backends that do not expose the signed validator scan endpoint.
+claim_path: "/api/v1/validator/submissions/scan"
+pending_submissions_fallback: false
+
+# Bittensor wallet used to sign validator requests. Prefer wallet files over
+# hotkey_mnemonic in shared or long-lived configs.
+wallet_name: "validator-wallet"
+wallet_hotkey: "validator-hotkey"
+wallet_path: "~/.bittensor/wallets/"
+# wallet_file: ""
+# hotkey_mnemonic: ""
+
+# Local replay runtime.
+workspace_root: ".bitsota_public_validator_workspaces"
+cycles: 0
+# once: true
+interval_seconds: 30
+timeout_s: 30
+
+# Host replay executes submitted setup and benchmark commands. Run this only on
+# an isolated validator host or container.
+allow_unsafe_host_replay: true
+allow_local_artifacts: false
+max_replay_log_chars: 128000
+dry_run: false
+
+# Hidden holdout dataset names, percentages, and sync numbers are not configured
+# here. The backend returns them only to authenticated validators in replay_spec.

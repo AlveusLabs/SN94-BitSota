@@ -12,54 +12,40 @@ Default coordinator:
 https://chvp2wytst.eu-central-1.awsapprunner.com
 ```
 
-Run one replay:
+Config-file run:
 
 ```bash
 cd /home/mekaneeky/repos/SN94-BitSota
-python -m validator.research_validator_runner \
-  --once \
-  --coordinator-url https://chvp2wytst.eu-central-1.awsapprunner.com \
-  --wallet-name <validator-wallet> \
-  --wallet-hotkey <validator-hotkey> \
-  --allow-unsafe-host-replay
+cp research_validator_config.yaml.example research_validator_config.yaml
+# Edit coordinator_url, wallet_name, and wallet_hotkey.
+python -m validator.research_validator_runner --config research_validator_config.yaml
 ```
 
 Script wrapper:
 
 ```bash
 cd /home/mekaneeky/repos/SN94-BitSota
-python scripts/research_validator_runner.py \
-  --once \
-  --coordinator-url https://chvp2wytst.eu-central-1.awsapprunner.com \
-  --wallet-name <validator-wallet> \
-  --wallet-hotkey <validator-hotkey> \
-  --allow-unsafe-host-replay
+python scripts/research_validator_runner.py --config research_validator_config.yaml
 ```
 
 Installed console script:
 
 ```bash
-bitsota-research-validator \
-  --once \
-  --coordinator-url https://chvp2wytst.eu-central-1.awsapprunner.com \
-  --wallet-name <validator-wallet> \
-  --wallet-hotkey <validator-hotkey> \
-  --allow-unsafe-host-replay
+bitsota-research-validator --config research_validator_config.yaml
 ```
 
-Loop:
+Run one replay by overriding the config:
 
 ```bash
 python -m validator.research_validator_runner \
-  --coordinator-url https://chvp2wytst.eu-central-1.awsapprunner.com \
-  --wallet-name <validator-wallet> \
-  --wallet-hotkey <validator-hotkey> \
-  --interval-seconds 30 \
-  --allow-unsafe-host-replay
+  --config research_validator_config.yaml \
+  --once
 ```
 
 Useful options:
 
+- `--config`: read runner, wallet, and replay settings from a YAML, `.config`,
+  or JSON file. CLI flags override config-file values.
 - `--task-slug` or `--task-id`: restrict replay to one task.
 - `--hotkey-mnemonic` or `--wallet-file`: use the same SN94 wallet input helpers as the research-agent miner.
 - `--dry-run`: claim and replay locally but do not post the job result.
@@ -67,6 +53,10 @@ Useful options:
   `/api/v1/validator/jobs/claim` only for legacy single-job compatibility.
 - `--pending-submissions-fallback`: use the older public pending-submissions scan when testing an undeployed backend.
 - `--allow-local-artifacts`: allow `file://` or relative artifact URIs during local testing.
+
+The config file intentionally does not include holdout dataset names,
+percentages, or sync numbers. Those values come from the backend in the signed
+worklist response after validator auth and on-chain checks pass.
 
 Current backend compatibility:
 

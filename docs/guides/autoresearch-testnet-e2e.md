@@ -470,12 +470,9 @@ bitsota-research-agent signed-request \
 Preferred unattended public validator path:
 
 ```bash
-python -m validator.research_validator_runner \
-  --once \
-  --coordinator-url https://chvp2wytst.eu-central-1.awsapprunner.com \
-  --wallet-name <validator_wallet> \
-  --wallet-hotkey <validator_hotkey> \
-  --allow-unsafe-host-replay
+cp research_validator_config.yaml.example research_validator_config.yaml
+# Edit coordinator_url, wallet_name, and wallet_hotkey.
+python -m validator.research_validator_runner --config research_validator_config.yaml --once
 ```
 
 For manual fallback, replay the submission in a clean local workspace using the

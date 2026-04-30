@@ -17,6 +17,10 @@ from validator.research_validator_runner import (
     PublicValidatorRunOutcome,
     PublicValidatorRunner,
     PublicValidatorRunnerConfig,
+    _build_parser,
+    _config_from_args,
+    _load_runner_config_file,
+    _wallet_kwargs_from_args,
 )
 
 
@@ -192,6 +196,100 @@ def test_validator_client_scans_signed_worklist() -> None:
     assert request["json"] == {"task_id": "task-1"}
     assert request["headers"]["X-Hotkey"] == keypair.ss58_address
     assert request["headers"]["X-Signature"]
+
+
+def test_public_validator_runner_loads_yaml_config(tmp_path: Path) -> None:
+    config_path = tmp_path / "research-validator.yaml"
+    workspace_root = tmp_path / "workspaces"
+    wallet_path = tmp_path / "wallets"
+    config_path.write_text(
+        f"""
+coordinator_url: "https://validator.example.test/"
+task_slug: "qwen-task"
+claim_path: "/api/v1/validator/submissions/scan"
+workspace_root: "{workspace_root}"
+once: true
+interval_seconds: 12.5
+timeout_s: 7
+allow_unsafe_host_replay: true
+allow_local_artifacts: true
+max_replay_log_chars: 4096
+dry_run: true
+wallet_name: "validator-wallet"
+wallet_hotkey: "validator-hotkey"
+wallet_path: "{wallet_path}"
+""".lstrip(),
+        encoding="utf-8",
+    )
+    args = _build_parser().parse_args(["--config", str(config_path)])
+    config_data = _load_runner_config_file(args.config)
+
+    config = _config_from_args(args, config_data)
+    wallet_kwargs = _wallet_kwargs_from_args(args, config_data)
+
+    assert config.coordinator_url == "https://validator.example.test"
+    assert config.task_slug == "qwen-task"
+    assert config.claim_path == DEFAULT_VALIDATOR_WORKLIST_PATH
+    assert config.workspace_root == workspace_root.resolve()
+    assert config.cycles == 1
+    assert config.interval_seconds == 12.5
+    assert config.timeout_s == 7.0
+    assert config.allow_unsafe_host_replay is True
+    assert config.allow_local_artifacts is True
+    assert config.max_replay_log_chars == 4096
+    assert config.dry_run is True
+    assert wallet_kwargs == {
+        "hotkey_mnemonic": "",
+        "wallet_file": "",
+        "wallet_name": "validator-wallet",
+        "wallet_hotkey": "validator-hotkey",
+        "wallet_path": str(wallet_path),
+    }
+
+
+def test_public_validator_runner_cli_overrides_yaml_config(tmp_path: Path) -> None:
+    config_path = tmp_path / "research-validator.config"
+    config_path.write_text(
+        """
+coordinator_url: "https://config.example.test"
+cycles: 9
+interval_seconds: 60
+dry_run: true
+allow_unsafe_host_replay: true
+pending_submissions_fallback: true
+""".lstrip(),
+        encoding="utf-8",
+    )
+    args = _build_parser().parse_args(
+        [
+            "--config",
+            str(config_path),
+            "--coordinator-url",
+            "https://cli.example.test/",
+            "--cycles",
+            "2",
+            "--interval-seconds",
+            "5",
+            "--no-dry-run",
+            "--claim-path",
+            DEFAULT_VALIDATOR_WORKLIST_PATH,
+        ]
+    )
+    config = _config_from_args(args, _load_runner_config_file(args.config))
+
+    assert config.coordinator_url == "https://cli.example.test"
+    assert config.cycles == 2
+    assert config.interval_seconds == 5.0
+    assert config.dry_run is False
+    assert config.claim_path == DEFAULT_VALIDATOR_WORKLIST_PATH
+
+
+def test_public_validator_runner_defaults_to_signed_worklist() -> None:
+    args = _build_parser().parse_args([])
+
+    config = _config_from_args(args)
+
+    assert config.claim_path == DEFAULT_VALIDATOR_WORKLIST_PATH
 
 
 def test_validator_client_posts_signed_job_result() -> None:
