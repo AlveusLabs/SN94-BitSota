@@ -11,6 +11,7 @@ from miner.research_auth import sign_hotkey_request
 
 DEFAULT_RESEARCH_COORDINATOR_URL = "https://chvp2wytst.eu-central-1.awsapprunner.com"
 DEFAULT_VALIDATOR_JOB_CLAIM_PATH = "/api/v1/validator/jobs/claim"
+DEFAULT_VALIDATOR_WORKLIST_PATH = "/api/v1/validator/submissions/scan"
 
 
 class PublicValidatorApiError(RuntimeError):
@@ -149,6 +150,34 @@ class AutoresearchValidatorClient:
                 return None
             return self._job_from_payload(dict(payload), source=f"claim_endpoint:{claim_path}")
         return self._claim_from_pending_list(task_id=resolved_task_id)
+
+    def claim_replay_jobs(
+        self,
+        *,
+        task_id: str | None = None,
+        task_slug: str | None = None,
+        claim_path: str | None = DEFAULT_VALIDATOR_WORKLIST_PATH,
+    ) -> list[ReplayJob]:
+        if claim_path == DEFAULT_VALIDATOR_JOB_CLAIM_PATH or claim_path is None:
+            job = self.claim_replay_job(task_id=task_id, task_slug=task_slug, claim_path=claim_path)
+            return [job] if job is not None else []
+
+        resolved_task_id = self._resolve_task_id(task_id=task_id, task_slug=task_slug)
+        body: dict[str, Any] = {}
+        if resolved_task_id:
+            body["task_id"] = resolved_task_id
+        try:
+            response = self._request("POST", claim_path, body=body or None, sign=True)
+        except PublicValidatorApiError as exc:
+            if exc.status_code == 404:
+                return []
+            raise
+        payload = response.json() if response.text else {}
+        raw_jobs = list(dict(payload or {}).get("jobs") or [])
+        return [
+            self._job_from_payload(dict(raw), source=f"worklist_endpoint:{claim_path}")
+            for raw in raw_jobs
+        ]
 
     def submit_verification(
         self,

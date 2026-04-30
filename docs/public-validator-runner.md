@@ -2,9 +2,9 @@
 
 SN94 exposes a public validator client in this repo so an operator can replay
 autoresearch submissions without running the private coordinator database worker.
-The default path is a signed backend lease: the validator claims
-`POST /api/v1/validator/jobs/claim`, replays the returned submission and
-`replay_spec`, then submits `POST /api/v1/validator/jobs/{job_id}/result`.
+The default path is a signed backend worklist scan: the validator calls
+`POST /api/v1/validator/submissions/scan`, replays every returned submission and
+`replay_spec`, then submits each score to `POST /api/v1/validator/jobs/{job_id}/result`.
 
 Default coordinator:
 
@@ -63,15 +63,18 @@ Useful options:
 - `--task-slug` or `--task-id`: restrict replay to one task.
 - `--hotkey-mnemonic` or `--wallet-file`: use the same SN94 wallet input helpers as the research-agent miner.
 - `--dry-run`: claim and replay locally but do not post the job result.
-- `--claim-path`: override the signed backend replay-job claim endpoint.
+- `--claim-path`: override the signed backend worklist endpoint. Use
+  `/api/v1/validator/jobs/claim` only for legacy single-job compatibility.
 - `--pending-submissions-fallback`: use the older public pending-submissions scan when testing an undeployed backend.
 - `--allow-local-artifacts`: allow `file://` or relative artifact URIs during local testing.
 
 Current backend compatibility:
 
-- The matching backend exposes signed `POST /api/v1/validator/jobs/claim`
+- The matching backend exposes signed `POST /api/v1/validator/submissions/scan`
   and `POST /api/v1/validator/jobs/{job_id}/result`.
-- The lease response includes `submission`, `replay_spec`, lease timing, and warnings.
+- The worklist response includes all recent unseen `submission`/`replay_spec`
+  jobs for the validator, plus validator-only benchmark env including hidden
+  holdout handles and sync numbers.
   Validators do not need prod database, App Runner, or admin credentials.
 - The fallback path is only for older backends or backends with legacy direct
   verification explicitly enabled. It uses `GET /api/v1/submissions?status=pending_verification`,

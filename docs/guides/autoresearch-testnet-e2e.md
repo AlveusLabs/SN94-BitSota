@@ -76,7 +76,7 @@ The path is:
 
 Implemented validation paths:
 
-- public SN94 validator runner: signed `POST /api/v1/validator/jobs/claim`, local replay from the returned `replay_spec`, then signed `POST /api/v1/validator/jobs/{job_id}/result`
+- public SN94 validator runner: signed `POST /api/v1/validator/submissions/scan`, local replay for every returned `replay_spec`, then signed `POST /api/v1/validator/jobs/{job_id}/result`
 - legacy public signed `POST /api/v1/submissions/{id}/verify` from an allowlisted validator hotkey, using SN94-BitSota signing helpers
 - backend-owned background validator worker via `autoresearch-validate`
 
@@ -605,5 +605,5 @@ The flow is only truly end-to-end when all of these happen:
 - Do not check miner hotkey free balance as the reward success signal.
 - Do not assume the GUI's locally declared coldkey automatically controls claim payout. Pool publication is the source of truth for each epoch.
 - Do not assume `POST /coldkey_address/update` on the legacy relay path controls autoresearch Merkle claims.
-- If `/api/v1/validator/jobs/claim` or `/api/v1/submissions/{id}/verify` returns `503`, validator allowlisting or validator deployment is wrong.
+- If `/api/v1/validator/submissions/scan` or `/api/v1/submissions/{id}/verify` returns `503`, validator allowlisting or validator deployment is wrong.
 - If accepted submissions never show up in `/claims/epochs`, the reward publication side is broken even if coordinator validation is healthy.
