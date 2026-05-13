@@ -49,6 +49,8 @@ def test_submit_workspace_delegates_to_helper(monkeypatch, capsys, tmp_path: Pat
                 "claim_id": _args.claim_id,
                 "repo_dir": _args.repo_dir,
                 "submission_file": _args.submission_file,
+                "allowed_patch_path": _args.allowed_patch_path,
+                "max_patch_bytes": _args.max_patch_bytes,
             }
         )
         print('{"id":"submission-1"}')
@@ -66,6 +68,10 @@ def test_submit_workspace_delegates_to_helper(monkeypatch, capsys, tmp_path: Pat
             str(tmp_path / "repo"),
             "--submission-file",
             str(tmp_path / "submission.json"),
+            "--allowed-patch-path",
+            "train.py",
+            "--max-patch-bytes",
+            "1234",
         ]
     )
 
@@ -74,6 +80,8 @@ def test_submit_workspace_delegates_to_helper(monkeypatch, capsys, tmp_path: Pat
     assert calls[0]["claim_id"] == "claim-1"
     assert calls[0]["repo_dir"] == str(tmp_path / "repo")
     assert calls[0]["submission_file"] == str(tmp_path / "submission.json")
+    assert calls[0]["allowed_patch_path"] == ["train.py"]
+    assert calls[0]["max_patch_bytes"] == 1234
     assert '"id":"submission-1"' in output
 
 

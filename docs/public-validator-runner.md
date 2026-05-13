@@ -84,3 +84,9 @@ containing only minimal process variables and backend-supplied replay parameters
 The script signs `/verify` requests with the validator hotkey in fallback mode
 and signs validator job requests in the default mode. The backend still enforces
 validator allowlisting.
+
+Patch-surface enforcement is strict before replay. The public runner rejects any
+submitted patch path that is not in the task `allowed_patch_paths`, rejects
+generated Python bytecode/cache paths, and rejects patches larger than
+`max_patch_bytes` when the backend or task provides it. The default cap is
+262,144 bytes.
