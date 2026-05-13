@@ -8,6 +8,7 @@ from typing import Any, Sequence
 
 from miner.research_agent import (
     AgentMinerConfig,
+    DEFAULT_MAX_SUBMISSION_PATCH_BYTES,
     OpenAICompatibleChatClient,
     ResearchAgentMiner,
     submit_claimed_workspace,
@@ -58,6 +59,18 @@ def _build_parser() -> argparse.ArgumentParser:
     submit_workspace.add_argument("--wallet-hotkey", default="default")
     submit_workspace.add_argument("--wallet-path", default="~/.bittensor/wallets/")
     submit_workspace.add_argument("--wallet-file", default="")
+    submit_workspace.add_argument(
+        "--allowed-patch-path",
+        action="append",
+        default=[],
+        help="Task patch path/glob to include in the submission. Repeat for multiple paths; omitted values are inferred from the active claim when possible.",
+    )
+    submit_workspace.add_argument(
+        "--max-patch-bytes",
+        type=int,
+        default=DEFAULT_MAX_SUBMISSION_PATCH_BYTES,
+        help="Maximum generated patch size in bytes.",
+    )
 
     signed_request = subparsers.add_parser(
         "signed-request",
@@ -253,6 +266,8 @@ def _submit_workspace(args: argparse.Namespace) -> int:
         repo_dir=Path(str(args.repo_dir)).expanduser().resolve(),
         submission_file=Path(str(args.submission_file)).expanduser().resolve(),
         default_base_ref=str(getattr(args, "base_ref", "") or ""),
+        allowed_patch_paths=list(getattr(args, "allowed_patch_path", []) or []),
+        max_patch_bytes=int(getattr(args, "max_patch_bytes", DEFAULT_MAX_SUBMISSION_PATCH_BYTES)),
     )
     print(json.dumps(result, indent=2))  # noqa: T201
     return 0

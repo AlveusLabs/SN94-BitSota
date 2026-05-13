@@ -23,6 +23,8 @@ from validator.research_validator_client import ReplayJob
 _NUMBER_PATTERN = r"([-+]?\d+(?:\.\d+)?(?:[eE][-+]?\d+)?)"
 _PATCH_PATH_PATTERN = re.compile(r"^diff --git a/(.+?) b/(.+?)$", re.MULTILINE)
 _DEFAULT_COMMAND_PATH = "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+_PYTHON_BYTECODE_SUFFIXES = (".pyc", ".pyo")
+DEFAULT_MAX_PATCH_BYTES = 262_144
 
 
 class PublicReplayError(RuntimeError):
@@ -43,6 +45,7 @@ class ReplaySpec:
     validator_benchmark_env: dict[str, str]
     time_budget_seconds: int
     source: str
+    max_patch_bytes: int
 
     @classmethod
     def from_job(cls, job: ReplayJob) -> "ReplaySpec":
@@ -74,6 +77,7 @@ class ReplaySpec:
         }
         raw_allowed_paths = raw.get("allowed_patch_paths")
         allowed_patch_paths = raw_allowed_paths if raw_allowed_paths is not None else task.get("allowed_patch_paths")
+        max_patch_bytes = raw.get("max_patch_bytes") or task.get("max_patch_bytes") or DEFAULT_MAX_PATCH_BYTES
         return cls(
             repository=repository,
             base_ref=base_ref,
@@ -87,6 +91,7 @@ class ReplaySpec:
             validator_benchmark_env=benchmark_env,
             time_budget_seconds=max(1, int(raw.get("time_budget_seconds") or task.get("time_budget_seconds") or 3600)),
             source=str(raw.get("_source") or job.source or "unknown"),
+            max_patch_bytes=max(1, int(max_patch_bytes)),
         )
 
 
@@ -146,6 +151,14 @@ def _normalize_patch_path(raw: str) -> str | None:
     if path.startswith("a/") or path.startswith("b/"):
         path = path[2:]
     return path or None
+
+
+def is_generated_python_cache_path(raw: str) -> bool:
+    path = _normalize_patch_path(raw)
+    if not path:
+        return False
+    normalized = path.replace("\\", "/").lstrip("./").lower()
+    return normalized.endswith(_PYTHON_BYTECODE_SUFFIXES)
 
 
 def extract_patch_paths(patch: str) -> list[str]:
@@ -234,6 +247,21 @@ class PublicReplayEngine:
         benchmark_env = dict(spec.validator_benchmark_env)
         redactions = self._sensitive_redactions(benchmark_env)
         try:
+            if len(patch.encode("utf-8")) > spec.max_patch_bytes:
+                return self._result(
+                    job,
+                    status="rejected",
+                    observed_metrics={},
+                    notes=f"Patch exceeds maximum size of {spec.max_patch_bytes} bytes",
+                    replay_log="\n".join(
+                        [
+                            *logs,
+                            "validator_rejection=patch_too_large",
+                            f"max_patch_bytes={spec.max_patch_bytes}",
+                        ]
+                    ),
+                )
+
             changed_paths = extract_patch_paths(patch)
             if patch.strip() and not changed_paths:
                 return self._result(
@@ -243,6 +271,26 @@ class PublicReplayEngine:
                     notes="Patch surface could not be determined from the submitted diff",
                     replay_log="\n".join([*logs, "validator_rejection=unparseable_patch_surface"]),
                 )
+
+            generated_cache_paths = [
+                path for path in changed_paths if is_generated_python_cache_path(path)
+            ]
+            if generated_cache_paths:
+                return self._result(
+                    job,
+                    status="rejected",
+                    observed_metrics={},
+                    notes="Patch modified generated Python bytecode/cache files: "
+                    + ", ".join(generated_cache_paths),
+                    replay_log="\n".join(
+                        [
+                            *logs,
+                            "validator_rejection=generated_python_cache_paths",
+                            "changed_paths=" + ",".join(changed_paths),
+                        ]
+                    ),
+                )
+
             disallowed_paths = find_disallowed_patch_paths(patch, spec.allowed_patch_paths)
             if disallowed_paths:
                 return self._result(

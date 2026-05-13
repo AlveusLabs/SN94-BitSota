@@ -6,10 +6,12 @@ import shlex
 import subprocess
 import sys
 
+import pytest
 from substrateinterface import Keypair
 
 from miner.research_agent import (
     AgentMinerConfig,
+    compute_repo_patch,
     OpenAICompatibleChatClient,
     ResearchAgentMiner,
     build_agent_intro_markdown,
@@ -22,6 +24,7 @@ class FakeCoordinator:
     def __init__(self) -> None:
         self.hotkey = Keypair.create_from_mnemonic(Keypair.generate_mnemonic()).ss58_address
         self.base_url = "http://127.0.0.1:8000"
+        self.tasks: list[dict] = []
         self.claimed_tasks: list[dict] = []
         self.claimed_work_items: list[dict] = []
         self.cancelled_claims: list[str] = []
@@ -36,6 +39,13 @@ class FakeCoordinator:
             "submission": {},
         }
 
+    def list_tasks(self):
+        if self.tasks:
+            return list(self.tasks)
+        if self.selected is not None:
+            return [dict(self.selected.task)]
+        return []
+
     def select_task(self, *, task_id=None, task_slug=None, participation_style: str):
         return self.selected
 
@@ -48,12 +58,21 @@ class FakeCoordinator:
             rows = [row for row in rows if str(row.get("status")) == str(status)]
         return rows
 
+    def list_claims(self, *, task_id=None, status=None):
+        rows = [dict(row) for row in self.claimed_tasks]
+        if task_id is not None:
+            rows = [row for row in rows if str(row.get("task_id")) == str(task_id)]
+        if status is not None:
+            rows = [row for row in rows if str(row.get("status") or "active") == str(status)]
+        return rows
+
     def claim_task(self, *, task_id: str, claim_description: str, base_submission_id=None):
         payload = {
             "id": "claim-direct-1",
             "task_id": task_id,
             "claim_description": claim_description,
             "base_submission_id": base_submission_id,
+            "status": "active",
         }
         self.claimed_tasks.append(payload)
         return payload
@@ -603,6 +622,7 @@ def test_agent_mine_once_executes_patch_and_submits_observed_metric(tmp_path: Pa
                 "metric_direction": "minimize",
                 "competition_mode": CompetitionMode.standard.value,
                 "benchmark_command": "python3 train.py",
+                "allowed_patch_paths": ["train.py"],
                 "time_budget_seconds": 30,
             },
             "work_item": {
@@ -661,7 +681,8 @@ def test_submit_claimed_workspace_uses_submission_json_and_git_diff(tmp_path: Pa
         },
     )
     (repo_dir / "train.py").write_text("print('val_bpb: 1.11')\n", encoding="utf-8")
-    submission_file = tmp_path / "submission.json"
+    (repo_dir / "README.md").write_text("dirty but outside surface\n", encoding="utf-8")
+    submission_file = repo_dir / "submission.json"
     submission_file.write_text(
         json.dumps(
             {
@@ -683,6 +704,7 @@ def test_submit_claimed_workspace_uses_submission_json_and_git_diff(tmp_path: Pa
         repo_dir=repo_dir,
         submission_file=submission_file,
         default_base_ref=base_ref,
+        allowed_patch_paths=["train.py"],
     )
     head_commit = (
         subprocess.run(["git", "rev-parse", "HEAD"], cwd=repo_dir, check=True, capture_output=True, text=True)
@@ -698,6 +720,73 @@ def test_submit_claimed_workspace_uses_submission_json_and_git_diff(tmp_path: Pa
     assert coordinator.submissions[0]["artifact_sha256"] == "b" * 64
     assert coordinator.submissions[0]["artifact_size_bytes"] == 456
     assert coordinator.submissions[0]["patch"].startswith("diff --git a/train.py b/train.py")
+    assert "README.md" not in coordinator.submissions[0]["patch"]
+    assert "submission.json" not in coordinator.submissions[0]["patch"]
+    assert coordinator.submissions[0]["patch"].endswith("\n")
+
+    replay_repo = tmp_path / "replay"
+    subprocess.run(["git", "clone", "--quiet", str(repo_dir), str(replay_repo)], check=True, capture_output=True, text=True)
+    subprocess.run(["git", "checkout", head_commit], cwd=replay_repo, check=True, capture_output=True, text=True)
+    subprocess.run(
+        ["git", "apply", "-"],
+        cwd=replay_repo,
+        input=coordinator.submissions[0]["patch"],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+
+
+def test_compute_repo_patch_selects_only_allowed_paths_and_never_generated_cache(
+    tmp_path: Path,
+) -> None:
+    repo_dir, _ = _init_git_repo(
+        tmp_path,
+        {
+            "README.md": "demo\n",
+            "train.py": "print('val_bpb: 2.5')\n",
+            "__pycache__/train.cpython-310.pyc": "cached-old\n",
+        },
+    )
+    (repo_dir / "train.py").write_text("print('val_bpb: 1.11')\n", encoding="utf-8")
+    (repo_dir / "README.md").write_text("dirty outside surface\n", encoding="utf-8")
+    (repo_dir / "__pycache__/train.cpython-310.pyc").write_bytes(b"\x00\x01new-bytecode")
+
+    patch = compute_repo_patch(
+        repo_dir,
+        allowed_patch_paths=["train.py", "__pycache__/*.pyc"],
+    )
+
+    assert "diff --git a/train.py b/train.py" in patch
+    assert "README.md" not in patch
+    assert "__pycache__" not in patch
+
+
+def test_compute_repo_patch_fails_when_only_disallowed_paths_changed(tmp_path: Path) -> None:
+    repo_dir, _ = _init_git_repo(
+        tmp_path,
+        {
+            "README.md": "demo\n",
+            "train.py": "print('val_bpb: 2.5')\n",
+        },
+    )
+    (repo_dir / "README.md").write_text("dirty outside surface\n", encoding="utf-8")
+
+    with pytest.raises(RuntimeError, match="no patch to submit within allowed_patch_paths"):
+        compute_repo_patch(repo_dir, allowed_patch_paths=["train.py"])
+
+
+def test_compute_repo_patch_enforces_patch_size_limit(tmp_path: Path) -> None:
+    repo_dir, _ = _init_git_repo(
+        tmp_path,
+        {
+            "train.py": "print('val_bpb: 2.5')\n",
+        },
+    )
+    (repo_dir / "train.py").write_text(("print('val_bpb: 1.11')\n" * 20), encoding="utf-8")
+
+    with pytest.raises(RuntimeError, match="max_patch_bytes"):
+        compute_repo_patch(repo_dir, allowed_patch_paths=["train.py"], max_patch_bytes=64)
 
 
 def test_agent_mine_once_can_run_external_gui_managed_agent(tmp_path: Path) -> None:
@@ -723,6 +812,7 @@ def test_agent_mine_once_can_run_external_gui_managed_agent(tmp_path: Path) -> N
                 "metric_direction": "minimize",
                 "competition_mode": CompetitionMode.standard.value,
                 "benchmark_command": "python3 train.py",
+                "allowed_patch_paths": ["train.py"],
                 "time_budget_seconds": 30,
             },
             "work_item": {
@@ -734,11 +824,13 @@ def test_agent_mine_once_can_run_external_gui_managed_agent(tmp_path: Path) -> N
     )()
     coordinator.onboard = "# onboard\nEdit train.py and report val_bpb.\n"
     runner = (
-        "import json, os, pathlib\n"
+        "import json, os, pathlib, sys\n"
         "workspace = pathlib.Path(os.environ['BITSOTA_AGENT_WORKSPACE'])\n"
         "repo = pathlib.Path(os.environ['BITSOTA_AGENT_REPO_DIR'])\n"
         "intro = workspace / 'INTRO_GUI.md'\n"
         "assert 'Do not submit directly to the coordinator' in intro.read_text(encoding='utf-8')\n"
+        "print('external agent started')\n"
+        "print('external agent stderr', file=sys.stderr)\n"
         "(repo / 'train.py').write_text(\"print('val_bpb: 1.01')\\n\", encoding='utf-8')\n"
         "(workspace / 'submission.json').write_text(json.dumps({"
         "\"summary\": \"Codex-style external agent submission.\","
@@ -768,6 +860,8 @@ def test_agent_mine_once_can_run_external_gui_managed_agent(tmp_path: Path) -> N
     workspace_dir = Path(result["execution"]["workspace_dir"])
     assert (workspace_dir / "INTRO_GUI.md").exists()
     assert (workspace_dir / "submission.json").exists()
+    assert (workspace_dir / "agent.stdout.txt").read_text(encoding="utf-8") == "external agent started\n"
+    assert (workspace_dir / "agent.stderr.txt").read_text(encoding="utf-8") == "external agent stderr\n"
 
 
 def test_agent_mine_once_external_gui_managed_centerless_auto_fills_prior_idea_reference(
@@ -795,6 +889,7 @@ def test_agent_mine_once_external_gui_managed_centerless_auto_fills_prior_idea_r
                 "metric_direction": "minimize",
                 "competition_mode": CompetitionMode.centerless.value,
                 "benchmark_command": "python3 train.py",
+                "allowed_patch_paths": ["train.py"],
                 "time_budget_seconds": 30,
             },
             "work_item": {
