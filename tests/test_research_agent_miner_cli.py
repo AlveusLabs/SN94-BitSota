@@ -1,7 +1,10 @@
 from __future__ import annotations
 
+import json
 from argparse import Namespace
 from pathlib import Path
+import subprocess
+import sys
 
 from neurons import research_agent_miner
 
@@ -16,6 +19,22 @@ class _FailingAgent:
 
     def peer_evaluate_once(self, **_kwargs):
         raise RuntimeError("peer-eval unavailable")
+
+
+def test_script_entrypoint_uses_top_level_miner_package() -> None:
+    repo_root = Path(__file__).resolve().parents[1]
+
+    result = subprocess.run(
+        [sys.executable, "neurons/research_agent_miner.py", "list-builtins"],
+        cwd=repo_root,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    assert result.returncode == 0, result.stderr
+    payload = json.loads(result.stdout)
+    assert any(row["slug"] == "nanogpt-default" for row in payload)
 
 
 def test_loop_keeps_iterating_after_mining_failures(monkeypatch, capsys) -> None:

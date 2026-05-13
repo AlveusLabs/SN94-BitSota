@@ -157,6 +157,13 @@ After `pip install -e .`, the new command is:
 bitsota-research-agent --help
 ```
 
+From a source checkout, equivalent launcher forms are:
+
+```bash
+python -m neurons.research_agent_miner --help
+python neurons/research_agent_miner.py --help
+```
+
 List built-in competitions:
 
 ```bash

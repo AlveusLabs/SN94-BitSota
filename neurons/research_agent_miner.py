@@ -3,8 +3,23 @@ from __future__ import annotations
 import argparse
 import json
 from pathlib import Path
+import sys
 import time
 from typing import Any, Sequence
+
+
+def _prefer_project_root_imports() -> None:
+    project_root = Path(__file__).resolve().parents[1]
+    root_path = str(project_root)
+    if sys.path[0:1] != [root_path]:
+        try:
+            sys.path.remove(root_path)
+        except ValueError:
+            pass
+        sys.path.insert(0, root_path)
+
+
+_prefer_project_root_imports()
 
 from miner.research_agent import (
     AgentMinerConfig,
