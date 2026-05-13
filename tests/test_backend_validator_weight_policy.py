@@ -23,7 +23,10 @@ from bittensor_network import _state as state
 from bittensor_network import _weights
 from validator.backend_weight_policy import (
     BackendWeightOverride,
+    BackendWeightPolicyError,
     BackendWeightPolicyClient,
+    SN94_CONTRACT_HOTKEY,
+    parse_backend_weight_override,
 )
 from validator.capacitorless_sticky_weight_manager import (
     CapacitorlessStickyBurnSplitWeightManager,
@@ -104,6 +107,142 @@ def test_backend_weight_policy_client_parses_targets(monkeypatch) -> None:
     assert override is not None
     assert override.mode == "targets"
     assert override.scores == {0: 0.75, "5TargetHotkey": 0.25}
+
+
+def test_backend_weight_policy_enforces_sn94_contract_burn_rest_targets(
+    monkeypatch,
+) -> None:
+    monkeypatch.setattr(
+        "validator.backend_weight_policy.requests.get",
+        lambda *args, **kwargs: _DummyResponse(
+            {
+                "reward_policy": {
+                    "validator_weights": {
+                        "mode": "targets",
+                        "targets": [
+                            {"uid": 0, "weight": 9},
+                            {"hotkey": SN94_CONTRACT_HOTKEY, "weight": 1},
+                        ],
+                        "transition_policy": {"status": "active"},
+                    }
+                }
+            }
+        ),
+    )
+
+    client = BackendWeightPolicyClient(
+        base_url="https://coordinator.example",
+        refresh_interval_s=1.0,
+        timeout_s=5.0,
+        enforce_sn94_contract_targets=True,
+    )
+    override = client.get_override()
+
+    assert override is not None
+    assert override.mode == "targets"
+    assert override.transition_status == "active"
+    assert override.scores == pytest.approx({0: 0.9, SN94_CONTRACT_HOTKEY: 0.1})
+    assert override.contract_hotkey_weight == pytest.approx(0.1)
+    assert override.burn_uid_weight == pytest.approx(0.9)
+    status = client.get_status()
+    assert status["effective_mode"] == "targets"
+    assert status["sn94_policy"]["contract_hotkey_weight"] == pytest.approx(0.1)
+    assert status["sn94_policy"]["burn_uid_weight"] == pytest.approx(0.9)
+
+
+def test_backend_weight_policy_rejects_sn94_targets_without_contract_hotkey(
+    monkeypatch,
+) -> None:
+    monkeypatch.setattr(
+        "validator.backend_weight_policy.requests.get",
+        lambda *args, **kwargs: _DummyResponse(
+            {
+                "reward_policy": {
+                    "validator_weights": {
+                        "mode": "targets",
+                        "targets": [{"hotkey": "5TeamHotkey", "weight": 1.0}],
+                        "transition_policy": {"status": "blocked"},
+                    }
+                }
+            }
+        ),
+    )
+
+    client = BackendWeightPolicyClient(
+        base_url="https://coordinator.example",
+        refresh_interval_s=1.0,
+        timeout_s=5.0,
+        enforce_sn94_contract_targets=True,
+    )
+
+    assert client.get_override() is None
+    status = client.get_status()
+    assert status["effective_mode"] == "local_fallback"
+    assert status["backend_mode"] == "targets"
+    assert "contract hotkey" in status["last_validation_error"]
+    assert status["fallback_reason"].startswith("invalid backend policy:")
+
+
+def test_backend_weight_policy_rejects_ambiguous_targets() -> None:
+    with pytest.raises(BackendWeightPolicyError, match="exactly one of uid or hotkey"):
+        parse_backend_weight_override(
+            {
+                "validator_weights": {
+                    "mode": "targets",
+                    "targets": [
+                        {"uid": 0, "hotkey": SN94_CONTRACT_HOTKEY, "weight": 1.0}
+                    ],
+                }
+            }
+        )
+
+
+def test_backend_weight_policy_rejects_active_non_target_transition() -> None:
+    with pytest.raises(BackendWeightPolicyError, match="requires mode='targets'"):
+        parse_backend_weight_override(
+            {
+                "validator_weights": {
+                    "mode": "burn_uid0",
+                    "targets": [],
+                    "transition_policy": {"status": "active"},
+                }
+            },
+            enforce_sn94_contract_targets=True,
+        )
+
+
+def test_backend_weight_policy_fetch_failure_falls_back_to_local(monkeypatch) -> None:
+    calls = {"count": 0}
+
+    def _fake_get(*args, **kwargs):
+        calls["count"] += 1
+        if calls["count"] == 1:
+            return _DummyResponse(
+                {
+                    "reward_policy": {
+                        "validator_weights": {
+                            "mode": "burn_uid0",
+                            "targets": [],
+                        }
+                    }
+                }
+            )
+        raise RuntimeError("backend unavailable")
+
+    monkeypatch.setattr("validator.backend_weight_policy.requests.get", _fake_get)
+
+    client = BackendWeightPolicyClient(
+        base_url="https://coordinator.example",
+        refresh_interval_s=1.0,
+        timeout_s=5.0,
+    )
+
+    assert client.get_override() is not None
+    client._last_fetch_ts = 0.0
+    assert client.get_override() is None
+    status = client.get_status()
+    assert status["effective_mode"] == "local_fallback"
+    assert status["fallback_reason"].startswith("backend fetch failed:")
 
 
 def test_sticky_weight_manager_prefers_backend_override_uid0() -> None:

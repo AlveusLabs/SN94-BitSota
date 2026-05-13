@@ -33,6 +33,14 @@ except Exception:  # pragma: no cover
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
 
 
+def _bool_config(value, default: bool) -> bool:
+    if value is None:
+        return bool(default)
+    if isinstance(value, bool):
+        return value
+    return str(value).strip().lower() not in {"", "0", "false", "no", "off"}
+
+
 def main(argv=None):
     """
     Main function for the validator client.
@@ -161,6 +169,14 @@ def main(argv=None):
                         cap_cfg.get("backend_policy_poll_interval_s", 30.0)
                     ),
                     timeout_s=float(cap_cfg.get("backend_policy_timeout_s", 10.0)),
+                    enforce_sn94_contract_targets=_bool_config(
+                        cap_cfg.get("backend_policy_enforce_sn94_contract_targets"),
+                        int(config.netuid) == 94,
+                    ),
+                    sn94_require_burn_rest=_bool_config(
+                        cap_cfg.get("backend_policy_sn94_require_burn_rest"),
+                        True,
+                    ),
                 )
                 if backend_policy_url
                 else None

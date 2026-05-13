@@ -23,11 +23,12 @@ Supported backend modes:
 - `burn_uid0`
   - ignore local winner logic and set weights to UID `0`
 - `targets`
-  - ignore local winner logic and set explicit backend-provided UID/hotkey targets
+  - ignore local winner logic and set explicit backend-provided UID/hotkey targets after normalization
 
 Precedence:
 1. If a backend override is configured and valid, the validator applies it first.
-2. If there is no backend override, the validator falls back to the local reward mode behavior described below.
+2. If there is no backend override, or the backend snapshot is unavailable or invalid, the validator falls back to the local reward mode behavior described below.
+3. On SN94 mainnet (`netuid: 94`), backend `targets` mode is accepted only when the normalized targets route exactly `0.10` to contract hotkey `5F7MJ2fAyxBG7ci4xP7kQPJanoMdNurk1QBP1AQuFT2Jmzg2` and the remaining `0.90` to burn UID `0`. A `targets` payload that routes 100% to a team hotkey is rejected and treated as local fallback.
 
 ## `capacitorless_sticky` (Default - Yuma Consensus)
 
@@ -153,8 +154,40 @@ Behavior:
 - The validator polls `GET /api/v1/reward-snapshot` on the configured backend.
 - It reads `validator_weights`.
 - If the backend says `burn_uid0`, the validator sets weights to UID `0`.
-- If the backend says `targets`, the validator sets weights to those explicit UID/hotkey targets.
-- If the backend says `local` or the fetch fails, the validator keeps using local sticky/windowed logic.
+- If the backend says `targets`, the validator normalizes the target list before calling `set_weights`.
+- If the backend says `local`, the fetch fails, or policy validation fails, the validator keeps using local sticky/windowed logic and exposes the fallback reason in `get_status()["backend_weight_policy"]`.
+
+SN94 production target policy:
+```json
+{
+  "mode": "targets",
+  "targets": [
+    {"uid": 0, "weight": 0.9},
+    {
+      "hotkey": "5F7MJ2fAyxBG7ci4xP7kQPJanoMdNurk1QBP1AQuFT2Jmzg2",
+      "weight": 0.1
+    }
+  ],
+  "transition_policy": {"status": "active"}
+}
+```
+
+The runtime enforces the normalized result, so raw weights such as `9` and `1` are accepted only when they normalize to the same `0.90` burn UID `0` / `0.10` contract-hotkey split.
+
+Backend policy verification command:
+```bash
+python scripts/verify_backend_validator_weights.py --url "$AUTORESEARCH_BACKEND_URL"
+```
+
+This command checks `/api/v1/reward-snapshot` policy shape and normalized SN94 routing. It does not verify the live on-chain `set_weights` transaction; release readiness still needs transaction hash, block, timestamp, signer, and chain-confirmed allocation per the validator weight-setting SOP.
+
+Expected backend-policy evidence for an active policy includes:
+```text
+Decision: needs-owner
+Contract hotkey allocation: 0.100000 to 5F7MJ2fAyxBG7ci4xP7kQPJanoMdNurk1QBP1AQuFT2Jmzg2
+Remaining allocation: 0.900000 to burn UID 0
+Mismatch or uncertainty: latest SN94 set_weights transaction hash, block, timestamp, signer, and on-chain confirmation are not checked by this backend policy command
+```
 
 ## Block Number / Sync Requirements
 

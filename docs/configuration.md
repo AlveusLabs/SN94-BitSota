@@ -110,9 +110,18 @@ All keys below live under `capacitorless:`.
 - `capacitorless.metagraph_refresh_interval_s` (int): How often to refresh metagraph in the weight loop.
 - `capacitorless.poll_interval_s` (float): Weight loop polling interval.
 - `capacitorless.retry_interval_s` (float): Minimum seconds between weight apply attempts.
-- `capacitorless.backend_policy_url` (string or empty): Optional coordinator base URL for backend-driven validator weight overrides. If set, the validator polls `GET /api/v1/reward-snapshot` and applies `validator_weights` before local sticky/windowed logic.
+- `capacitorless.backend_policy_url` (string or empty): Optional coordinator base URL for backend-driven validator weight overrides. If set, the validator polls `GET /api/v1/reward-snapshot` and applies valid `validator_weights` before local sticky/windowed logic.
 - `capacitorless.backend_policy_poll_interval_s` (int): Optional polling interval for backend weight policy refresh.
 - `capacitorless.backend_policy_timeout_s` (float): Optional HTTP timeout for backend weight policy fetches.
+- `capacitorless.backend_policy_enforce_sn94_contract_targets` (bool): Defaults to `true` on `netuid: 94`. When enabled, backend `targets` mode must normalize to exactly `0.10` weight for contract hotkey `5F7MJ2fAyxBG7ci4xP7kQPJanoMdNurk1QBP1AQuFT2Jmzg2`.
+- `capacitorless.backend_policy_sn94_require_burn_rest` (bool): Defaults to `true`. When enabled with the SN94 contract-target guard, the remaining `0.90` backend `targets` weight must route to burn UID `0`.
+
+Backend snapshot fallback behavior:
+
+- `validator_weights.mode: local` means no backend override; the validator uses local sticky/windowed behavior.
+- `validator_weights.mode: burn_uid0` sets UID `0` when accepted by the backend policy client.
+- `validator_weights.mode: targets` is normalized before `set_weights`. On SN94 mainnet, invalid or non-compliant targets are not submitted and the validator falls back to local sticky/windowed behavior.
+- HTTP errors, malformed payloads, ambiguous targets, and failed SN94 10% contract-hotkey checks are exposed through `backend_weight_policy.last_error`, `last_validation_error`, and `fallback_reason` in weight-manager status.
 
 ### Relay polling
 

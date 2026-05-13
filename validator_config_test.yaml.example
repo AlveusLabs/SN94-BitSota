@@ -46,9 +46,16 @@ capacitorless:
   # - local (default)
   # - burn_uid0
   # - explicit UID/hotkey targets
+  #
+  # SN94 production targets are accepted only when normalized weights route:
+  # - 0.90 to burn UID 0
+  # - 0.10 to contract hotkey 5F7MJ2fAyxBG7ci4xP7kQPJanoMdNurk1QBP1AQuFT2Jmzg2
+  # This testnet example leaves the guard disabled because netuid 402 is not SN94 production.
   backend_policy_url: ""
   backend_policy_poll_interval_s: 30.0
   backend_policy_timeout_s: 10.0
+  backend_policy_enforce_sn94_contract_targets: false
+  backend_policy_sn94_require_burn_rest: true
   # Hotkey that receives emissions when "burning" (must be registered on the subnet)
   burn_hotkey: "5GQwFPBicWVUEKDZtwwGgtX5zXABuq1ddi37jY4eozPi7eXK"
   # Used when mode == "sticky_burnsplit"
