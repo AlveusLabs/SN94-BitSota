@@ -52,6 +52,11 @@ def _build_parser() -> argparse.ArgumentParser:
     submit_workspace.add_argument("--claim-id", required=True)
     submit_workspace.add_argument("--repo-dir", required=True)
     submit_workspace.add_argument("--submission-file", default="submission.json")
+    submit_workspace.add_argument(
+        "--submission-result-file",
+        default="submission_result.json",
+        help="Submission result sidecar filename/path to exclude from the submitted git diff.",
+    )
     submit_workspace.add_argument("--base-ref", default="")
     submit_workspace.add_argument("--hotkey-mnemonic", default="")
     submit_workspace.add_argument("--wallet-name", default="default")
@@ -253,6 +258,15 @@ def _submit_workspace(args: argparse.Namespace) -> int:
         repo_dir=Path(str(args.repo_dir)).expanduser().resolve(),
         submission_file=Path(str(args.submission_file)).expanduser().resolve(),
         default_base_ref=str(getattr(args, "base_ref", "") or ""),
+        submission_sidecar_paths=[
+            Path(str(getattr(args, "submission_result_file", "submission_result.json")))
+            .expanduser()
+            .resolve()
+        ],
+        submission_sidecar_filenames=[
+            str(getattr(args, "submission_file", "submission.json")),
+            str(getattr(args, "submission_result_file", "submission_result.json")),
+        ],
     )
     print(json.dumps(result, indent=2))  # noqa: T201
     return 0

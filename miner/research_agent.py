@@ -10,7 +10,7 @@ import shutil
 import subprocess
 import tempfile
 import time
-from typing import Any, Callable, Optional
+from typing import Any, Callable, Iterable, Optional
 from urllib.parse import urlparse
 
 import requests
@@ -23,6 +23,7 @@ _FILE_PATTERN = re.compile(
     r"([A-Za-z0-9_./-]+\.(?:md|txt|py|toml|json|ya?ml|sh|cpp|cxx|cc|cuh|cu|hpp|hxx|hh|h|c|rs|go))(?![A-Za-z0-9])"
 )
 _NUMBER_PATTERN = r"([-+]?\d+(?:\.\d+)?(?:[eE][-+]?\d+)?)"
+_DEFAULT_SUBMISSION_SIDECAR_FILENAMES = ("submission.json", "submission_result.json")
 
 
 def _noop_log(_: str) -> None:
@@ -187,16 +188,69 @@ def load_submission_sidecar(
     return result
 
 
-def compute_repo_patch(repo_dir: Path) -> str:
+def _dedupe_preserve_order(values: Iterable[str]) -> list[str]:
+    seen: set[str] = set()
+    result: list[str] = []
+    for value in values:
+        cleaned = str(value or "").strip()
+        if not cleaned or cleaned in seen:
+            continue
+        seen.add(cleaned)
+        result.append(cleaned)
+    return result
+
+
+def _repo_relative_path(repo_dir: Path, path: Path) -> str | None:
+    repo_root = Path(repo_dir).expanduser().resolve()
+    candidate = Path(path).expanduser().resolve()
+    try:
+        return candidate.relative_to(repo_root).as_posix()
+    except ValueError:
+        return None
+
+
+def _sidecar_excluded_paths(
+    *,
+    repo_dir: Path,
+    sidecar_paths: Iterable[Path] | None = None,
+    sidecar_filenames: Iterable[str] | None = None,
+) -> list[str]:
+    excluded: list[str] = []
+    for filename in [
+        *_DEFAULT_SUBMISSION_SIDECAR_FILENAMES,
+        *(sidecar_filenames or []),
+    ]:
+        basename = Path(str(filename or "")).name.strip()
+        if basename:
+            excluded.append(basename)
+
+    for sidecar_path in sidecar_paths or []:
+        rel_path = _repo_relative_path(repo_dir, Path(sidecar_path))
+        if rel_path:
+            excluded.append(rel_path)
+
+    return _dedupe_preserve_order(excluded)
+
+
+def _git_exclude_pathspecs(paths: Iterable[str]) -> list[str]:
+    return [f":(top,literal,exclude){path}" for path in _dedupe_preserve_order(paths)]
+
+
+def compute_repo_patch(
+    repo_dir: Path,
+    *,
+    excluded_paths: Iterable[str] | None = None,
+) -> str:
+    pathspec = [".", *_git_exclude_pathspecs(excluded_paths or [])]
     subprocess.run(
-        ["git", "add", "-N", "."],
+        ["git", "add", "-N", "--", *pathspec],
         cwd=str(repo_dir),
         check=False,
         capture_output=True,
         text=True,
     )
     result = subprocess.run(
-        ["git", "diff", "--binary", "--no-ext-diff"],
+        ["git", "diff", "--binary", "--no-ext-diff", "--", *pathspec],
         cwd=str(repo_dir),
         check=False,
         capture_output=True,
@@ -237,13 +291,24 @@ def submit_claimed_workspace(
     default_base_ref: str,
     competition_mode: str | None = None,
     idea_candidates: list[dict[str, Any]] | None = None,
+    submission_sidecar_paths: Iterable[Path] | None = None,
+    submission_sidecar_filenames: Iterable[str] | None = None,
 ) -> dict[str, Any]:
+    sidecar_paths = [Path(submission_file), *(submission_sidecar_paths or [])]
+    sidecar_filenames = [Path(submission_file).name, *(submission_sidecar_filenames or [])]
     payload = load_submission_sidecar(
         submission_file=Path(submission_file),
         metric_name="",
     )
     pinned_base_ref = resolve_repo_head_commit(Path(repo_dir))
-    patch = compute_repo_patch(Path(repo_dir))
+    patch = compute_repo_patch(
+        Path(repo_dir),
+        excluded_paths=_sidecar_excluded_paths(
+            repo_dir=Path(repo_dir),
+            sidecar_paths=sidecar_paths,
+            sidecar_filenames=sidecar_filenames,
+        ),
+    )
     summary = str(payload.get("summary") or "").strip()
     claimed_metrics = _coerce_claimed_metrics(payload.get("claimed_metrics"))
     implemented_submission_id = (
@@ -855,6 +920,11 @@ class ResearchAgentMiner:
                 default_base_ref=str(task.get("base_ref") or ""),
                 competition_mode=mode,
                 idea_candidates=idea_candidates,
+                submission_sidecar_paths=[Path(agent_result["submission_result_file"])],
+                submission_sidecar_filenames=[
+                    str(self.config.submission_filename or "submission.json"),
+                    str(self.config.submission_result_filename or "submission_result.json"),
+                ],
             )
         except Exception as exc:
             self._cancel_claim_after_failure(claim_id=str(claim.get("id") or ""), reason=str(exc))

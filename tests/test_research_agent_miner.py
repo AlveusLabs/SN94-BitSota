@@ -713,6 +713,58 @@ def test_submit_claimed_workspace_uses_submission_json_and_git_diff(tmp_path: Pa
     )
 
 
+def test_submit_claimed_workspace_excludes_submission_sidecars_from_git_diff(tmp_path: Path) -> None:
+    repo_dir, base_ref = _init_git_repo(
+        tmp_path,
+        {
+            "README.md": "demo\n",
+            "train.py": "print('val_bpb: 2.5')\n",
+        },
+    )
+    (repo_dir / "train.py").write_text("print('val_bpb: 1.09')\n", encoding="utf-8")
+    submission_file = repo_dir / "submission.json"
+    submission_file.write_text(
+        json.dumps(
+            {
+                "summary": "External agent changed the training script.",
+                "claimed_metrics": {"val_bpb": 1.09},
+            }
+        ),
+        encoding="utf-8",
+    )
+    (repo_dir / "submission_result.json").write_text('{"stale": true}\n', encoding="utf-8")
+    (repo_dir / "custom-sidecar.json").write_text('{"agent": "result"}\n', encoding="utf-8")
+    coordinator = FakeCoordinator()
+
+    submit_claimed_workspace(
+        coordinator=coordinator,  # type: ignore[arg-type]
+        claim_id="claim-external-1",
+        repo_dir=repo_dir,
+        submission_file=submission_file,
+        default_base_ref=base_ref,
+        submission_sidecar_filenames=["custom-sidecar.json"],
+    )
+
+    patch = coordinator.submissions[0]["patch"]
+    assert patch.startswith("diff --git a/train.py b/train.py")
+    assert "submission.json" not in patch
+    assert "submission_result.json" not in patch
+    assert "custom-sidecar.json" not in patch
+
+    replay_repo = tmp_path / "sidecar-replay"
+    subprocess.run(["git", "clone", "--quiet", str(repo_dir), str(replay_repo)], check=True, capture_output=True, text=True)
+    subprocess.run(["git", "checkout", base_ref], cwd=replay_repo, check=True, capture_output=True, text=True)
+    subprocess.run(
+        ["git", "apply", "-"],
+        cwd=replay_repo,
+        input=patch,
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    assert (replay_repo / "train.py").read_text(encoding="utf-8") == "print('val_bpb: 1.09')\n"
+
+
 def test_agent_mine_once_can_run_external_gui_managed_agent(tmp_path: Path) -> None:
     repo_dir, base_ref = _init_git_repo(
         tmp_path,

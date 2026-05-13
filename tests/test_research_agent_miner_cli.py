@@ -49,6 +49,7 @@ def test_submit_workspace_delegates_to_helper(monkeypatch, capsys, tmp_path: Pat
                 "claim_id": _args.claim_id,
                 "repo_dir": _args.repo_dir,
                 "submission_file": _args.submission_file,
+                "submission_result_file": _args.submission_result_file,
             }
         )
         print('{"id":"submission-1"}')
@@ -66,6 +67,8 @@ def test_submit_workspace_delegates_to_helper(monkeypatch, capsys, tmp_path: Pat
             str(tmp_path / "repo"),
             "--submission-file",
             str(tmp_path / "submission.json"),
+            "--submission-result-file",
+            str(tmp_path / "submission_result.json"),
         ]
     )
 
@@ -74,6 +77,7 @@ def test_submit_workspace_delegates_to_helper(monkeypatch, capsys, tmp_path: Pat
     assert calls[0]["claim_id"] == "claim-1"
     assert calls[0]["repo_dir"] == str(tmp_path / "repo")
     assert calls[0]["submission_file"] == str(tmp_path / "submission.json")
+    assert calls[0]["submission_result_file"] == str(tmp_path / "submission_result.json")
     assert '"id":"submission-1"' in output
 
 
