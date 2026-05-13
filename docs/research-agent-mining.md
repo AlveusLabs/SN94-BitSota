@@ -147,7 +147,9 @@ Minimal `submission.json` shape:
 }
 ```
 
-The patch is not written into `submission.json`. The launcher or helper computes it from `git diff`.
+The patch is not written into `submission.json`. The launcher or helper computes it from `git diff`, but only for paths matching the task `allowed_patch_paths`. Repo dirt outside that surface, including a `submission.json` stored in the workspace or generated Python bytecode/cache files, is not selected for the submitted patch. If no allowed surface can be resolved, submission fails instead of sending a broad repo diff.
+
+Generated patches are capped at 262,144 bytes by default. A task can provide `max_patch_bytes`, and the manual helper can override the local cap with `--max-patch-bytes` while testing.
 
 ## CLI
 
@@ -243,8 +245,11 @@ bitsota-research-agent submit-workspace \
   --claim-id CLAIM_ID \
   --repo-dir /path/to/workspace/repo \
   --submission-file /path/to/workspace/submission.json \
+  --allowed-patch-path train.py \
   --hotkey-mnemonic 'replace with test mnemonic'
 ```
+
+`--allowed-patch-path` may be repeated. If omitted, the helper tries to resolve the active claim's task and use its live `allowed_patch_paths`.
 
 Run in a loop with the older built-in planner:
 

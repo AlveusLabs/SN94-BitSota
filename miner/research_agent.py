@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from fnmatch import fnmatch
 import json
 import os
 from pathlib import Path
@@ -10,7 +11,7 @@ import shutil
 import subprocess
 import tempfile
 import time
-from typing import Any, Callable, Optional
+from typing import Any, Callable, Iterable, Optional
 from urllib.parse import urlparse
 
 import requests
@@ -23,6 +24,9 @@ _FILE_PATTERN = re.compile(
     r"([A-Za-z0-9_./-]+\.(?:md|txt|py|toml|json|ya?ml|sh|cpp|cxx|cc|cuh|cu|hpp|hxx|hh|h|c|rs|go))(?![A-Za-z0-9])"
 )
 _NUMBER_PATTERN = r"([-+]?\d+(?:\.\d+)?(?:[eE][-+]?\d+)?)"
+_PATCH_PATH_PATTERN = re.compile(r"^diff --git a/(.+?) b/(.+?)$", re.MULTILINE)
+_PYTHON_BYTECODE_SUFFIXES = (".pyc", ".pyo")
+DEFAULT_MAX_SUBMISSION_PATCH_BYTES = 262_144
 
 
 def _noop_log(_: str) -> None:
@@ -119,6 +123,7 @@ def build_agent_intro_markdown(
             "## Workspace Contract",
             "",
             "- Edit the checked-out repository files directly.",
+            "- The submitted patch is built only from the task `allowed_patch_paths`.",
             f"- Write a JSON sidecar to `{submission_file.name}` in the workspace root.",
             "- Required sidecar fields: `summary`, `claimed_metrics`.",
             "- Optional sidecar fields: `base_ref`, `proposed_idea`, `implemented_submission_id`, `artifact_uri`, `artifact_sha256`, `artifact_size_bytes`, `execution_log`, `notes`.",
@@ -187,16 +192,155 @@ def load_submission_sidecar(
     return result
 
 
-def compute_repo_patch(repo_dir: Path) -> str:
-    subprocess.run(
-        ["git", "add", "-N", "."],
+def _normalize_patch_path(raw: str) -> str | None:
+    path = str(raw or "").strip()
+    if not path:
+        return None
+    path = path.split("\t", 1)[0].strip()
+    if path in {"/dev/null", "dev/null"}:
+        return None
+    if path.startswith("a/") or path.startswith("b/"):
+        path = path[2:]
+    return path or None
+
+
+def _extract_patch_paths(patch: str) -> list[str]:
+    paths: list[str] = []
+    seen: set[str] = set()
+    for before_path, after_path in _PATCH_PATH_PATTERN.findall(str(patch or "")):
+        for candidate in (before_path, after_path):
+            path = _normalize_patch_path(candidate)
+            if not path or path in seen:
+                continue
+            seen.add(path)
+            paths.append(path)
+    for raw_line in str(patch or "").splitlines():
+        line = raw_line.rstrip()
+        if not (line.startswith("--- ") or line.startswith("+++ ")):
+            continue
+        path = _normalize_patch_path(line[4:])
+        if not path or path in seen:
+            continue
+        seen.add(path)
+        paths.append(path)
+    return paths
+
+
+def _is_generated_python_cache_path(path: str) -> bool:
+    normalized = str(path or "").replace("\\", "/").lstrip("./").lower()
+    return normalized.endswith(_PYTHON_BYTECODE_SUFFIXES)
+
+
+def _normalize_allowed_patch_paths(allowed_patch_paths: Iterable[str] | None) -> list[str]:
+    return [
+        str(path).strip()
+        for path in (allowed_patch_paths or [])
+        if str(path or "").strip()
+    ]
+
+
+def _path_matches_allowed(path: str, allowed_patterns: list[str]) -> bool:
+    return any(fnmatch(path, pattern) for pattern in allowed_patterns)
+
+
+def _coerce_max_patch_bytes(value: Any) -> int:
+    if value is None or str(value).strip() == "":
+        return DEFAULT_MAX_SUBMISSION_PATCH_BYTES
+    try:
+        return max(1, int(value))
+    except (TypeError, ValueError) as exc:
+        raise RuntimeError(f"max_patch_bytes must be an integer: {value!r}") from exc
+
+
+def _git_path_output(repo_dir: Path, args: list[str]) -> list[str]:
+    result = subprocess.run(
+        args,
         cwd=str(repo_dir),
         check=False,
         capture_output=True,
-        text=True,
     )
+    if result.returncode != 0:
+        stderr = result.stderr.decode("utf-8", errors="replace")
+        raise RuntimeError(f"{' '.join(args)} failed with exit={result.returncode}: {stderr}")
+    return [
+        path
+        for path in result.stdout.decode("utf-8", errors="surrogateescape").split("\0")
+        if path
+    ]
+
+
+def _changed_repo_paths(repo_dir: Path) -> list[str]:
+    paths: list[str] = []
+    seen: set[str] = set()
+    commands = [
+        ["git", "diff", "--name-only", "-z", "--no-ext-diff", "--"],
+        ["git", "diff", "--cached", "--name-only", "-z", "--no-ext-diff", "--"],
+        ["git", "ls-files", "--others", "--exclude-standard", "-z", "--"],
+    ]
+    for command in commands:
+        for path in _git_path_output(repo_dir, command):
+            if path in seen:
+                continue
+            seen.add(path)
+            paths.append(path)
+    return paths
+
+
+def _validate_submission_patch(
+    patch: str,
+    *,
+    allowed_patch_paths: list[str],
+    max_patch_bytes: int,
+) -> None:
+    patch_bytes = len(str(patch or "").encode("utf-8"))
+    if patch_bytes > max_patch_bytes:
+        raise RuntimeError(f"submission patch exceeds max_patch_bytes={max_patch_bytes}")
+    changed_paths = _extract_patch_paths(patch)
+    generated_paths = [path for path in changed_paths if _is_generated_python_cache_path(path)]
+    if generated_paths:
+        raise RuntimeError(
+            "submission patch contains generated Python bytecode/cache paths: "
+            + ", ".join(generated_paths)
+        )
+    disallowed_paths = [
+        path for path in changed_paths if not _path_matches_allowed(path, allowed_patch_paths)
+    ]
+    if disallowed_paths:
+        raise RuntimeError(
+            "submission patch contains files outside allowed_patch_paths: "
+            + ", ".join(disallowed_paths)
+        )
+
+
+def compute_repo_patch(
+    repo_dir: Path,
+    *,
+    allowed_patch_paths: Iterable[str],
+    max_patch_bytes: int = DEFAULT_MAX_SUBMISSION_PATCH_BYTES,
+) -> str:
+    allowed_patterns = _normalize_allowed_patch_paths(allowed_patch_paths)
+    if not allowed_patterns:
+        raise RuntimeError("task allowed_patch_paths are required to build a submission patch")
+
+    changed_paths = _changed_repo_paths(repo_dir)
+    selected_paths = [
+        path
+        for path in changed_paths
+        if _path_matches_allowed(path, allowed_patterns)
+        and not _is_generated_python_cache_path(path)
+    ]
+    if not selected_paths:
+        raise RuntimeError("repo checkout has no patch to submit within allowed_patch_paths")
+
+    subprocess.run(
+        ["git", "add", "-N", "--", *selected_paths],
+        cwd=str(repo_dir),
+        check=False,
+        capture_output=True,
+    )
+
     result = subprocess.run(
-        ["git", "diff", "--binary", "--no-ext-diff"],
+        ["git", "diff", "HEAD", "--binary", "--no-ext-diff", "--", *selected_paths],
         cwd=str(repo_dir),
         check=False,
         capture_output=True,
@@ -209,7 +353,55 @@ def compute_repo_patch(repo_dir: Path) -> str:
         raise RuntimeError("repo checkout has no patch to submit")
     if not patch.endswith("\n"):
         patch += "\n"
+    _validate_submission_patch(
+        patch,
+        allowed_patch_paths=allowed_patterns,
+        max_patch_bytes=max(1, int(max_patch_bytes)),
+    )
     return patch
+
+
+def _claim_task_id(coordinator: Any, claim_id: str) -> str:
+    list_claims = getattr(coordinator, "list_claims", None)
+    if not callable(list_claims):
+        return ""
+
+    claim_batches: list[list[dict[str, Any]]] = []
+    for kwargs in ({"status": "active"}, {}):
+        try:
+            claim_batches.append([dict(row) for row in list_claims(**kwargs)])
+        except TypeError:
+            if kwargs:
+                continue
+            try:
+                claim_batches.append([dict(row) for row in list_claims()])
+            except Exception:
+                continue
+        except Exception:
+            continue
+
+    for claims in claim_batches:
+        for claim in claims:
+            if str(claim.get("id") or "") == str(claim_id):
+                return str(claim.get("task_id") or "")
+    return ""
+
+
+def _allowed_patch_paths_for_claim(coordinator: Any, claim_id: str) -> list[str]:
+    task_id = _claim_task_id(coordinator, claim_id)
+    if not task_id:
+        return []
+    list_tasks = getattr(coordinator, "list_tasks", None)
+    if not callable(list_tasks):
+        return []
+    try:
+        tasks = [dict(row) for row in list_tasks()]
+    except Exception:
+        return []
+    for task in tasks:
+        if str(task.get("id") or "") == str(task_id):
+            return _normalize_allowed_patch_paths(task.get("allowed_patch_paths") or [])
+    return []
 
 
 def resolve_repo_head_commit(repo_dir: Path) -> str:
@@ -237,13 +429,22 @@ def submit_claimed_workspace(
     default_base_ref: str,
     competition_mode: str | None = None,
     idea_candidates: list[dict[str, Any]] | None = None,
+    allowed_patch_paths: Iterable[str] | None = None,
+    max_patch_bytes: int = DEFAULT_MAX_SUBMISSION_PATCH_BYTES,
 ) -> dict[str, Any]:
     payload = load_submission_sidecar(
         submission_file=Path(submission_file),
         metric_name="",
     )
     pinned_base_ref = resolve_repo_head_commit(Path(repo_dir))
-    patch = compute_repo_patch(Path(repo_dir))
+    resolved_allowed_paths = _normalize_allowed_patch_paths(allowed_patch_paths)
+    if not resolved_allowed_paths:
+        resolved_allowed_paths = _allowed_patch_paths_for_claim(coordinator, claim_id)
+    patch = compute_repo_patch(
+        Path(repo_dir),
+        allowed_patch_paths=resolved_allowed_paths,
+        max_patch_bytes=_coerce_max_patch_bytes(max_patch_bytes),
+    )
     summary = str(payload.get("summary") or "").strip()
     claimed_metrics = _coerce_claimed_metrics(payload.get("claimed_metrics"))
     implemented_submission_id = (
@@ -666,6 +867,13 @@ class ResearchAgentMiner:
             current_plan["claimed_metrics"] = claimed_metrics
             if artifact_uri is not None:
                 current_plan["artifact_uri"] = artifact_uri
+            allowed_patch_paths = _normalize_allowed_patch_paths(task.get("allowed_patch_paths") or [])
+            if allowed_patch_paths:
+                _validate_submission_patch(
+                    str(current_plan.get("patch") or ""),
+                    allowed_patch_paths=allowed_patch_paths,
+                    max_patch_bytes=_coerce_max_patch_bytes(task.get("max_patch_bytes")),
+                )
 
             self.log(
                 f"[research-agent] submitting claim_id={claim.get('id')} base_ref={current_plan.get('base_ref') or task.get('base_ref')} "
@@ -855,6 +1063,8 @@ class ResearchAgentMiner:
                 default_base_ref=str(task.get("base_ref") or ""),
                 competition_mode=mode,
                 idea_candidates=idea_candidates,
+                allowed_patch_paths=task.get("allowed_patch_paths") or [],
+                max_patch_bytes=_coerce_max_patch_bytes(task.get("max_patch_bytes")),
             )
         except Exception as exc:
             self._cancel_claim_after_failure(claim_id=str(claim.get("id") or ""), reason=str(exc))

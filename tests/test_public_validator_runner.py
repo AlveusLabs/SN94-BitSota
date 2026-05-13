@@ -450,7 +450,7 @@ def test_public_replay_engine_accepts_local_patch(tmp_path: Path, monkeypatch) -
     assert "heldout=[REDACTED]" in result.replay_log
 
 
-def test_public_replay_engine_ignores_generated_python_cache_patch_paths(tmp_path: Path) -> None:
+def test_public_replay_engine_rejects_generated_python_cache_patch_paths(tmp_path: Path) -> None:
     repo_dir = tmp_path / "ignored-pycache-repo"
     repo_dir.mkdir()
     _init_git_repo(repo_dir)
@@ -501,12 +501,14 @@ def test_public_replay_engine_ignores_generated_python_cache_patch_paths(tmp_pat
 
     result = engine.run(job)
 
-    assert result.status == "accepted"
-    assert result.observed_metrics == {"score": 2.0}
-    assert f"ignored_generated_patch_paths={pycache_rel}" in result.replay_log
+    assert result.status == "rejected"
+    assert result.observed_metrics == {}
+    assert "generated Python bytecode/cache" in result.notes
+    assert pycache_rel in result.notes
+    assert "validator_rejection=generated_python_cache_paths" in result.replay_log
 
 
-def test_public_replay_engine_rejects_out_of_surface_source_with_generated_cache(
+def test_public_replay_engine_rejects_out_of_surface_source_patch_paths(
     tmp_path: Path,
 ) -> None:
     repo_dir = tmp_path / "source-plus-pycache-repo"
@@ -514,22 +516,18 @@ def test_public_replay_engine_rejects_out_of_surface_source_with_generated_cache
     _init_git_repo(repo_dir)
     (repo_dir / "benchmark.py").write_text("print('score=1.0')\n", encoding="utf-8")
     (repo_dir / "support.py").write_text("VALUE = 1\n", encoding="utf-8")
-    pycache_path = _compile_python_cache(repo_dir, "support.py")
-    pycache_rel = pycache_path.relative_to(repo_dir).as_posix()
     subprocess.run(["git", "add", "."], cwd=repo_dir, check=True, capture_output=True)
     subprocess.run(["git", "commit", "-m", "initial"], cwd=repo_dir, check=True, capture_output=True)
 
     (repo_dir / "support.py").write_text("VALUE = 2\n", encoding="utf-8")
-    _compile_python_cache(repo_dir, "support.py")
     patch = subprocess.run(
-        ["git", "diff", "--binary", "--", "support.py", pycache_rel],
+        ["git", "diff", "--binary", "--", "support.py"],
         cwd=repo_dir,
         check=True,
         capture_output=True,
         text=True,
     ).stdout
     assert "diff --git a/support.py b/support.py" in patch
-    assert f"diff --git a/{pycache_rel} b/{pycache_rel}" in patch
 
     job = ReplayJob(
         job_id=None,
@@ -562,7 +560,60 @@ def test_public_replay_engine_rejects_out_of_surface_source_with_generated_cache
 
     assert result.status == "rejected"
     assert "support.py" in result.notes
-    assert f"ignored_generated_patch_paths={pycache_rel}" in result.replay_log
+    assert "validator_rejection=disallowed_patch_paths" in result.replay_log
+
+
+def test_public_replay_engine_rejects_oversized_patches(tmp_path: Path) -> None:
+    repo_dir = tmp_path / "oversized-patch-repo"
+    repo_dir.mkdir()
+    _init_git_repo(repo_dir)
+    (repo_dir / "benchmark.py").write_text("print('score=1.0')\n", encoding="utf-8")
+    (repo_dir / "score.txt").write_text("1.0\n", encoding="utf-8")
+    subprocess.run(["git", "add", "."], cwd=repo_dir, check=True, capture_output=True)
+    subprocess.run(["git", "commit", "-m", "initial"], cwd=repo_dir, check=True, capture_output=True)
+
+    (repo_dir / "score.txt").write_text(("2.0\n" * 40), encoding="utf-8")
+    patch = subprocess.run(
+        ["git", "diff", "--binary", "--", "score.txt"],
+        cwd=repo_dir,
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout
+
+    job = ReplayJob(
+        job_id=None,
+        submission_id="submission-oversized",
+        submission={
+            "id": "submission-oversized",
+            "task_id": "task-1",
+            "base_ref": "HEAD",
+            "patch": patch,
+        },
+        task={
+            "id": "task-1",
+            "repository": str(repo_dir),
+            "base_ref": "HEAD",
+            "benchmark_command": "python3 benchmark.py",
+            "allowed_patch_paths": ["score.txt"],
+            "max_patch_bytes": 64,
+            "metric_name": "score",
+            "time_budget_seconds": 60,
+        },
+        replay_spec={},
+        detail={"metric_name": "score"},
+        source="test",
+    )
+    engine = PublicReplayEngine(
+        workspace_root=tmp_path / "workspaces",
+        allow_unsafe_host_replay=True,
+    )
+
+    result = engine.run(job)
+
+    assert result.status == "rejected"
+    assert "maximum size" in result.notes
+    assert "validator_rejection=patch_too_large" in result.replay_log
 
 
 def test_public_validator_runner_submits_replay_result(tmp_path: Path) -> None:
