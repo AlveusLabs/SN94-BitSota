@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+import py_compile
 import subprocess
 from types import SimpleNamespace
 
@@ -47,6 +48,16 @@ def _init_git_repo(repo_dir: Path) -> None:
     subprocess.run(["git", "init"], cwd=repo_dir, check=True, capture_output=True)
     subprocess.run(["git", "config", "user.email", "test@example.com"], cwd=repo_dir, check=True, capture_output=True)
     subprocess.run(["git", "config", "user.name", "Test User"], cwd=repo_dir, check=True, capture_output=True)
+
+
+def _compile_python_cache(repo_dir: Path, relative_path: str) -> Path:
+    source_path = repo_dir / relative_path
+    py_compile.compile(str(source_path), doraise=True)
+    pycache_dir = source_path.parent / "__pycache__"
+    candidates = sorted(pycache_dir.glob(f"{source_path.stem}*.pyc"))
+    if not candidates:
+        raise AssertionError(f"expected pycache artifact for {relative_path}")
+    return candidates[-1]
 
 
 def test_validator_client_posts_signed_verification() -> None:
@@ -437,6 +448,121 @@ def test_public_replay_engine_accepts_local_patch(tmp_path: Path, monkeypatch) -
     assert "host-secret" not in result.replay_log
     assert "secret-split" not in result.replay_log
     assert "heldout=[REDACTED]" in result.replay_log
+
+
+def test_public_replay_engine_ignores_generated_python_cache_patch_paths(tmp_path: Path) -> None:
+    repo_dir = tmp_path / "ignored-pycache-repo"
+    repo_dir.mkdir()
+    _init_git_repo(repo_dir)
+    (repo_dir / "benchmark.py").write_text("print('score=1.0')\n", encoding="utf-8")
+    pycache_path = _compile_python_cache(repo_dir, "benchmark.py")
+    pycache_rel = pycache_path.relative_to(repo_dir).as_posix()
+    subprocess.run(["git", "add", "."], cwd=repo_dir, check=True, capture_output=True)
+    subprocess.run(["git", "commit", "-m", "initial"], cwd=repo_dir, check=True, capture_output=True)
+
+    (repo_dir / "benchmark.py").write_text("print('score=2.0')\n# changed\n", encoding="utf-8")
+    _compile_python_cache(repo_dir, "benchmark.py")
+    patch = subprocess.run(
+        ["git", "diff", "--binary", "--", "benchmark.py", pycache_rel],
+        cwd=repo_dir,
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout
+    assert "diff --git a/benchmark.py b/benchmark.py" in patch
+    assert f"diff --git a/{pycache_rel} b/{pycache_rel}" in patch
+
+    job = ReplayJob(
+        job_id=None,
+        submission_id="submission-pycache",
+        submission={
+            "id": "submission-pycache",
+            "task_id": "task-1",
+            "base_ref": "HEAD",
+            "patch": patch,
+        },
+        task={
+            "id": "task-1",
+            "repository": str(repo_dir),
+            "base_ref": "HEAD",
+            "benchmark_command": "python3 benchmark.py",
+            "allowed_patch_paths": ["benchmark.py"],
+            "metric_name": "score",
+            "time_budget_seconds": 60,
+        },
+        replay_spec={},
+        detail={"metric_name": "score"},
+        source="test",
+    )
+    engine = PublicReplayEngine(
+        workspace_root=tmp_path / "workspaces",
+        allow_unsafe_host_replay=True,
+    )
+
+    result = engine.run(job)
+
+    assert result.status == "accepted"
+    assert result.observed_metrics == {"score": 2.0}
+    assert f"ignored_generated_patch_paths={pycache_rel}" in result.replay_log
+
+
+def test_public_replay_engine_rejects_out_of_surface_source_with_generated_cache(
+    tmp_path: Path,
+) -> None:
+    repo_dir = tmp_path / "source-plus-pycache-repo"
+    repo_dir.mkdir()
+    _init_git_repo(repo_dir)
+    (repo_dir / "benchmark.py").write_text("print('score=1.0')\n", encoding="utf-8")
+    (repo_dir / "support.py").write_text("VALUE = 1\n", encoding="utf-8")
+    pycache_path = _compile_python_cache(repo_dir, "support.py")
+    pycache_rel = pycache_path.relative_to(repo_dir).as_posix()
+    subprocess.run(["git", "add", "."], cwd=repo_dir, check=True, capture_output=True)
+    subprocess.run(["git", "commit", "-m", "initial"], cwd=repo_dir, check=True, capture_output=True)
+
+    (repo_dir / "support.py").write_text("VALUE = 2\n", encoding="utf-8")
+    _compile_python_cache(repo_dir, "support.py")
+    patch = subprocess.run(
+        ["git", "diff", "--binary", "--", "support.py", pycache_rel],
+        cwd=repo_dir,
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout
+    assert "diff --git a/support.py b/support.py" in patch
+    assert f"diff --git a/{pycache_rel} b/{pycache_rel}" in patch
+
+    job = ReplayJob(
+        job_id=None,
+        submission_id="submission-source-plus-pycache",
+        submission={
+            "id": "submission-source-plus-pycache",
+            "task_id": "task-1",
+            "base_ref": "HEAD",
+            "patch": patch,
+        },
+        task={
+            "id": "task-1",
+            "repository": str(repo_dir),
+            "base_ref": "HEAD",
+            "benchmark_command": "python3 benchmark.py",
+            "allowed_patch_paths": ["benchmark.py"],
+            "metric_name": "score",
+            "time_budget_seconds": 60,
+        },
+        replay_spec={},
+        detail={"metric_name": "score"},
+        source="test",
+    )
+    engine = PublicReplayEngine(
+        workspace_root=tmp_path / "workspaces",
+        allow_unsafe_host_replay=True,
+    )
+
+    result = engine.run(job)
+
+    assert result.status == "rejected"
+    assert "support.py" in result.notes
+    assert f"ignored_generated_patch_paths={pycache_rel}" in result.replay_log
 
 
 def test_public_validator_runner_submits_replay_result(tmp_path: Path) -> None:

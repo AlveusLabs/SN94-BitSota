@@ -23,6 +23,7 @@ from validator.research_validator_client import ReplayJob
 _NUMBER_PATTERN = r"([-+]?\d+(?:\.\d+)?(?:[eE][-+]?\d+)?)"
 _PATCH_PATH_PATTERN = re.compile(r"^diff --git a/(.+?) b/(.+?)$", re.MULTILINE)
 _DEFAULT_COMMAND_PATH = "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+_PYTHON_BYTECODE_SUFFIXES = (".pyc", ".pyo")
 
 
 class PublicReplayError(RuntimeError):
@@ -148,6 +149,25 @@ def _normalize_patch_path(raw: str) -> str | None:
     return path or None
 
 
+def _dedupe_paths(paths: list[str]) -> list[str]:
+    ordered: list[str] = []
+    seen: set[str] = set()
+    for path in paths:
+        if path in seen:
+            continue
+        seen.add(path)
+        ordered.append(path)
+    return ordered
+
+
+def is_ignored_generated_python_cache_path(raw: str) -> bool:
+    path = _normalize_patch_path(raw)
+    if not path:
+        return False
+    normalized = path.replace("\\", "/").lstrip("./").lower()
+    return normalized.endswith(_PYTHON_BYTECODE_SUFFIXES)
+
+
 def extract_patch_paths(patch: str) -> list[str]:
     paths: list[str] = []
     seen: set[str] = set()
@@ -170,8 +190,44 @@ def extract_patch_paths(patch: str) -> list[str]:
     return paths
 
 
+def strip_ignored_generated_python_cache_diffs(patch: str) -> tuple[str, list[str]]:
+    text = str(patch or "")
+    if not text.strip():
+        return text, []
+
+    lines = text.splitlines(keepends=True)
+    section_starts = [index for index, line in enumerate(lines) if line.startswith("diff --git ")]
+    if not section_starts:
+        paths = extract_patch_paths(text)
+        ignored_paths = [path for path in paths if is_ignored_generated_python_cache_path(path)]
+        if paths and len(ignored_paths) == len(paths):
+            return "", _dedupe_paths(ignored_paths)
+        return text, []
+
+    preamble = lines[: section_starts[0]]
+    kept_sections: list[str] = []
+    ignored_paths: list[str] = []
+    for offset, start in enumerate(section_starts):
+        end = section_starts[offset + 1] if offset + 1 < len(section_starts) else len(lines)
+        section = "".join(lines[start:end])
+        section_paths = extract_patch_paths(section)
+        section_ignored_paths = [
+            path for path in section_paths if is_ignored_generated_python_cache_path(path)
+        ]
+        if section_paths and len(section_ignored_paths) == len(section_paths):
+            ignored_paths.extend(section_ignored_paths)
+            continue
+        kept_sections.append(section)
+
+    if not kept_sections:
+        return "", _dedupe_paths(ignored_paths)
+    return "".join(preamble) + "".join(kept_sections), _dedupe_paths(ignored_paths)
+
+
 def find_disallowed_patch_paths(patch: str, allowed_patterns: list[str] | None) -> list[str]:
-    changed_paths = extract_patch_paths(patch)
+    changed_paths = [
+        path for path in extract_patch_paths(patch) if not is_ignored_generated_python_cache_path(path)
+    ]
     if not changed_paths:
         return []
     if not allowed_patterns:
@@ -234,8 +290,9 @@ class PublicReplayEngine:
         benchmark_env = dict(spec.validator_benchmark_env)
         redactions = self._sensitive_redactions(benchmark_env)
         try:
-            changed_paths = extract_patch_paths(patch)
-            if patch.strip() and not changed_paths:
+            effective_patch, ignored_generated_paths = strip_ignored_generated_python_cache_diffs(patch)
+            changed_paths = extract_patch_paths(effective_patch)
+            if patch.strip() and not changed_paths and not ignored_generated_paths:
                 return self._result(
                     job,
                     status="rejected",
@@ -243,7 +300,10 @@ class PublicReplayEngine:
                     notes="Patch surface could not be determined from the submitted diff",
                     replay_log="\n".join([*logs, "validator_rejection=unparseable_patch_surface"]),
                 )
-            disallowed_paths = find_disallowed_patch_paths(patch, spec.allowed_patch_paths)
+            if ignored_generated_paths:
+                logs.append("ignored_generated_patch_paths=" + ",".join(ignored_generated_paths))
+
+            disallowed_paths = find_disallowed_patch_paths(effective_patch, spec.allowed_patch_paths)
             if disallowed_paths:
                 return self._result(
                     job,
@@ -261,12 +321,13 @@ class PublicReplayEngine:
                 )
 
             self._clone_repository(spec, dest=repo_dir)
-            self._apply_patch(patch, cwd=repo_dir)
+            self._apply_patch(effective_patch, cwd=repo_dir)
+            effective_submission = dict(submission, patch=effective_patch)
             self._materialize_artifact(
-                submission,
+                effective_submission,
                 repo_dir=repo_dir,
                 benchmark_env=benchmark_env,
-                required=self._artifact_required(submission, benchmark_env),
+                required=self._artifact_required(effective_submission, benchmark_env),
                 logs=logs,
             )
         except (subprocess.SubprocessError, OSError, RuntimeError) as exc:
