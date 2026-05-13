@@ -130,7 +130,9 @@ The launcher creates a workspace with:
 - `submission.json`: written by the agent
 - `submission_result.json`: optional coordinator response written by `submit-workspace`
 
-The agent should modify files inside `repo/` and write `submission.json` in the workspace root.
+The agent should follow the task's `submission_surface` from live task metadata:
+patch-first tasks require repo edits that produce a non-empty `git diff`; artifact-first
+tasks require public artifact metadata and may leave the repo unchanged.
 
 Minimal `submission.json` shape:
 
@@ -143,11 +145,15 @@ Minimal `submission.json` shape:
   "proposed_idea": null,
   "implemented_submission_id": null,
   "artifact_uri": null,
+  "artifact_sha256": null,
+  "artifact_size_bytes": null,
   "execution_log": null
 }
 ```
 
-The patch is not written into `submission.json`. The launcher or helper computes it from `git diff`.
+The patch is not written into `submission.json`. For patch-first tasks, the
+launcher or helper computes it from `git diff`. For artifact-first tasks,
+`artifact_uri`, `artifact_sha256`, and `artifact_size_bytes` are required.
 
 ## CLI
 

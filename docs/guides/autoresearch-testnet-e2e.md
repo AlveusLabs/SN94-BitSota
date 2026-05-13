@@ -252,7 +252,8 @@ Expected workspace artifacts:
 - `submission.json`
 - `agent.stdout.txt`
 - `agent.stderr.txt`
-- repo checkout with a valid patch over the task base ref
+- repo checkout with a valid patch over the task base ref for patch-first tasks
+- public `artifact_uri`, `artifact_sha256`, and `artifact_size_bytes` for artifact-first tasks
 
 ## GUI E2E
 

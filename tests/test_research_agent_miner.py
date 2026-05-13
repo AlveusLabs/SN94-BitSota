@@ -713,6 +713,47 @@ def test_submit_claimed_workspace_uses_submission_json_and_git_diff(tmp_path: Pa
     )
 
 
+def test_submit_claimed_workspace_allows_artifact_first_without_git_diff(tmp_path: Path) -> None:
+    repo_dir, base_ref = _init_git_repo(
+        tmp_path,
+        {
+            "README.md": "demo\n",
+            "train.py": "print('heldout_ppl: 264.0')\n",
+        },
+    )
+    submission_file = tmp_path / "submission.json"
+    submission_file.write_text(
+        json.dumps(
+            {
+                "summary": "External agent uploaded a compressed artifact.",
+                "claimed_metrics": {"heldout_ppl": 264.0, "compression_ratio": 1.2},
+                "artifact_uri": "https://example.com/artifact.json",
+                "artifact_sha256": "c" * 64,
+                "artifact_size_bytes": 789,
+            }
+        ),
+        encoding="utf-8",
+    )
+    coordinator = FakeCoordinator()
+
+    result = submit_claimed_workspace(
+        coordinator=coordinator,  # type: ignore[arg-type]
+        claim_id="claim-artifact-1",
+        repo_dir=repo_dir,
+        submission_file=submission_file,
+        default_base_ref=base_ref,
+        requires_submission_artifact=True,
+        submission_surface="artifact",
+    )
+
+    assert result["id"] == "submission-1"
+    assert coordinator.submissions[0]["claim_id"] == "claim-artifact-1"
+    assert coordinator.submissions[0]["patch"] == ""
+    assert coordinator.submissions[0]["artifact_uri"] == "https://example.com/artifact.json"
+    assert coordinator.submissions[0]["artifact_sha256"] == "c" * 64
+    assert coordinator.submissions[0]["artifact_size_bytes"] == 789
+
+
 def test_agent_mine_once_can_run_external_gui_managed_agent(tmp_path: Path) -> None:
     repo_dir, base_ref = _init_git_repo(
         tmp_path,

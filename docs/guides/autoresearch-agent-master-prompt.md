@@ -46,7 +46,7 @@ Required flow:
 2. fetch onboard.md for the chosen task
 3. create a signed direct claim or claim a planner-created work item, depending on the requested mode
 4. clone the target task repository to a temporary workspace
-5. make a minimal valid change within the allowed patch surface
+5. follow the task `submission_surface`: patch-first tasks need a valid diff inside the allowed patch surface; artifact-first tasks need public artifact URI, SHA-256, and byte-size metadata
 6. replay the benchmark or evaluation path and capture the real metric from workspace output
 7. generate a valid submission.json with summary and claimed metric
 8. include required centerless fields such as proposed_idea and implemented_submission_id when the task mode requires them
@@ -74,5 +74,6 @@ If running as an external agent launched by bitsota-research-agent or the GUI:
 - do not discover tasks, create claims, or submit directly unless the runtime contract explicitly says to
 - write `submission.json` in the workspace root when the runtime contract asks for a submission sidecar
 - only write the provided submission result path when the runtime contract explicitly asks for that extra file
-- leave repo edits in place so the caller can diff and submit them
+- leave repo edits in place so the caller can diff and submit them for patch-first tasks
+- for artifact-first tasks, make sure `submission.json` contains the artifact metadata
 ```

@@ -35,6 +35,21 @@ def _coerce_claimed_metrics(value: Any) -> dict[str, Any]:
     return {}
 
 
+def _coerce_bool(value: Any) -> bool:
+    if isinstance(value, bool):
+        return value
+    return str(value or "").strip().lower() in {"1", "true", "yes", "artifact"}
+
+
+def _task_requires_submission_artifact(task: dict[str, Any]) -> bool:
+    if "requires_submission_artifact" in task:
+        return _coerce_bool(task.get("requires_submission_artifact"))
+    if str(task.get("submission_surface") or "").strip().lower() == "artifact":
+        return True
+    required_fields = {str(row) for row in list(task.get("required_submission_fields") or [])}
+    return "artifact_uri" in required_fields
+
+
 def _strip_code_fences(text: str) -> str:
     raw = str(text or "").strip()
     if raw.startswith("```"):
@@ -85,6 +100,7 @@ def build_agent_intro_markdown(
 ) -> str:
     normalized_mode = _normalized_submission_mode(mode)
     intro_name = "INTRO.md" if normalized_mode == "autonomous" else "INTRO_GUI.md"
+    artifact_required = _task_requires_submission_artifact(task)
     lines = [
         f"# {intro_name}",
         "",
@@ -118,11 +134,20 @@ def build_agent_intro_markdown(
         [
             "## Workspace Contract",
             "",
-            "- Edit the checked-out repository files directly.",
+            f"- Submission surface: `{'artifact' if artifact_required else 'patch'}`.",
+            (
+                "- Artifact-first task: write `artifact_uri`, `artifact_sha256`, and "
+                "`artifact_size_bytes` in the sidecar. Repo edits are optional recipe metadata."
+                if artifact_required
+                else "- Patch-first task: edit the checked-out repository files directly so "
+                "the launcher can submit a non-empty diff."
+            ),
             f"- Write a JSON sidecar to `{submission_file.name}` in the workspace root.",
             "- Required sidecar fields: `summary`, `claimed_metrics`.",
-            "- Optional sidecar fields: `base_ref`, `proposed_idea`, `implemented_submission_id`, `artifact_uri`, `artifact_sha256`, `artifact_size_bytes`, `execution_log`, `notes`.",
-            "- Do not put the patch in the sidecar. The launcher derives the patch from `git diff` in the repo checkout.",
+            "- Optional sidecar fields: `base_ref`, `proposed_idea`, `implemented_submission_id`, "
+            "`artifact_uri`, `artifact_sha256`, `artifact_size_bytes`, `execution_log`, `notes`.",
+            "- Do not put the patch in the sidecar. When this is a patch-first task, "
+            "the launcher derives the patch from `git diff` in the repo checkout.",
             "",
         ]
     )
@@ -152,7 +177,11 @@ def build_agent_intro_markdown(
                 "## Submission Authority",
                 "",
                 "Do not submit directly to the coordinator. The launcher owns signing and submission for this run.",
-                "Your job is to edit the repo and write `submission.json` only.",
+                (
+                    "Your job is to produce the artifact metadata and write `submission.json`; repo edits are optional."
+                    if artifact_required
+                    else "Your job is to edit the repo and write `submission.json` only."
+                ),
                 "",
             ]
         )
@@ -187,7 +216,7 @@ def load_submission_sidecar(
     return result
 
 
-def compute_repo_patch(repo_dir: Path) -> str:
+def compute_repo_patch(repo_dir: Path, *, allow_empty: bool = False) -> str:
     subprocess.run(
         ["git", "add", "-N", "."],
         cwd=str(repo_dir),
@@ -206,6 +235,8 @@ def compute_repo_patch(repo_dir: Path) -> str:
         raise RuntimeError(f"git diff failed with exit={result.returncode}: {result.stderr}")
     patch = str(result.stdout or "")
     if not patch.strip():
+        if allow_empty:
+            return ""
         raise RuntimeError("repo checkout has no patch to submit")
     if not patch.endswith("\n"):
         patch += "\n"
@@ -237,13 +268,22 @@ def submit_claimed_workspace(
     default_base_ref: str,
     competition_mode: str | None = None,
     idea_candidates: list[dict[str, Any]] | None = None,
+    requires_submission_artifact: bool = False,
+    submission_surface: str | None = None,
 ) -> dict[str, Any]:
     payload = load_submission_sidecar(
         submission_file=Path(submission_file),
         metric_name="",
     )
     pinned_base_ref = resolve_repo_head_commit(Path(repo_dir))
-    patch = compute_repo_patch(Path(repo_dir))
+    artifact_required = (
+        _coerce_bool(requires_submission_artifact)
+        or str(submission_surface or "").strip().lower() == "artifact"
+    )
+    artifact_uri = str(payload.get("artifact_uri") or "").strip()
+    if artifact_required and not artifact_uri:
+        raise RuntimeError("artifact-first task requires submission.json field: artifact_uri")
+    patch = compute_repo_patch(Path(repo_dir), allow_empty=artifact_required)
     summary = str(payload.get("summary") or "").strip()
     claimed_metrics = _coerce_claimed_metrics(payload.get("claimed_metrics"))
     implemented_submission_id = (
@@ -270,11 +310,7 @@ def submit_claimed_workspace(
                 else None
             ),
             implemented_submission_id=implemented_submission_id,
-            artifact_uri=(
-                str(payload.get("artifact_uri")).strip()
-                if payload.get("artifact_uri") is not None
-                else None
-            ),
+            artifact_uri=(artifact_uri if artifact_uri else None),
             artifact_sha256=(
                 str(payload.get("artifact_sha256")).strip()
                 if payload.get("artifact_sha256") is not None
@@ -855,6 +891,8 @@ class ResearchAgentMiner:
                 default_base_ref=str(task.get("base_ref") or ""),
                 competition_mode=mode,
                 idea_candidates=idea_candidates,
+                requires_submission_artifact=_task_requires_submission_artifact(task),
+                submission_surface=str(task.get("submission_surface") or ""),
             )
         except Exception as exc:
             self._cancel_claim_after_failure(claim_id=str(claim.get("id") or ""), reason=str(exc))
