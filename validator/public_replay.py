@@ -204,11 +204,17 @@ class PublicReplayEngine:
         allow_unsafe_host_replay: bool = False,
         allow_local_artifacts: bool = False,
         max_replay_log_chars: int = 128_000,
+        local_benchmark_env: dict[str, str] | None = None,
     ) -> None:
         self.workspace_root = Path(workspace_root).expanduser().resolve()
         self.allow_unsafe_host_replay = bool(allow_unsafe_host_replay)
         self.allow_local_artifacts = bool(allow_local_artifacts)
         self.max_replay_log_chars = max(1024, int(max_replay_log_chars))
+        self.local_benchmark_env = {
+            str(key): str(value)
+            for key, value in dict(local_benchmark_env or {}).items()
+            if str(key).strip()
+        }
 
     def run(self, job: ReplayJob) -> ReplayResult:
         if not self.allow_unsafe_host_replay:
@@ -244,7 +250,10 @@ class PublicReplayEngine:
     ) -> ReplayResult:
         submission = dict(job.submission or {})
         patch = str(submission.get("patch") or "")
-        benchmark_env = dict(spec.validator_benchmark_env)
+        benchmark_env = {
+            **dict(spec.validator_benchmark_env),
+            **self.local_benchmark_env,
+        }
         redactions = self._sensitive_redactions(benchmark_env)
         try:
             if len(patch.encode("utf-8")) > spec.max_patch_bytes:

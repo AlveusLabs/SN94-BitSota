@@ -226,6 +226,9 @@ allow_unsafe_host_replay: true
 allow_local_artifacts: true
 max_replay_log_chars: 4096
 dry_run: true
+local_benchmark_env:
+  AUTORESEARCH_PRIVATE_HELDOUT_MANIFEST: "{tmp_path / 'heldout.json'}"
+  AUTORESEARCH_PRIVATE_HELDOUT_ROOT: "{tmp_path}"
 wallet_name: "validator-wallet"
 wallet_hotkey: "validator-hotkey"
 wallet_path: "{wallet_path}"
@@ -248,6 +251,10 @@ wallet_path: "{wallet_path}"
     assert config.allow_unsafe_host_replay is True
     assert config.allow_local_artifacts is True
     assert config.max_replay_log_chars == 4096
+    assert config.local_benchmark_env == {
+        "AUTORESEARCH_PRIVATE_HELDOUT_MANIFEST": str(tmp_path / "heldout.json"),
+        "AUTORESEARCH_PRIVATE_HELDOUT_ROOT": str(tmp_path),
+    }
     assert config.dry_run is True
     assert wallet_kwargs == {
         "hotkey_mnemonic": "",
@@ -448,6 +455,67 @@ def test_public_replay_engine_accepts_local_patch(tmp_path: Path, monkeypatch) -
     assert "host-secret" not in result.replay_log
     assert "secret-split" not in result.replay_log
     assert "heldout=[REDACTED]" in result.replay_log
+
+
+def test_public_replay_engine_passes_local_validator_benchmark_env(tmp_path: Path) -> None:
+    repo_dir = tmp_path / "repo"
+    repo_dir.mkdir()
+    _init_git_repo(repo_dir)
+    (repo_dir / "score.txt").write_text("1.0\n", encoding="utf-8")
+    (repo_dir / "benchmark.py").write_text(
+        "import os\n"
+        "from pathlib import Path\n"
+        "print('manifest=' + os.environ.get('AUTORESEARCH_PRIVATE_HELDOUT_MANIFEST', ''))\n"
+        "print('score=' + Path('score.txt').read_text(encoding='utf-8').strip())\n",
+        encoding="utf-8",
+    )
+    subprocess.run(["git", "add", "."], cwd=repo_dir, check=True, capture_output=True)
+    subprocess.run(["git", "commit", "-m", "initial"], cwd=repo_dir, check=True, capture_output=True)
+    (repo_dir / "score.txt").write_text("2.0\n", encoding="utf-8")
+    patch = subprocess.run(
+        ["git", "diff", "--", "score.txt"],
+        cwd=repo_dir,
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout
+
+    manifest_path = tmp_path / "private-heldout.json"
+    manifest_path.write_text("{}", encoding="utf-8")
+    job = ReplayJob(
+        job_id=None,
+        submission_id="submission-1",
+        submission={
+            "id": "submission-1",
+            "task_id": "task-1",
+            "base_ref": "HEAD",
+            "patch": patch,
+        },
+        task={
+            "id": "task-1",
+            "repository": str(repo_dir),
+            "base_ref": "HEAD",
+            "benchmark_command": "python3 benchmark.py",
+            "allowed_patch_paths": ["score.txt"],
+            "metric_name": "score",
+            "time_budget_seconds": 60,
+        },
+        replay_spec={},
+        detail={"metric_name": "score"},
+        source="test",
+    )
+    engine = PublicReplayEngine(
+        workspace_root=tmp_path / "workspaces",
+        allow_unsafe_host_replay=True,
+        local_benchmark_env={"AUTORESEARCH_PRIVATE_HELDOUT_MANIFEST": str(manifest_path)},
+    )
+
+    result = engine.run(job)
+
+    assert result.status == "accepted"
+    assert result.observed_metrics == {"score": 2.0}
+    assert str(manifest_path) not in result.replay_log
+    assert "manifest=[REDACTED]" in result.replay_log
 
 
 def test_public_replay_engine_rejects_generated_python_cache_patch_paths(tmp_path: Path) -> None:
