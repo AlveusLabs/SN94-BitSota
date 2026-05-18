@@ -43,3 +43,8 @@ dry_run: false
 local_benchmark_env:
   # AUTORESEARCH_PRIVATE_HELDOUT_MANIFEST: "/srv/bitsota/heldout/qwen-frontier-v2/manifest.json"
   # AUTORESEARCH_PRIVATE_HELDOUT_ROOT: "/srv/bitsota/heldout/qwen-frontier-v2"
+  # For Hugging Face-backed heldout handles from the backend, validators fetch
+  # locally. Use pinned backend handles like:
+  #   hf://org/private-heldout?revision=<commit>&manifest=manifest.json
+  # HF_TOKEN: "hf_..."
+  # AUTORESEARCH_PRIVATE_HELDOUT_CACHE_DIR: "/srv/bitsota/heldout-cache"
