@@ -36,5 +36,10 @@ allow_local_artifacts: false
 max_replay_log_chars: 128000
 dry_run: false
 
-# Hidden holdout dataset names, percentages, and sync numbers are not configured
-# here. The backend returns them only to authenticated validators in replay_spec.
+# Backend replay_spec returns heldout dataset handles, mix percentages, split,
+# and sync slot/number selectors to authenticated validators. Reward-active
+# heldout bytes stay local to this validator and are passed to benchmark replay
+# through local_benchmark_env.
+local_benchmark_env:
+  # AUTORESEARCH_PRIVATE_HELDOUT_MANIFEST: "/srv/bitsota/heldout/qwen-frontier-v2/manifest.json"
+  # AUTORESEARCH_PRIVATE_HELDOUT_ROOT: "/srv/bitsota/heldout/qwen-frontier-v2"

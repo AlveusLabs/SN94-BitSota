@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import argparse
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, field
 import json
 from pathlib import Path
 import time
@@ -29,6 +29,7 @@ class PublicValidatorRunnerConfig:
     allow_unsafe_host_replay: bool = False
     allow_local_artifacts: bool = False
     max_replay_log_chars: int = 128_000
+    local_benchmark_env: dict[str, str] = field(default_factory=dict)
     dry_run: bool = False
 
 
@@ -300,6 +301,19 @@ def _bool_value_from_args_or_config(
     raise SystemExit(f"validator config field {key!r} must be a boolean")
 
 
+def _dict_value_from_config(config: Mapping[str, Any], key: str) -> dict[str, str]:
+    value = config.get(key)
+    if value is None:
+        return {}
+    if not isinstance(value, Mapping):
+        raise SystemExit(f"validator config field {key!r} must be a mapping/object")
+    return {
+        str(raw_key): str(raw_value)
+        for raw_key, raw_value in value.items()
+        if str(raw_key).strip()
+    }
+
+
 def _wallet_kwargs_from_args(
     args: argparse.Namespace,
     config: Mapping[str, Any] | None = None,
@@ -423,6 +437,7 @@ def _config_from_args(
                 128_000,
             )
         ),
+        local_benchmark_env=_dict_value_from_config(config_data, "local_benchmark_env"),
         dry_run=_bool_value_from_args_or_config(args, config_data, "dry_run", False),
     )
 
@@ -443,6 +458,7 @@ def build_runner(
         allow_unsafe_host_replay=config.allow_unsafe_host_replay,
         allow_local_artifacts=config.allow_local_artifacts,
         max_replay_log_chars=config.max_replay_log_chars,
+        local_benchmark_env=config.local_benchmark_env,
     )
     return PublicValidatorRunner(client=client, engine=engine, config=config, log=log)
 
