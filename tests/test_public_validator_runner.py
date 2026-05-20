@@ -7,7 +7,14 @@ from types import SimpleNamespace
 
 from substrateinterface import Keypair
 
+from validator import public_replay as public_replay_module
+from validator import replay_sandbox as replay_sandbox_module
 from validator.public_replay import PublicReplayEngine, ReplayResult
+from validator.replay_sandbox import (
+    DockerSandboxConfig,
+    SandboxCommandResult,
+    SandboxedReplayResult,
+)
 from validator.research_validator_client import (
     AutoresearchValidatorClient,
     DEFAULT_VALIDATOR_JOB_CLAIM_PATH,
@@ -225,6 +232,17 @@ timeout_s: 7
 allow_unsafe_host_replay: true
 allow_local_artifacts: true
 max_replay_log_chars: 4096
+replay_sandbox_mode: "docker"
+replay_sandbox_image: "bitsota-test-validator:local"
+replay_sandbox_dockerfile: "docker/test.Dockerfile"
+replay_sandbox_gpus: "all"
+replay_sandbox_setup_network_mode: "bridge"
+replay_sandbox_benchmark_network_mode: "none"
+replay_sandbox_memory_limit: "12g"
+replay_sandbox_pids_limit: 256
+replay_sandbox_cpus: 2.5
+replay_sandbox_workspace_size_bytes: 123456
+replay_sandbox_result_max_bytes: 654321
 dry_run: true
 local_benchmark_env:
   AUTORESEARCH_PRIVATE_HELDOUT_MANIFEST: "{tmp_path / 'heldout.json'}"
@@ -251,6 +269,17 @@ wallet_path: "{wallet_path}"
     assert config.allow_unsafe_host_replay is True
     assert config.allow_local_artifacts is True
     assert config.max_replay_log_chars == 4096
+    assert config.replay_sandbox_mode == "docker"
+    assert config.replay_sandbox_image == "bitsota-test-validator:local"
+    assert config.replay_sandbox_dockerfile == "docker/test.Dockerfile"
+    assert config.replay_sandbox_gpus == "all"
+    assert config.replay_sandbox_setup_network_mode == "bridge"
+    assert config.replay_sandbox_benchmark_network_mode == "none"
+    assert config.replay_sandbox_memory_limit == "12g"
+    assert config.replay_sandbox_pids_limit == 256
+    assert config.replay_sandbox_cpus == 2.5
+    assert config.replay_sandbox_workspace_size_bytes == 123456
+    assert config.replay_sandbox_result_max_bytes == 654321
     assert config.local_benchmark_env == {
         "AUTORESEARCH_PRIVATE_HELDOUT_MANIFEST": str(tmp_path / "heldout.json"),
         "AUTORESEARCH_PRIVATE_HELDOUT_ROOT": str(tmp_path),
@@ -455,6 +484,83 @@ def test_public_replay_engine_accepts_local_patch(tmp_path: Path, monkeypatch) -
     assert "host-secret" not in result.replay_log
     assert "secret-split" not in result.replay_log
     assert "heldout=[REDACTED]" in result.replay_log
+
+
+def test_public_replay_engine_uses_docker_sandbox_without_host_replay(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    repo_dir = tmp_path / "repo"
+    repo_dir.mkdir()
+    _init_git_repo(repo_dir)
+    (repo_dir / "score.txt").write_text("1.0\n", encoding="utf-8")
+    (repo_dir / "benchmark.py").write_text("print('score=1.0')\n", encoding="utf-8")
+    subprocess.run(["git", "add", "."], cwd=repo_dir, check=True, capture_output=True)
+    subprocess.run(["git", "commit", "-m", "initial"], cwd=repo_dir, check=True, capture_output=True)
+
+    (repo_dir / "score.txt").write_text("4.0\n", encoding="utf-8")
+    patch = subprocess.run(
+        ["git", "diff", "--", "score.txt"],
+        cwd=repo_dir,
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout
+    job = ReplayJob(
+        job_id="job-1",
+        submission={
+            "id": "submission-docker",
+            "task_id": "task-1",
+            "base_ref": "HEAD",
+            "patch": patch,
+        },
+        submission_id="submission-docker",
+        task={
+            "id": "task-1",
+            "repository": str(repo_dir),
+            "base_ref": "HEAD",
+            "benchmark_command": "python3 benchmark.py",
+            "result_path": "result.json",
+            "allowed_patch_paths": ["score.txt"],
+            "metric_name": "score",
+            "time_budget_seconds": 60,
+            "validator_benchmark_env": {"AUTORESEARCH_HELDOUT_SPLIT": "secret-split"},
+        },
+        replay_spec={},
+        detail={"metric_name": "score"},
+        source="test",
+    )
+    calls: list[dict] = []
+
+    def fake_sandbox(**kwargs):
+        calls.append(kwargs)
+        result_path = kwargs["work_dir"] / "sandbox-results" / "result.json"
+        result_path.parent.mkdir(parents=True, exist_ok=True)
+        result_path.write_text('{"metrics": {"score": 4.0}}', encoding="utf-8")
+        return SandboxedReplayResult(
+            setup_result=None,
+            benchmark_result=SandboxCommandResult(returncode=0, stdout="score=4.0\n", stderr=""),
+            result_path=result_path,
+            image=kwargs["config"].image,
+        )
+
+    monkeypatch.setattr(public_replay_module, "run_replay_in_docker_sandbox", fake_sandbox)
+    engine = PublicReplayEngine(
+        workspace_root=tmp_path / "workspaces",
+        allow_unsafe_host_replay=False,
+        replay_sandbox_mode="docker",
+        docker_sandbox_config=DockerSandboxConfig(image="bitsota-test:local", gpus="all"),
+    )
+
+    result = engine.run(job)
+
+    assert result.status == "accepted"
+    assert result.observed_metrics == {"score": 4.0}
+    assert "Replay succeeded in docker sandbox" in result.notes
+    assert "replay_execution_surface=docker_sandbox" in result.replay_log
+    assert "secret-split" not in result.replay_log
+    assert calls[0]["benchmark_env"]["AUTORESEARCH_HELDOUT_SPLIT"] == "secret-split"
+    assert calls[0]["config"].gpus == "all"
 
 
 def test_public_replay_engine_passes_local_validator_benchmark_env(tmp_path: Path) -> None:
@@ -682,6 +788,56 @@ def test_public_replay_engine_rejects_oversized_patches(tmp_path: Path) -> None:
     assert result.status == "rejected"
     assert "maximum size" in result.notes
     assert "validator_rejection=patch_too_large" in result.replay_log
+
+
+def test_replay_sandbox_create_container_passes_gpu_and_limits(monkeypatch) -> None:
+    calls: list[tuple[str, tuple[str, ...]]] = []
+
+    def fake_run_checked(*args, stage, timeout=None):
+        calls.append((stage, args))
+        return subprocess.CompletedProcess(args=args, returncode=0, stdout="container-id\n", stderr="")
+
+    monkeypatch.setattr(replay_sandbox_module, "_run_docker_checked", fake_run_checked)
+
+    container_id = replay_sandbox_module._create_container(
+        config=DockerSandboxConfig(
+            gpus="all",
+            memory_limit="8g",
+            pids_limit=128,
+            cpus=2.0,
+        ),
+        image="bitsota-test:local",
+        workspace_volume="bitsota-test-volume",
+        network_mode="bridge",
+        timeout=30,
+    )
+
+    assert container_id == "container-id"
+    stage, args = calls[0]
+    assert stage == "docker create"
+    flat = list(args)
+    assert "--gpus" in flat
+    assert flat[flat.index("--gpus") + 1] == "all"
+    assert "--network" in flat
+    assert flat[flat.index("--network") + 1] == "bridge"
+    assert "--memory" in flat
+    assert flat[flat.index("--memory") + 1] == "8g"
+    assert "--pids-limit" in flat
+    assert flat[flat.index("--pids-limit") + 1] == "128"
+    assert "--cpus" in flat
+    assert flat[flat.index("--cpus") + 1] == "2.0"
+    assert "--read-only" in flat
+    assert "--security-opt" in flat
+    assert "no-new-privileges:true" in flat
+
+
+def test_replay_sandbox_workspace_command_uses_writable_venv() -> None:
+    wrapped = replay_sandbox_module._wrap_workspace_command("python benchmark.py")
+
+    assert "python -m venv --system-site-packages /workspace/.venv" in wrapped
+    assert "export VIRTUAL_ENV=/workspace/.venv" in wrapped
+    assert "export PATH=/workspace/.venv/bin:$PATH" in wrapped
+    assert wrapped.endswith("python benchmark.py")
 
 
 def test_public_validator_runner_submits_replay_result(tmp_path: Path) -> None:

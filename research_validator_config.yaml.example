@@ -29,9 +29,25 @@ cycles: 0
 interval_seconds: 30
 timeout_s: 30
 
-# Host replay executes submitted setup and benchmark commands. Run this only on
-# an isolated validator host or container.
-allow_unsafe_host_replay: true
+# Replay sandbox. Docker mode keeps submitted setup and benchmark commands out
+# of the validator host process while still allowing CUDA when the validator
+# host has Docker + NVIDIA Container Toolkit installed.
+replay_sandbox_mode: "docker"
+replay_sandbox_image: "bitsota-research-validator-cuda:local"
+replay_sandbox_dockerfile: "docker/research-validator-cuda.Dockerfile"
+replay_sandbox_gpus: "all"
+replay_sandbox_setup_network_mode: "bridge"
+replay_sandbox_benchmark_network_mode: "bridge"
+replay_sandbox_memory_limit: "16g"
+replay_sandbox_pids_limit: 512
+replay_sandbox_cpus: 0
+replay_sandbox_workspace_size_bytes: 2147483648
+replay_sandbox_result_max_bytes: 10485760
+
+# Host replay executes submitted setup and benchmark commands directly on this
+# machine. Keep this false for Docker mode; set true only for an explicitly
+# isolated host-mode validator.
+allow_unsafe_host_replay: false
 allow_local_artifacts: false
 max_replay_log_chars: 128000
 dry_run: false

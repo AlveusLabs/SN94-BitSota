@@ -9,6 +9,7 @@ from typing import Any, Callable, Mapping, Sequence
 
 from miner.wallet_inputs import EphemeralWallet, load_wallet
 from validator.public_replay import PublicReplayEngine
+from validator.replay_sandbox import DockerSandboxConfig
 from validator.research_validator_client import (
     AutoresearchValidatorClient,
     DEFAULT_RESEARCH_COORDINATOR_URL,
@@ -30,6 +31,17 @@ class PublicValidatorRunnerConfig:
     allow_local_artifacts: bool = False
     max_replay_log_chars: int = 128_000
     local_benchmark_env: dict[str, str] = field(default_factory=dict)
+    replay_sandbox_mode: str = "host"
+    replay_sandbox_image: str = "bitsota-research-validator-cuda:local"
+    replay_sandbox_dockerfile: str = "docker/research-validator-cuda.Dockerfile"
+    replay_sandbox_gpus: str = ""
+    replay_sandbox_setup_network_mode: str = "bridge"
+    replay_sandbox_benchmark_network_mode: str = "bridge"
+    replay_sandbox_memory_limit: str = "16g"
+    replay_sandbox_pids_limit: int = 512
+    replay_sandbox_cpus: float = 0.0
+    replay_sandbox_workspace_size_bytes: int = 2_147_483_648
+    replay_sandbox_result_max_bytes: int = 10_485_760
     dry_run: bool = False
 
 
@@ -181,6 +193,66 @@ def _build_parser() -> argparse.ArgumentParser:
         action=argparse.BooleanOptionalAction,
         default=None,
         help="Allow local host execution of submitted setup and benchmark commands.",
+    )
+    parser.add_argument(
+        "--replay-sandbox-mode",
+        choices=("host", "docker"),
+        default=None,
+        help="Run submitted setup/benchmark on the host or inside the Docker replay sandbox.",
+    )
+    parser.add_argument(
+        "--replay-sandbox-image",
+        default=None,
+        help="Docker image tag for sandboxed replay. Built from replay_sandbox_dockerfile if absent.",
+    )
+    parser.add_argument(
+        "--replay-sandbox-dockerfile",
+        default=None,
+        help="Dockerfile used to build the validator replay sandbox image.",
+    )
+    parser.add_argument(
+        "--replay-sandbox-gpus",
+        default=None,
+        help="Docker --gpus value, for example 'all'. Empty disables GPU passthrough.",
+    )
+    parser.add_argument(
+        "--replay-sandbox-setup-network-mode",
+        default=None,
+        help="Docker network mode for setup_command.",
+    )
+    parser.add_argument(
+        "--replay-sandbox-benchmark-network-mode",
+        default=None,
+        help="Docker network mode for benchmark_command.",
+    )
+    parser.add_argument(
+        "--replay-sandbox-memory-limit",
+        default=None,
+        help="Docker memory limit for each sandbox container, for example 16g.",
+    )
+    parser.add_argument(
+        "--replay-sandbox-pids-limit",
+        type=int,
+        default=None,
+        help="Docker pids limit for each sandbox container.",
+    )
+    parser.add_argument(
+        "--replay-sandbox-cpus",
+        type=float,
+        default=None,
+        help="Optional Docker CPU limit. 0 means unset.",
+    )
+    parser.add_argument(
+        "--replay-sandbox-workspace-size-bytes",
+        type=int,
+        default=None,
+        help="Tmpfs-backed Docker workspace size limit in bytes.",
+    )
+    parser.add_argument(
+        "--replay-sandbox-result-max-bytes",
+        type=int,
+        default=None,
+        help="Maximum result JSON size copied out of the sandbox.",
     )
     parser.add_argument(
         "--allow-local-artifacts",
@@ -438,6 +510,98 @@ def _config_from_args(
             )
         ),
         local_benchmark_env=_dict_value_from_config(config_data, "local_benchmark_env"),
+        replay_sandbox_mode=str(
+            _value_from_args_or_config(
+                args,
+                config_data,
+                "replay_sandbox_mode",
+                "host",
+            )
+        )
+        .strip()
+        .lower()
+        or "host",
+        replay_sandbox_image=str(
+            _value_from_args_or_config(
+                args,
+                config_data,
+                "replay_sandbox_image",
+                "bitsota-research-validator-cuda:local",
+            )
+            or "bitsota-research-validator-cuda:local"
+        ),
+        replay_sandbox_dockerfile=str(
+            _value_from_args_or_config(
+                args,
+                config_data,
+                "replay_sandbox_dockerfile",
+                "docker/research-validator-cuda.Dockerfile",
+            )
+            or "docker/research-validator-cuda.Dockerfile"
+        ),
+        replay_sandbox_gpus=str(
+            _value_from_args_or_config(args, config_data, "replay_sandbox_gpus", "")
+            or ""
+        ),
+        replay_sandbox_setup_network_mode=str(
+            _value_from_args_or_config(
+                args,
+                config_data,
+                "replay_sandbox_setup_network_mode",
+                "bridge",
+            )
+            or "bridge"
+        ),
+        replay_sandbox_benchmark_network_mode=str(
+            _value_from_args_or_config(
+                args,
+                config_data,
+                "replay_sandbox_benchmark_network_mode",
+                "bridge",
+            )
+            or "bridge"
+        ),
+        replay_sandbox_memory_limit=str(
+            _value_from_args_or_config(
+                args,
+                config_data,
+                "replay_sandbox_memory_limit",
+                "16g",
+            )
+            or "16g"
+        ),
+        replay_sandbox_pids_limit=int(
+            _value_from_args_or_config(
+                args,
+                config_data,
+                "replay_sandbox_pids_limit",
+                512,
+            )
+        ),
+        replay_sandbox_cpus=float(
+            _value_from_args_or_config(
+                args,
+                config_data,
+                "replay_sandbox_cpus",
+                0.0,
+            )
+        ),
+        replay_sandbox_workspace_size_bytes=int(
+            _value_from_args_or_config(
+                args,
+                config_data,
+                "replay_sandbox_workspace_size_bytes",
+                2_147_483_648,
+            )
+        ),
+        replay_sandbox_result_max_bytes=int(
+            _value_from_args_or_config(
+                args,
+                config_data,
+                "replay_sandbox_result_max_bytes",
+                10_485_760,
+            )
+        ),
         dry_run=_bool_value_from_args_or_config(args, config_data, "dry_run", False),
     )
 
@@ -459,6 +623,19 @@ def build_runner(
         allow_local_artifacts=config.allow_local_artifacts,
         max_replay_log_chars=config.max_replay_log_chars,
         local_benchmark_env=config.local_benchmark_env,
+        replay_sandbox_mode=config.replay_sandbox_mode,
+        docker_sandbox_config=DockerSandboxConfig(
+            image=config.replay_sandbox_image,
+            dockerfile=config.replay_sandbox_dockerfile,
+            gpus=config.replay_sandbox_gpus,
+            setup_network_mode=config.replay_sandbox_setup_network_mode,
+            benchmark_network_mode=config.replay_sandbox_benchmark_network_mode,
+            memory_limit=config.replay_sandbox_memory_limit,
+            pids_limit=config.replay_sandbox_pids_limit,
+            cpus=config.replay_sandbox_cpus,
+            workspace_size_bytes=config.replay_sandbox_workspace_size_bytes,
+            result_max_bytes=config.replay_sandbox_result_max_bytes,
+        ),
     )
     return PublicValidatorRunner(client=client, engine=engine, config=config, log=log)
 
@@ -467,10 +644,13 @@ def main(argv: Sequence[str] | None = None) -> int:
     args = _build_parser().parse_args(argv)
     config_data = _load_runner_config_file(getattr(args, "config", None))
     config = _config_from_args(args, config_data)
-    if not config.allow_unsafe_host_replay:
+    if config.replay_sandbox_mode not in {"host", "docker"}:
+        raise SystemExit("replay_sandbox_mode must be either 'host' or 'docker'")
+    if config.replay_sandbox_mode == "host" and not config.allow_unsafe_host_replay:
         raise SystemExit(
             "host replay is disabled by default; set allow_unsafe_host_replay: true in the config "
-            "or pass --allow-unsafe-host-replay only on an isolated validator host"
+            "or pass --allow-unsafe-host-replay only on an isolated validator host. "
+            "Use replay_sandbox_mode: docker for sandboxed validator replay."
         )
     wallet = _load_wallet(args, config_data)
     runner = build_runner(wallet=wallet, config=config, log=lambda message: print(message))  # noqa: T201
