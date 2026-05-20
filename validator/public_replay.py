@@ -17,6 +17,12 @@ from urllib.request import url2pathname
 
 import requests
 
+from validator.replay_sandbox import (
+    DockerSandboxConfig,
+    SandboxCommandResult,
+    SandboxError,
+    run_replay_in_docker_sandbox,
+)
 from validator.research_validator_client import ReplayJob
 
 
@@ -205,6 +211,8 @@ class PublicReplayEngine:
         allow_local_artifacts: bool = False,
         max_replay_log_chars: int = 128_000,
         local_benchmark_env: dict[str, str] | None = None,
+        replay_sandbox_mode: str = "host",
+        docker_sandbox_config: DockerSandboxConfig | None = None,
     ) -> None:
         self.workspace_root = Path(workspace_root).expanduser().resolve()
         self.allow_unsafe_host_replay = bool(allow_unsafe_host_replay)
@@ -215,10 +223,14 @@ class PublicReplayEngine:
             for key, value in dict(local_benchmark_env or {}).items()
             if str(key).strip()
         }
+        self.replay_sandbox_mode = str(replay_sandbox_mode or "host").strip().lower()
+        self.docker_sandbox_config = docker_sandbox_config or DockerSandboxConfig()
 
     def run(self, job: ReplayJob) -> ReplayResult:
-        if not self.allow_unsafe_host_replay:
+        if self.replay_sandbox_mode == "host" and not self.allow_unsafe_host_replay:
             raise PublicReplayError("host replay is disabled; pass --allow-unsafe-host-replay to run submitted code")
+        if self.replay_sandbox_mode not in {"host", "docker"}:
+            raise PublicReplayError(f"unsupported replay_sandbox_mode: {self.replay_sandbox_mode}")
         spec = ReplaySpec.from_job(job)
         self.workspace_root.mkdir(parents=True, exist_ok=True)
         work_dir = Path(tempfile.mkdtemp(prefix=f"{job.submission_id}-", dir=str(self.workspace_root)))
@@ -336,10 +348,80 @@ class PublicReplayEngine:
             )
 
         setup_result: _CommandResult | None = None
-        if spec.setup_command:
+        result_file_path: Path | None = None
+        replay_surface = "host replay"
+        if self.replay_sandbox_mode == "docker":
+            replay_surface = "docker sandbox"
+            logs.extend(
+                [
+                    "replay_execution_surface=docker_sandbox",
+                    f"docker_sandbox_image={self.docker_sandbox_config.image}",
+                    f"docker_sandbox_gpus={self.docker_sandbox_config.gpus or 'none'}",
+                ]
+            )
             try:
-                setup_result = self._run_command(
-                    spec.setup_command,
+                sandbox_result = run_replay_in_docker_sandbox(
+                    repo_dir=repo_dir,
+                    setup_command=spec.setup_command,
+                    benchmark_command=spec.benchmark_command,
+                    result_path=spec.result_path,
+                    benchmark_env=benchmark_env,
+                    work_dir=repo_dir.parent,
+                    time_budget_seconds=self._remaining_time_seconds(deadline=deadline),
+                    config=self.docker_sandbox_config,
+                )
+            except SandboxError as exc:
+                return self._result(
+                    job,
+                    status="error",
+                    observed_metrics={},
+                    notes=f"Docker sandbox failed during {exc.stage}: {exc.message}",
+                    replay_log="\n".join(logs),
+                )
+            setup_result = self._from_sandbox_command(sandbox_result.setup_result)
+            benchmark_result = self._from_sandbox_command(sandbox_result.benchmark_result)
+            result_file_path = sandbox_result.result_path
+            if setup_result is not None:
+                logs.extend(self._format_command_log("setup", setup_result, redactions=redactions))
+                if setup_result.returncode != 0:
+                    return self._result(
+                        job,
+                        status="error",
+                        observed_metrics={},
+                        notes=f"Setup failed in {replay_surface} | exit={setup_result.returncode}",
+                        replay_log="\n".join(logs),
+                    )
+        else:
+            logs.append("replay_execution_surface=host")
+            if spec.setup_command:
+                try:
+                    setup_result = self._run_command(
+                        spec.setup_command,
+                        cwd=repo_dir,
+                        timeout_seconds=self._remaining_time_seconds(deadline=deadline),
+                        env=benchmark_env,
+                    )
+                except subprocess.TimeoutExpired:
+                    return self._result(
+                        job,
+                        status="error",
+                        observed_metrics={},
+                        notes="Setup exceeded the fixed replay time budget",
+                        replay_log="\n".join(logs),
+                    )
+                logs.extend(self._format_command_log("setup", setup_result, redactions=redactions))
+                if setup_result.returncode != 0:
+                    return self._result(
+                        job,
+                        status="error",
+                        observed_metrics={},
+                        notes=f"Setup failed in {replay_surface} | exit={setup_result.returncode}",
+                        replay_log="\n".join(logs),
+                    )
+
+            try:
+                benchmark_result = self._run_command(
+                    spec.benchmark_command,
                     cwd=repo_dir,
                     timeout_seconds=self._remaining_time_seconds(deadline=deadline),
                     env=benchmark_env,
@@ -349,34 +431,10 @@ class PublicReplayEngine:
                     job,
                     status="error",
                     observed_metrics={},
-                    notes="Setup exceeded the fixed replay time budget",
-                    replay_log="\n".join(logs),
-                )
-            logs.extend(self._format_command_log("setup", setup_result, redactions=redactions))
-            if setup_result.returncode != 0:
-                return self._result(
-                    job,
-                    status="error",
-                    observed_metrics={},
-                    notes=f"Setup failed in host replay | exit={setup_result.returncode}",
+                    notes="Benchmark exceeded the fixed replay time budget",
                     replay_log="\n".join(logs),
                 )
 
-        try:
-            benchmark_result = self._run_command(
-                spec.benchmark_command,
-                cwd=repo_dir,
-                timeout_seconds=self._remaining_time_seconds(deadline=deadline),
-                env=benchmark_env,
-            )
-        except subprocess.TimeoutExpired:
-            return self._result(
-                job,
-                status="error",
-                observed_metrics={},
-                notes="Benchmark exceeded the fixed replay time budget",
-                replay_log="\n".join(logs),
-            )
         logs.extend(self._format_command_log("benchmark", benchmark_result, redactions=redactions))
         combined_output = "\n".join(
             part for part in [benchmark_result.stdout.strip(), benchmark_result.stderr.strip()] if part
@@ -387,7 +445,7 @@ class PublicReplayEngine:
         metric = None
         secondary_metric = None
         if spec.result_path:
-            result_path = repo_dir / spec.result_path
+            result_path = result_file_path or repo_dir / spec.result_path
             try:
                 metric = load_metric_from_result_file(result_path, spec.metric_name)
                 if spec.secondary_metric_name:
@@ -413,7 +471,7 @@ class PublicReplayEngine:
                 job,
                 status=status,
                 observed_metrics={},
-                notes=f"{notes_prefix} in host replay | exit={benchmark_result.returncode}",
+                notes=f"{notes_prefix} in {replay_surface} | exit={benchmark_result.returncode}",
                 replay_log=replay_log,
             )
         if spec.secondary_metric_name and secondary_metric is None:
@@ -421,7 +479,7 @@ class PublicReplayEngine:
                 job,
                 status="error",
                 observed_metrics={},
-                notes=f"Replay missing secondary metric '{spec.secondary_metric_name}' in host replay",
+                notes=f"Replay missing secondary metric '{spec.secondary_metric_name}' in {replay_surface}",
                 replay_log=replay_log,
             )
 
@@ -432,8 +490,17 @@ class PublicReplayEngine:
             job,
             status="accepted",
             observed_metrics=observed_metrics,
-            notes=f"Replay succeeded in host replay | exit={benchmark_result.returncode}",
+            notes=f"Replay succeeded in {replay_surface} | exit={benchmark_result.returncode}",
             replay_log=replay_log,
+        )
+
+    def _from_sandbox_command(self, result: SandboxCommandResult | None) -> _CommandResult | None:
+        if result is None:
+            return None
+        return _CommandResult(
+            returncode=int(result.returncode),
+            stdout=str(result.stdout or ""),
+            stderr=str(result.stderr or ""),
         )
 
     def _clone_repository(self, spec: ReplaySpec, *, dest: Path) -> None:
