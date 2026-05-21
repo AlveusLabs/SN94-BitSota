@@ -12,6 +12,9 @@ The replay runner does not set Bittensor weights and does not talk to the
 Pool/Merkle contract. Chain weights are handled by the separate backend weight
 setter.
 
+If the service boundaries are unfamiliar, read
+[SN94 System Structure](sn94-system-structure.md) first.
+
 ## Endpoints
 
 Production:

@@ -2,6 +2,10 @@
 
 This page is a map of the runtime pieces and how they talk to each other.
 
+For the current validator/operator view of the autoresearch backend, public
+validator runner, backend weight setter, Pool/Merkle claim path, and legacy
+relay boundary, start with [SN94 System Structure](sn94-system-structure.md).
+
 ## Direct mining flow
 
 ```mermaid
@@ -62,4 +66,3 @@ flowchart TB
   Validator[Validator] --> Relay
   Validator --> Chain
 ```
-

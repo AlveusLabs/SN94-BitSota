@@ -9,6 +9,7 @@ BitSota is a decentralized research subnet on Bittensor. This documentation is o
 ## Start here
 
 - [Getting Started](getting-started.md)
+- [SN94 System Structure](sn94-system-structure.md)
 - [Local Testing](local-testing.md)
 - [Configuration Reference](configuration.md)
 - [Research-Agent Mining](research-agent-mining.md)
