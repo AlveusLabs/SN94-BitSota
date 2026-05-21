@@ -299,6 +299,22 @@ class CoordinatorClient:
         task = dict(matches[0])
         if str(participation_style) != "pool":
             return CoordinatorSelection(task=task)
+        claimed_items = self.list_work_items(task_id=str(task.get("id")), status="claimed")
+        if claimed_items:
+            active_claims = self.list_claims(task_id=str(task.get("id")), status="active")
+            active_claims_by_id = {str(row.get("id")): dict(row) for row in active_claims}
+            resumable_items = [
+                dict(row)
+                for row in claimed_items
+                if str(active_claims_by_id.get(str(row.get("claim_id")) or "", {}).get("miner_hotkey") or "")
+                == self.hotkey
+            ]
+            if resumable_items:
+                ordered = sorted(
+                    resumable_items,
+                    key=lambda row: (-int(row.get("priority", 0) or 0), str(row.get("created_at", ""))),
+                )
+                return CoordinatorSelection(task=task, work_item=ordered[0])
         work_items = self.list_work_items(task_id=str(task.get("id")), status="open")
         if not work_items:
             raise CoordinatorApiError("no open work items available for the selected task")
