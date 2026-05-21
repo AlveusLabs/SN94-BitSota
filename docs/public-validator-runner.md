@@ -63,6 +63,14 @@ The config file intentionally does not include holdout dataset names,
 percentages, or sync numbers. Those values come from the backend in the signed
 worklist response after validator auth and on-chain checks pass.
 
+When the backend sends `AUTORESEARCH_HELDOUT_SOURCES_JSON`, the runner fetches
+the Hugging Face rows in the validator host process before starting Docker. It
+then writes `.autoresearch-heldout/manifest.json` into the replay workspace and
+rewrites benchmark env to use `AUTORESEARCH_PRIVATE_HELDOUT_MANIFEST` plus
+`AUTORESEARCH_HELDOUT_DATASET=validator-private-shard`. This keeps published
+task repos compatible with their existing manifest-reader path and prevents the
+benchmark container from needing Hugging Face/network access.
+
 Current backend compatibility:
 
 - The matching backend exposes signed `POST /api/v1/validator/submissions/scan`
@@ -90,8 +98,8 @@ allow_unsafe_host_replay: false
 replay_sandbox_image: "bitsota-research-validator-cuda:local"
 replay_sandbox_dockerfile: "docker/research-validator-cuda.Dockerfile"
 replay_sandbox_gpus: "all"
-replay_sandbox_setup_network_mode: "bridge"
-replay_sandbox_benchmark_network_mode: "bridge"
+replay_sandbox_setup_network_mode: "none"
+replay_sandbox_benchmark_network_mode: "none"
 replay_sandbox_memory_limit: "16g"
 replay_sandbox_pids_limit: 512
 replay_sandbox_workspace_size_bytes: 2147483648
@@ -111,11 +119,12 @@ tmpfs-backed Docker volume, runs the optional setup command and benchmark comman
 in read-only containers, and copies only the configured result file back out.
 The validator wallet and wallet files stay outside the sandbox.
 
-`bridge` networking is the default for setup and benchmark so task repos can
-install dependencies and validator replay can fetch backend-directed Hugging
-Face heldout handles. Operators can set the benchmark network to `none` only
-when every dependency, model, artifact, and heldout byte is already local or
-prefetched.
+Setup and benchmark networking default to `none`: the validator host downloads
+artifacts and backend-directed Hugging Face heldout rows before Docker starts,
+writes them into the replay workspace, strips HF tokens/source JSON from the
+benchmark env, and passes only local file paths to the benchmark container. Task
+repos used for reward-active validation must vendor or prebuild dependencies, or
+operators must explicitly opt into networked setup replay for that task.
 
 Host mode:
 

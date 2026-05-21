@@ -31,6 +31,19 @@ _PATCH_PATH_PATTERN = re.compile(r"^diff --git a/(.+?) b/(.+?)$", re.MULTILINE)
 _DEFAULT_COMMAND_PATH = "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
 _PYTHON_BYTECODE_SUFFIXES = (".pyc", ".pyo")
 DEFAULT_MAX_PATCH_BYTES = 262_144
+HELDOUT_SOURCES_JSON_ENV = "AUTORESEARCH_HELDOUT_SOURCES_JSON"
+HELDOUT_DATASET_ENV = "AUTORESEARCH_HELDOUT_DATASET"
+PRIVATE_HELDOUT_MANIFEST_ENV = "AUTORESEARCH_PRIVATE_HELDOUT_MANIFEST"
+PRIVATE_HELDOUT_ROOT_ENV = "AUTORESEARCH_PRIVATE_HELDOUT_ROOT"
+HELDOUT_SYNC_SLOT_ENV = "AUTORESEARCH_HELDOUT_SYNC_SLOT"
+HELDOUT_SYNC_NUMBER_ENV = "AUTORESEARCH_HELDOUT_SYNC_NUMBER"
+HF_TOKEN_ENV_KEYS = (
+    "AUTORESEARCH_PRIVATE_HELDOUT_HF_TOKEN",
+    "HF_TOKEN",
+    "HUGGINGFACE_TOKEN",
+)
+_HELDOUT_MANIFEST_DIR = ".autoresearch-heldout"
+_HELDOUT_MANIFEST_PATH = f"{_HELDOUT_MANIFEST_DIR}/manifest.json"
 
 
 class PublicReplayError(RuntimeError):
@@ -145,6 +158,196 @@ def load_metric_from_result_file(result_path: Path, metric_name: str) -> float:
         if metric_name in payload:
             return float(payload[metric_name])
     raise ValueError(f"result file missing metric '{metric_name}': {result_path}")
+
+
+def _seed_from_text(value: str) -> int:
+    digest = hashlib.sha256(value.encode("utf-8")).digest()
+    return int.from_bytes(digest[:8], byteorder="big", signed=False)
+
+
+def _text_from_value(value: Any) -> str:
+    if value is None:
+        return ""
+    if isinstance(value, str):
+        return value
+    if isinstance(value, (int, float, bool)):
+        return str(value)
+    if isinstance(value, list):
+        return "\n".join(part for part in (_text_from_value(item) for item in value) if part)
+    if isinstance(value, dict):
+        return "\n".join(
+            part
+            for part in (_text_from_value(value[key]) for key in sorted(value))
+            if part
+        )
+    return str(value)
+
+
+def _positive_int_value(value: Any, default: int, *, max_value: int | None = None) -> int:
+    try:
+        parsed = int(value)
+    except (TypeError, ValueError):
+        parsed = default
+    parsed = parsed if parsed > 0 else default
+    if max_value is not None:
+        parsed = min(parsed, max_value)
+    return parsed
+
+
+def _entry_hf_dataset(entry: dict[str, Any]) -> str:
+    raw_dataset = entry.get("hf_dataset") or entry.get("dataset")
+    if not isinstance(raw_dataset, str) or "/" not in raw_dataset:
+        return ""
+    return raw_dataset.strip()
+
+
+def _entry_is_hf_rows(entry: Any) -> bool:
+    if not isinstance(entry, dict):
+        return False
+    if str(entry.get("source") or "").strip().lower() in {"hf_rows", "huggingface_rows", "dataset_rows"}:
+        return True
+    return bool(
+        _entry_hf_dataset(entry)
+        and str(entry.get("split") or "").strip()
+        and (entry.get("text_column") or entry.get("text_columns"))
+        and not (entry.get("path") or entry.get("file") or entry.get("text"))
+    )
+
+
+def _hf_rows_offset(entry: dict[str, Any], *, limit: int, benchmark_env: dict[str, str]) -> int:
+    base_offset = max(0, int(entry.get("offset") or 0))
+    row_count = int(entry.get("row_count") or entry.get("num_rows_total") or 0)
+    rotate = str(entry.get("rotate") or entry.get("offset_from_sync") or "").strip().lower() in {
+        "1",
+        "true",
+        "yes",
+    }
+    sync_slot = str(benchmark_env.get(HELDOUT_SYNC_SLOT_ENV) or "").strip()
+    sync_number = str(benchmark_env.get(HELDOUT_SYNC_NUMBER_ENV) or "").strip()
+    if not rotate or row_count <= limit or not (sync_slot or sync_number):
+        return base_offset
+    max_offset = max(0, row_count - limit)
+    seed = _seed_from_text(
+        ":".join(
+            [
+                _entry_hf_dataset(entry),
+                str(entry.get("config") or "default"),
+                str(entry.get("split") or ""),
+                str(base_offset),
+                str(limit),
+                sync_slot,
+                sync_number,
+            ]
+        )
+    )
+    return seed % (max_offset + 1)
+
+
+def _hf_token_from_env(benchmark_env: dict[str, str]) -> str:
+    for key in HF_TOKEN_ENV_KEYS:
+        token = str(benchmark_env.get(key) or "").strip()
+        if token:
+            return token
+    return ""
+
+
+def _fetch_hf_rows(
+    *,
+    dataset: str,
+    config: str,
+    split: str,
+    offset: int,
+    length: int,
+    token: str,
+) -> dict[str, Any]:
+    params = {
+        "dataset": dataset,
+        "config": config,
+        "split": split,
+        "offset": str(max(0, int(offset))),
+        "length": str(_positive_int_value(length, 1, max_value=100)),
+    }
+    headers = {"User-Agent": "bitsota-public-validator-heldout/1.0"}
+    if token:
+        headers["Authorization"] = f"Bearer {token}"
+    last_exc: Exception | None = None
+    for attempt in range(3):
+        try:
+            response = requests.get(
+                "https://datasets-server.huggingface.co/rows",
+                params=params,
+                headers=headers,
+                timeout=60,
+            )
+            response.raise_for_status()
+            return dict(response.json())
+        except Exception as exc:
+            last_exc = exc
+            if attempt < 2:
+                time.sleep(1.0 + attempt)
+    raise RuntimeError(f"failed to fetch HF dataset rows for {dataset}/{config}/{split}") from last_exc
+
+
+def _texts_from_hf_rows_entry(
+    entry: dict[str, Any],
+    *,
+    benchmark_env: dict[str, str],
+) -> list[str]:
+    dataset = _entry_hf_dataset(entry)
+    if not dataset:
+        raise RuntimeError("HF rows heldout entry requires dataset or hf_dataset")
+    config = str(entry.get("config") or entry.get("subset") or "default").strip() or "default"
+    split = str(entry.get("split") or "").strip()
+    if not split:
+        raise RuntimeError("HF rows heldout entry requires split")
+    raw_columns = entry.get("text_columns", entry.get("text_column"))
+    columns = (
+        [str(column).strip() for column in raw_columns if str(column).strip()]
+        if isinstance(raw_columns, list)
+        else [str(raw_columns or "").strip()]
+    )
+    columns = [column for column in columns if column]
+    if not columns:
+        raise RuntimeError("HF rows heldout entry requires text_column or text_columns")
+
+    limit = _positive_int_value(entry.get("limit", entry.get("page_size", 100)), 100)
+    page_size = _positive_int_value(entry.get("page_size", min(limit, 100)), min(limit, 100), max_value=100)
+    offset = _hf_rows_offset(entry, limit=limit, benchmark_env=benchmark_env)
+    min_chars = max(0, int(entry.get("min_chars") or 1))
+    max_chars = max(1, int(entry.get("max_chars") or 6000))
+    separator = str(entry.get("field_separator") or "\n\n")
+    token = _hf_token_from_env(benchmark_env)
+
+    texts: list[str] = []
+    fetched = 0
+    while fetched < limit:
+        batch_size = min(page_size, limit - fetched)
+        payload = _fetch_hf_rows(
+            dataset=dataset,
+            config=config,
+            split=split,
+            offset=offset + fetched,
+            length=batch_size,
+            token=token,
+        )
+        rows = payload.get("rows")
+        if not isinstance(rows, list) or not rows:
+            break
+        for row_payload in rows:
+            row = row_payload.get("row") if isinstance(row_payload, dict) else None
+            if not isinstance(row, dict):
+                continue
+            parts = [_text_from_value(row.get(column)).strip() for column in columns]
+            text = separator.join(part for part in parts if part).strip()
+            if len(text) < min_chars:
+                continue
+            texts.append(text[:max_chars])
+        fetched += len(rows)
+        if len(rows) < batch_size:
+            break
+    if not texts:
+        raise RuntimeError(f"HF rows heldout entry produced no text for {dataset}/{config}/{split}")
+    return texts
 
 
 def _normalize_patch_path(raw: str) -> str | None:
@@ -336,6 +539,11 @@ class PublicReplayEngine:
                 repo_dir=repo_dir,
                 benchmark_env=benchmark_env,
                 required=self._artifact_required(submission, benchmark_env),
+                logs=logs,
+            )
+            self._materialize_backend_heldout(
+                repo_dir=repo_dir,
+                benchmark_env=benchmark_env,
                 logs=logs,
             )
         except (subprocess.SubprocessError, OSError, RuntimeError) as exc:
@@ -591,6 +799,85 @@ class PublicReplayEngine:
                 f"submission_artifact_path={artifact_path}",
                 f"submission_artifact_sha256={digest}",
                 f"submission_artifact_bytes={artifact_bytes}",
+            ]
+        )
+
+    def _materialize_backend_heldout(
+        self,
+        *,
+        repo_dir: Path,
+        benchmark_env: dict[str, str],
+        logs: list[str],
+    ) -> None:
+        raw_sources = str(benchmark_env.get(HELDOUT_SOURCES_JSON_ENV) or "").strip()
+        if not raw_sources:
+            return
+        try:
+            payload = json.loads(raw_sources)
+        except json.JSONDecodeError as exc:
+            raise RuntimeError(f"{HELDOUT_SOURCES_JSON_ENV} is invalid JSON") from exc
+        entries = payload.get("documents") if isinstance(payload, dict) else payload
+        if not isinstance(entries, list) or not entries:
+            raise RuntimeError(f"{HELDOUT_SOURCES_JSON_ENV} must contain a non-empty documents list")
+
+        documents: list[dict[str, str]] = []
+        source_count = 0
+        for entry in entries:
+            if isinstance(entry, str):
+                text = entry.strip()
+                if text:
+                    documents.append({"text": text})
+                continue
+            if not isinstance(entry, dict):
+                continue
+            category = str(entry.get("category") or entry.get("dataset") or "").strip()
+            if _entry_is_hf_rows(entry):
+                texts = _texts_from_hf_rows_entry(entry, benchmark_env=benchmark_env)
+                source_count += 1
+                for text in texts:
+                    row: dict[str, str] = {"text": text}
+                    if category:
+                        row["category"] = category
+                    documents.append(row)
+                continue
+            text = str(entry.get("text") or "").strip()
+            if text:
+                row = {"text": text}
+                if category:
+                    row["category"] = category
+                documents.append(row)
+
+        if not documents:
+            raise RuntimeError(f"{HELDOUT_SOURCES_JSON_ENV} produced no heldout documents")
+
+        heldout_dir = repo_dir / _HELDOUT_MANIFEST_DIR
+        manifest_path = repo_dir / _HELDOUT_MANIFEST_PATH
+        heldout_dir.mkdir(parents=True, exist_ok=True)
+        manifest_payload = {
+            "documents": documents,
+            "metadata": {
+                "source": "validator-prefetched-backend-heldout",
+                "source_version": str(payload.get("version") or "") if isinstance(payload, dict) else "",
+                "source_count": source_count,
+            },
+        }
+        manifest_path.write_text(json.dumps(manifest_payload, separators=(",", ":")), encoding="utf-8")
+
+        benchmark_env[PRIVATE_HELDOUT_MANIFEST_ENV] = _HELDOUT_MANIFEST_PATH
+        benchmark_env[PRIVATE_HELDOUT_ROOT_ENV] = _HELDOUT_MANIFEST_DIR
+        benchmark_env[HELDOUT_DATASET_ENV] = "validator-private-shard"
+        benchmark_env.pop(HELDOUT_SOURCES_JSON_ENV, None)
+        for key in HF_TOKEN_ENV_KEYS:
+            benchmark_env.pop(key, None)
+
+        digest = hashlib.sha256(manifest_path.read_bytes()).hexdigest()
+        logs.extend(
+            [
+                "heldout_prefetch=ok",
+                f"heldout_prefetch_sources={source_count}",
+                f"heldout_prefetch_documents={len(documents)}",
+                f"heldout_prefetch_manifest={_HELDOUT_MANIFEST_PATH}",
+                f"heldout_prefetch_manifest_sha256={digest}",
             ]
         )
 
