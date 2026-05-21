@@ -1,23 +1,22 @@
 # Public Autoresearch Validator Runner
 
-SN94 exposes a public validator runner so an operator can validate
-autoresearch submissions without running the private coordinator database
-worker. The normal path is a signed backend worklist scan:
+This is the operator runbook for a public SN94 validator. A working production
+validator host runs two background processes:
 
-1. The validator calls `POST /api/v1/validator/submissions/scan`.
-2. It replays every returned submission with the returned `replay_spec`.
-3. It posts observed metrics to `POST /api/v1/validator/jobs/{job_id}/result`.
+1. Replay validator: asks the autoresearch backend for submissions, replays them
+   in Docker/CUDA, and posts observed metrics back to the backend.
+2. Backend weight setter: reads the backend reward policy and submits Bittensor
+   `set_weights` from the validator hotkey.
 
-The replay runner does not set Bittensor weights and does not talk to the
-Pool/Merkle contract. Chain weights are handled by the separate backend weight
-setter.
+The replay validator does not need the private backend database, AWS access,
+Pool publisher keys, or Merkle contract owner keys.
 
 If the service boundaries are unfamiliar, read
 [SN94 System Structure](sn94-system-structure.md) first.
 
-## Endpoints
+## Production Values
 
-Production:
+Use these values for SN94 production:
 
 ```text
 autoresearch backend: https://autoresearch.bitsota.com
@@ -26,20 +25,14 @@ SN94 netuid: 94
 production contract-hotkey target: 5F7MJ2fAyxBG7ci4xP7kQPJanoMdNurk1QBP1AQuFT2Jmzg2
 ```
 
-Testing:
+Testing uses `https://autoresearch-test.bitsota.com`, but production validators
+should use `https://autoresearch.bitsota.com`.
 
-```text
-autoresearch backend: https://autoresearch-test.bitsota.com
-raw test backend: https://chvp2wytst.eu-central-1.awsapprunner.com
-```
-
-The example replay config defaults to the raw testing backend. Change
-`coordinator_url` before running against production.
-
-## Fresh Validator Host
+## 1. Prepare The Host
 
 Use an Ubuntu GPU host with NVIDIA drivers, Docker, and NVIDIA Container
-Toolkit. The replay path expects CUDA to be available inside Docker.
+Toolkit. The validator replays untrusted miner work inside Docker with CUDA GPU
+access.
 
 Install baseline packages:
 
@@ -50,20 +43,19 @@ sudo usermod -aG docker "$USER"
 ```
 
 Install NVIDIA Container Toolkit using NVIDIA's official Ubuntu instructions
-for the host OS, then restart Docker. The current validator smoke requirement is
-that this command succeeds:
+for your Ubuntu version, then restart Docker and log out/back in.
+
+These two commands must both work before continuing:
 
 ```bash
 nvidia-smi
 docker run --rm --gpus all nvidia/cuda:12.4.1-base-ubuntu22.04 nvidia-smi
 ```
 
-Log out and back in after adding the Docker group.
+## 2. Install SN94-BitSota
 
-## Clone And Install
-
-Clone `main`. Production vs testing is selected later by `coordinator_url`, not
-by the Git branch name.
+Clone `main`. This gives you the validator code. Step 4 sets the production
+backend URL in the config.
 
 ```bash
 sudo mkdir -p /opt/bitsota
@@ -79,20 +71,23 @@ pip install -r requirements.txt
 pip install -e .
 ```
 
-If the repo already exists on the host, update it instead:
+If the repo already exists on the host, update it:
 
 ```bash
 cd /opt/bitsota/SN94-BitSota
 git checkout main
 git pull --ff-only origin main
+source .venv/bin/activate
+pip install -r requirements.txt
+pip install -e .
 ```
 
-## Wallets
+## 3. Prepare The Validator Wallet
 
-Create or restore a Bittensor wallet whose hotkey is registered on SN94. The
-backend must allowlist this validator hotkey before signed scans return private
-work. The same hotkey can run replay validation and backend-directed weight
-setting, but do not run multiple weight setters on the same hotkey.
+Use a Bittensor wallet whose hotkey is registered on SN94. The backend must
+allowlist this validator hotkey before signed validator scans return work.
+
+Create a new wallet and hotkey:
 
 ```bash
 btcli wallet new_coldkey --wallet.name validator_wallet
@@ -100,18 +95,21 @@ btcli wallet new_hotkey --wallet.name validator_wallet --wallet.hotkey validator
 btcli subnet register --netuid 94 --wallet.name validator_wallet --wallet.hotkey validator_hotkey --network finney
 ```
 
-Existing validators can restore/import instead of creating new keys. Do not put
-mnemonics in tracked config files.
+Existing validators can restore/import their real validator wallet instead. Do
+not put mnemonics in tracked config files.
 
-## Replay Validator Config
+## 4. Configure Replay Validation
 
-Copy the example config:
+Create the replay validator config:
 
 ```bash
+cd /opt/bitsota/SN94-BitSota
 cp research_validator_config.yaml.example research_validator_config.yaml
 ```
 
-Production replay config:
+Edit `research_validator_config.yaml` so it contains these production settings.
+Replace `validator_wallet` and `validator_hotkey` with the local wallet names on
+this host:
 
 ```yaml
 coordinator_url: "https://autoresearch.bitsota.com"
@@ -138,191 +136,76 @@ replay_sandbox_workspace_size_bytes: 17179869184
 
 allow_unsafe_host_replay: false
 allow_local_artifacts: false
-dry_run: true
+dry_run: false
 ```
 
-Dry-run one backend validation cycle:
+Run one validation cycle to confirm the wallet, backend allowlist, Docker, and
+CUDA setup are correct:
 
 ```bash
+cd /opt/bitsota/SN94-BitSota
 source .venv/bin/activate
-python -m validator.research_validator_runner --config research_validator_config.yaml --once --dry-run
-```
-
-Run one real cycle:
-
-```bash
 python -m validator.research_validator_runner --config research_validator_config.yaml --once --no-dry-run
 ```
 
-Run continuously:
+If this fails with an allowlist or auth error, the backend operator needs to add
+the validator hotkey to the backend validator allowlist.
+
+## 5. Configure Chain Weight Setting
+
+Create a weight-setter config:
 
 ```bash
-python -m validator.research_validator_runner --config research_validator_config.yaml --no-dry-run
+cd /opt/bitsota/SN94-BitSota
+cp validator_config.yaml.example validator_config.weights.yaml
 ```
 
-Equivalent entrypoints:
-
-```bash
-python scripts/research_validator_runner.py --config research_validator_config.yaml
-bitsota-research-validator --config research_validator_config.yaml
-```
-
-## Replay Options
-
-- `--config`: read runner, wallet, and replay settings from a YAML, `.config`,
-  or JSON file. CLI flags override config-file values.
-- `--task-slug` or `--task-id`: restrict replay to one task.
-- `--hotkey-mnemonic` or `--wallet-file`: use the same SN94 wallet input helpers
-  as the research-agent miner.
-- `--dry-run` / `--no-dry-run`: replay locally without posting results, or post
-  results back to the backend.
-- `--replay-sandbox-mode`: `docker` runs setup and benchmark commands inside
-  the Docker/CUDA sandbox. `host` requires `--allow-unsafe-host-replay`.
-- `--replay-sandbox-gpus`: Docker `--gpus` value. Use `all` on a CUDA validator
-  host.
-- `--claim-path`: override the signed backend worklist endpoint only when a
-  backend operator explicitly asks you to.
-- `--allow-local-artifacts`: allow `file://` or relative artifact URIs during
-  local testing only.
-
-## Heldout Delivery
-
-The config file intentionally does not include heldout dataset names,
-percentages, or sync numbers. Those values come from the backend in the signed
-worklist response after validator auth and on-chain checks pass.
-
-When the backend sends `AUTORESEARCH_HELDOUT_SOURCES_JSON`, the runner fetches
-the Hugging Face rows in the validator host process before starting Docker. It
-then writes `.autoresearch-heldout/manifest.json` into the replay workspace and
-rewrites benchmark env to:
-
-```text
-AUTORESEARCH_HELDOUT_DATASET=validator-private-shard
-AUTORESEARCH_PRIVATE_HELDOUT_MANIFEST=.autoresearch-heldout/manifest.json
-AUTORESEARCH_PRIVATE_HELDOUT_ROOT=.autoresearch-heldout
-```
-
-The runner strips `AUTORESEARCH_HELDOUT_SOURCES_JSON` and Hugging Face token
-env vars before Docker starts. The benchmark container should not need network
-access.
-
-## Docker/CUDA Sandbox
-
-Recommended replay uses Docker mode:
+Edit `validator_config.weights.yaml` so it uses the same validator wallet and
+SN94 production chain:
 
 ```yaml
-replay_sandbox_mode: "docker"
-allow_unsafe_host_replay: false
-replay_sandbox_image: "bitsota-research-validator-cuda:local"
-replay_sandbox_dockerfile: "docker/research-validator-cuda.Dockerfile"
-replay_sandbox_gpus: "all"
-replay_sandbox_setup_network_mode: "none"
-replay_sandbox_benchmark_network_mode: "none"
-replay_sandbox_memory_limit: "32g"
-replay_sandbox_pids_limit: 512
-replay_sandbox_workspace_size_bytes: 17179869184
+netuid: 94
+wallet_name: "validator_wallet"
+wallet_hotkey: "validator_hotkey"
+path: "~/.bittensor/wallets/"
+network: "finney"
+subtensor_chain_endpoint: "wss://entrypoint-finney.opentensor.ai:443"
+epoch_length: 100
+
+weights:
+  wait_for_inclusion: true
+  wait_for_finalization: false
 ```
 
-The sandbox image is built automatically from
-`docker/research-validator-cuda.Dockerfile` if the configured tag does not
-already exist. The runner copies only the prepared replay workspace into a
-tmpfs-backed Docker volume, runs setup and benchmark commands in read-only
-containers, and copies only the configured result file back out. Wallets and
-wallet files stay outside the sandbox.
-
-Setup and benchmark networking default to `none`. The validator host downloads
-submission artifacts and backend-directed heldout rows before Docker starts.
-Reward-active task repos must have dependencies available through the sandbox
-image/workspace, or the operator must explicitly opt into networked setup for
-that task.
-
-Host mode executes submitted setup and benchmark commands directly on the
-validator machine and requires `allow_unsafe_host_replay: true`. Use host mode
-only for local development or a disposable isolated machine.
-
-## Backend API
-
-- The backend exposes signed `POST /api/v1/validator/submissions/scan` and
-  `POST /api/v1/validator/jobs/{job_id}/result`.
-- The worklist response includes validator-only replay parameters, including
-  hidden heldout handles and sync numbers. Validators do not need production DB,
-  App Runner, or admin credentials.
-- Public task and submission APIs do not include backend-private replay values.
-  Reward-active validation should use the signed validator worklist endpoint.
-
-Use the signed validator worklist endpoint for reward-active competitions.
-
-## Patch Surface
-
-Patch-surface enforcement happens before replay. The public runner rejects:
-
-- any submitted patch path outside task `allowed_patch_paths`;
-- generated Python bytecode/cache paths;
-- patches larger than `max_patch_bytes` when provided by backend/task.
-
-The default patch cap is `262144` bytes.
-
-## Backend-Controlled Chain Weights
-
-The public replay runner only evaluates submissions and posts results back to
-the autoresearch backend. Chain weight setting is a separate process. Do not
-run two processes that both call `set_weights` for the same validator hotkey
-unless you intentionally want them to race.
-
-The standalone backend weight setter reads `reward_policy.validator_weights`
-from `GET /api/v1/reward-snapshot`, resolves backend UID/hotkey targets through
-the SN94 metagraph, normalizes target weights to sum to `1.0`, and calls the
-existing Bittensor `set_weights` path.
-
-Dry-run the backend policy:
+Run one weight update:
 
 ```bash
+cd /opt/bitsota/SN94-BitSota
+source .venv/bin/activate
 python scripts/autoresearch_weight_setter.py \
-  --config validator_config.yaml \
-  --coordinator-url https://autoresearch.bitsota.com \
-  --dry-run
-```
-
-Run one real update:
-
-```bash
-python scripts/autoresearch_weight_setter.py \
-  --config validator_config.yaml \
+  --config validator_config.weights.yaml \
   --coordinator-url https://autoresearch.bitsota.com
 ```
 
-Run continuously:
-
-```bash
-python scripts/autoresearch_weight_setter.py \
-  --config validator_config.yaml \
-  --coordinator-url https://autoresearch.bitsota.com \
-  --loop \
-  --interval-seconds 300
-```
-
-Installed package entrypoint:
-
-```bash
-bitsota-autoresearch-weights --config validator_config.yaml --coordinator-url https://autoresearch.bitsota.com
-```
-
-Supported backend modes:
-
-- `local`: no-op; leave weights unchanged.
-- `burn_uid0`: set `100%` to UID `0`.
-- `targets`: use backend-provided `targets`, where each target has exactly one
-  of `uid` or `hotkey` plus a positive `weight`.
-
-For the production contract-hotkey path, the backend target set should include:
+The backend policy should include the production contract-hotkey target:
 
 ```text
 5F7MJ2fAyxBG7ci4xP7kQPJanoMdNurk1QBP1AQuFT2Jmzg2
 ```
 
-## Systemd Unit For Replay Validator
+Do not run any other process that also calls `set_weights` for the same
+validator hotkey.
 
-```ini
+## 6. Keep The Validator Running
+
+On Ubuntu, `systemd` is the standard background-process manager. A `systemd
+unit` is just a config file that says: start this command on boot, restart it if
+it crashes, and let me inspect logs with `journalctl`.
+
+Install a background service for replay validation:
+
+```bash
+sudo tee /etc/systemd/system/bitsota-replay-validator.service >/dev/null <<'EOF'
 [Unit]
 Description=BitSota autoresearch replay validator
 After=docker.service network-online.target
@@ -337,12 +220,13 @@ RestartSec=10
 
 [Install]
 WantedBy=multi-user.target
+EOF
 ```
 
-Systemd unit for backend-policy weights, only if that process is meant to own
-chain weights for this validator hotkey:
+Install a background service for backend-directed chain weights:
 
-```ini
+```bash
+sudo tee /etc/systemd/system/bitsota-backend-weights.service >/dev/null <<'EOF'
 [Unit]
 Description=BitSota backend-policy validator weights
 After=network-online.target
@@ -351,10 +235,53 @@ Wants=network-online.target
 [Service]
 WorkingDirectory=/opt/bitsota/SN94-BitSota
 Environment=PYTHONUNBUFFERED=1
-ExecStart=/opt/bitsota/SN94-BitSota/.venv/bin/python -m validator.backend_weight_setter --config /opt/bitsota/SN94-BitSota/validator_config.yaml --coordinator-url https://autoresearch.bitsota.com --loop --interval-seconds 300
+ExecStart=/opt/bitsota/SN94-BitSota/.venv/bin/python -m validator.backend_weight_setter --config /opt/bitsota/SN94-BitSota/validator_config.weights.yaml --coordinator-url https://autoresearch.bitsota.com --loop --interval-seconds 300
 Restart=always
 RestartSec=10
 
 [Install]
 WantedBy=multi-user.target
+EOF
 ```
+
+Start both services and enable them after reboot:
+
+```bash
+sudo systemctl daemon-reload
+sudo systemctl enable --now bitsota-replay-validator.service
+sudo systemctl enable --now bitsota-backend-weights.service
+```
+
+Check that both are running:
+
+```bash
+systemctl status bitsota-replay-validator.service --no-pager
+systemctl status bitsota-backend-weights.service --no-pager
+```
+
+Watch live logs:
+
+```bash
+journalctl -u bitsota-replay-validator.service -f
+journalctl -u bitsota-backend-weights.service -f
+```
+
+## What The Runner Does With Heldout Data
+
+The backend sends validator-only heldout dataset instructions in the signed
+worklist response. The validator host fetches those Hugging Face rows before
+Docker starts, writes `.autoresearch-heldout/manifest.json` into the replay
+workspace, and passes only local manifest paths into the benchmark container.
+
+The benchmark container should not need internet access. Setup and benchmark
+networking default to `none`.
+
+## Patch-Surface Enforcement
+
+Before replay, the validator rejects:
+
+- submitted patch paths outside task `allowed_patch_paths`;
+- generated Python bytecode/cache paths;
+- patches larger than `max_patch_bytes` when provided by the backend or task.
+
+The default patch cap is `262144` bytes.
