@@ -1,12 +1,15 @@
 # Public Autoresearch Validator Runner
 
 This is the operator runbook for a public SN94 validator. A working production
-validator host runs two background processes:
+validator host runs two SN94 processes plus a Pool/Merkle contract check:
 
 1. Replay validator: asks the autoresearch backend for submissions, replays them
    in Docker/CUDA, and posts observed metrics back to the backend.
 2. Backend weight setter: reads the backend reward policy and submits Bittensor
    `set_weights` from the validator hotkey.
+3. Contract monitor/verifier: checks that Pool/Merkle publication and the
+   on-chain contract state are healthy. Vetoer operators can also run the
+   challenge-capable Pool verifier with their own key.
 
 The replay validator does not need the private backend database, AWS access,
 Pool publisher keys, or Merkle contract owner keys.
@@ -196,7 +199,94 @@ The backend policy should include the production contract-hotkey target:
 Do not run any other process that also calls `set_weights` for the same
 validator hotkey.
 
-## 6. Keep The Validator Running
+## 6. Check The Pool/Merkle Contract
+
+This is the contract-side check. It lives in the `Pool` repo because Pool owns
+Merkle publication, proof serving, and contract challenge logic.
+
+First check the live production Pool/contract state:
+
+```bash
+POOL_STATUS_URL="https://fsypi2vmmz.eu-central-1.awsapprunner.com/status"
+POOL_CLAIMS_URL="https://fsypi2vmmz.eu-central-1.awsapprunner.com/claims"
+
+curl -fsS "$POOL_STATUS_URL" | python3 -m json.tool
+curl -fsS "$POOL_CLAIMS_URL/epochs" | python3 -m json.tool
+```
+
+In the status output:
+
+- `onchain_runtime.enabled` should be `true`;
+- `onchain_runtime.contract_status.read_error` should be `null`;
+- `onchain_runtime.contract_status.is_veto_active` should normally be `false`;
+- `onchain_runtime.processes` should show the Pool publisher running;
+- `/claims/epochs` should list a claimable epoch after Pool publishes a
+  non-empty Merkle root.
+
+For challenge-capable verification, the validator also needs the Pool verifier.
+Run this only if the operator has given you the required private inputs:
+
+- a verifier/vetoer SURI whose SS58 address is allowlisted in the Merkle
+  contract;
+- a read-only Pool `DATABASE_URL` or an approved local replica of the reward
+  input database;
+- access to the same epoch artifact directory/feed that the Pool publisher uses.
+
+Install the Pool verifier code:
+
+```bash
+git clone --branch production https://github.com/AlveusLabs/Pool.git /opt/bitsota/Pool
+cd /opt/bitsota/Pool
+
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -U pip
+pip install -r requirements.txt
+```
+
+Create the verifier secret file. Fill in only values the operator assigned to
+this validator:
+
+```bash
+sudo install -d -m 0750 /etc/bitsota
+sudo tee /etc/bitsota/pool-contract-verifier.env >/dev/null <<'EOF'
+DATABASE_URL=postgresql://READ_ONLY_POOL_DB_URL
+ONCHAIN_WS_URL=wss://entrypoint-finney.opentensor.ai:443
+ONCHAIN_CONTRACT=5CUo48Vuwidb4pTogCCqAeYyMRUwNieTjeEL8FyYvwmQ9XA5
+ONCHAIN_SURI=REPLACE_WITH_VALIDATOR_VETOER_SURI
+ONCHAIN_METADATA=/opt/bitsota/Pool/new_merkle/app/assets/merklepool.json
+ONCHAIN_STAKE_CONTRACT_HOTKEY=5F7MJ2fAyxBG7ci4xP7kQPJanoMdNurk1QBP1AQuFT2Jmzg2
+ONCHAIN_STAKE_NETUID=94
+AUTORESEARCH_REWARD_SNAPSHOT_URL=https://autoresearch.bitsota.com/api/v1/reward-snapshot
+POOL_COMPETITION_WEIGHT=1.0
+STAKE_GAIN_SOURCE=contract_reserve
+VERIFY_BOOTSTRAP_MODE=history_then_latest_non_vetoed
+EOF
+sudo chmod 0600 /etc/bitsota/pool-contract-verifier.env
+```
+
+Run one foreground verifier pass:
+
+```bash
+cd /opt/bitsota/Pool
+source .venv/bin/activate
+set -a
+source /etc/bitsota/pool-contract-verifier.env
+set +a
+
+python -u scripts/consensus_daemon.py \
+  --mode verify \
+  --node-id contract-verifier \
+  --out-dir /srv/bitsota/pool-epochs \
+  --poll-s 60 \
+  --verify-bootstrap-mode history_then_latest_non_vetoed
+```
+
+If `/srv/bitsota/pool-epochs` is empty and the operator has not provided an
+epoch artifact sync/feed, the verifier has nothing to compare yet. Do not treat
+an idle verifier as proof that the contract is checked.
+
+## 7. Keep The Validator Running
 
 On Ubuntu, `systemd` is the standard background-process manager. A `systemd
 unit` is just a config file that says: start this command on boot, restart it if
@@ -244,19 +334,45 @@ WantedBy=multi-user.target
 EOF
 ```
 
-Start both services and enable them after reboot:
+If this validator is also running the challenge-capable Pool verifier, install
+its background service:
+
+```bash
+sudo tee /etc/systemd/system/bitsota-contract-verifier.service >/dev/null <<'EOF'
+[Unit]
+Description=BitSota Pool/Merkle contract verifier
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+WorkingDirectory=/opt/bitsota/Pool
+Environment=PYTHONUNBUFFERED=1
+EnvironmentFile=/etc/bitsota/pool-contract-verifier.env
+ExecStart=/opt/bitsota/Pool/.venv/bin/python -u scripts/consensus_daemon.py --mode verify --node-id contract-verifier --out-dir /srv/bitsota/pool-epochs --poll-s 60 --verify-bootstrap-mode history_then_latest_non_vetoed
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target
+EOF
+```
+
+Start the services and enable them after reboot:
 
 ```bash
 sudo systemctl daemon-reload
 sudo systemctl enable --now bitsota-replay-validator.service
 sudo systemctl enable --now bitsota-backend-weights.service
+# Only run this one after the Pool verifier prerequisites in step 6 are filled.
+sudo systemctl enable --now bitsota-contract-verifier.service
 ```
 
-Check that both are running:
+Check that the services are running:
 
 ```bash
 systemctl status bitsota-replay-validator.service --no-pager
 systemctl status bitsota-backend-weights.service --no-pager
+systemctl status bitsota-contract-verifier.service --no-pager
 ```
 
 Watch live logs:
@@ -264,6 +380,7 @@ Watch live logs:
 ```bash
 journalctl -u bitsota-replay-validator.service -f
 journalctl -u bitsota-backend-weights.service -f
+journalctl -u bitsota-contract-verifier.service -f
 ```
 
 ## What The Runner Does With Heldout Data
