@@ -17,9 +17,13 @@ RUN apt-get update \
 
 RUN python -m pip install --upgrade pip setuptools wheel \
     && python -m pip install --no-cache-dir \
+        accelerate==1.12.0 \
         numpy==2.3.5 \
         PyYAML==6.0.3 \
         requests==2.32.5 \
+        safetensors==0.7.0 \
+        tokenizers==0.22.1 \
+        transformers==4.57.6 \
         uv
 
 WORKDIR /workspace
