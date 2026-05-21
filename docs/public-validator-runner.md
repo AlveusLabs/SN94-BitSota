@@ -137,6 +137,56 @@ replay parameters. The script signs `/verify` requests with the validator hotkey
 in fallback mode and signs validator job requests in the default mode. The
 backend still enforces validator allowlisting.
 
+Backend-controlled chain weights:
+
+The public replay runner only evaluates submissions and posts results back to
+the autoresearch backend. Chain weight setting is a separate script that reads
+`reward_policy.validator_weights` from `GET /api/v1/reward-snapshot`, resolves
+backend UID/hotkey targets through the SN94 metagraph, normalizes the backend
+percentages to sum to `1.0`, and calls the existing Bittensor `set_weights`
+path.
+
+Dry-run the backend policy first:
+
+```bash
+python scripts/autoresearch_weight_setter.py \
+  --config validator_config.yaml \
+  --coordinator-url https://autoresearch.bitsota.com \
+  --dry-run
+```
+
+Run one real weight update:
+
+```bash
+python scripts/autoresearch_weight_setter.py \
+  --config validator_config.yaml \
+  --coordinator-url https://autoresearch.bitsota.com
+```
+
+Run continuously:
+
+```bash
+python scripts/autoresearch_weight_setter.py \
+  --config validator_config.yaml \
+  --coordinator-url https://autoresearch.bitsota.com \
+  --loop \
+  --interval-seconds 300
+```
+
+Installed package entrypoint:
+
+```bash
+bitsota-autoresearch-weights --config validator_config.yaml --coordinator-url https://autoresearch.bitsota.com
+```
+
+Supported backend modes:
+
+- `local`: no-op; leave local validator weight logic unchanged.
+- `burn_uid0`: set `100%` to UID `0`.
+- `targets`: use backend-provided `targets`, where each target has exactly one
+  of `uid` or `hotkey` plus a positive `weight`. The script normalizes those
+  values, so `80/20` and `0.8/0.2` are equivalent.
+
 Patch-surface enforcement is strict before replay. The public runner rejects any
 submitted patch path that is not in the task `allowed_patch_paths`, rejects
 generated Python bytecode/cache paths, and rejects patches larger than
