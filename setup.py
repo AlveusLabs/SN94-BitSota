@@ -21,6 +21,7 @@ setuptools.setup(
         "console_scripts": [
             "bitsota-research-agent=neurons.research_agent_miner:main",
             "bitsota-research-validator=validator.research_validator_runner:main",
+            "bitsota-autoresearch-weights=validator.backend_weight_setter:main",
         ],
     },
 )
