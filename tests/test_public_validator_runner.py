@@ -540,7 +540,10 @@ def test_public_replay_engine_uses_docker_sandbox_without_host_replay(
         calls.append(kwargs)
         result_path = kwargs["work_dir"] / "sandbox-results" / "result.json"
         result_path.parent.mkdir(parents=True, exist_ok=True)
-        result_path.write_text('{"metrics": {"score": 4.0}}', encoding="utf-8")
+        result_path.write_text(
+            '{"metrics": {"score": 4.0, "compressed_size_bytes": 12345}}',
+            encoding="utf-8",
+        )
         return SandboxedReplayResult(
             setup_result=None,
             benchmark_result=SandboxCommandResult(returncode=0, stdout="score=4.0\n", stderr=""),
@@ -559,7 +562,7 @@ def test_public_replay_engine_uses_docker_sandbox_without_host_replay(
     result = engine.run(job)
 
     assert result.status == "accepted"
-    assert result.observed_metrics == {"score": 4.0}
+    assert result.observed_metrics == {"score": 4.0, "compressed_size_bytes": 12345.0}
     assert "Replay succeeded in docker sandbox" in result.notes
     assert "replay_execution_surface=docker_sandbox" in result.replay_log
     assert "secret-split" not in result.replay_log
