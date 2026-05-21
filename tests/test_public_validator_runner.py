@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 from pathlib import Path
 import py_compile
@@ -694,6 +695,40 @@ def test_public_replay_engine_prefetches_backend_heldout_for_docker(
     ]
     assert "heldout_prefetch=ok" in result.replay_log
     assert "secret-hf-token" not in result.replay_log
+
+
+def test_remote_artifact_accepts_gzip_transfer_content_length(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    artifact = b'{"artifact_version":1,"payload":"smoke"}'
+
+    class _CompressedResponse:
+        status_code = 200
+        headers = {
+            "Content-Length": "12",
+            "Content-Encoding": "gzip",
+        }
+
+        def iter_content(self, chunk_size: int):  # type: ignore[no-untyped-def]
+            assert chunk_size > 0
+            yield artifact
+
+    def fake_get(*args, **kwargs):  # type: ignore[no-untyped-def]
+        assert kwargs["allow_redirects"] is False
+        return _CompressedResponse()
+
+    monkeypatch.setattr(public_replay_module.requests, "get", fake_get)
+    engine = PublicReplayEngine(workspace_root=tmp_path / "workspaces")
+
+    size, digest = engine._download_remote_artifact(
+        "https://example.test/artifact.json",
+        dest=tmp_path / "artifact.json",
+        expected_size_bytes=len(artifact),
+    )
+
+    assert size == len(artifact)
+    assert digest == hashlib.sha256(artifact).hexdigest()
 
 
 def test_public_replay_engine_passes_local_validator_benchmark_env(tmp_path: Path) -> None:

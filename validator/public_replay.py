@@ -893,8 +893,9 @@ class PublicReplayEngine:
             raise RuntimeError(f"submission artifact download failed: HTTP {response.status_code}")
         if response.status_code in {301, 302, 303, 307, 308}:
             raise RuntimeError("submission artifact redirects are not allowed")
+        content_encoding = str(response.headers.get("Content-Encoding") or "").strip().lower()
         content_length = response.headers.get("Content-Length")
-        if content_length:
+        if content_length and content_encoding in {"", "identity"}:
             try:
                 remote_size = int(content_length)
             except ValueError:
