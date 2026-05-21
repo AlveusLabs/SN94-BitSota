@@ -35,8 +35,8 @@ class PublicValidatorRunnerConfig:
     replay_sandbox_image: str = "bitsota-research-validator-cuda:local"
     replay_sandbox_dockerfile: str = "docker/research-validator-cuda.Dockerfile"
     replay_sandbox_gpus: str = ""
-    replay_sandbox_setup_network_mode: str = "bridge"
-    replay_sandbox_benchmark_network_mode: str = "bridge"
+    replay_sandbox_setup_network_mode: str = "none"
+    replay_sandbox_benchmark_network_mode: str = "none"
     replay_sandbox_memory_limit: str = "16g"
     replay_sandbox_pids_limit: int = 512
     replay_sandbox_cpus: float = 0.0
@@ -548,18 +548,18 @@ def _config_from_args(
                 args,
                 config_data,
                 "replay_sandbox_setup_network_mode",
-                "bridge",
+                "none",
             )
-            or "bridge"
+            or "none"
         ),
         replay_sandbox_benchmark_network_mode=str(
             _value_from_args_or_config(
                 args,
                 config_data,
                 "replay_sandbox_benchmark_network_mode",
-                "bridge",
+                "none",
             )
-            or "bridge"
+            or "none"
         ),
         replay_sandbox_memory_limit=str(
             _value_from_args_or_config(

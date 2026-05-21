@@ -36,8 +36,8 @@ replay_sandbox_mode: "docker"
 replay_sandbox_image: "bitsota-research-validator-cuda:local"
 replay_sandbox_dockerfile: "docker/research-validator-cuda.Dockerfile"
 replay_sandbox_gpus: "all"
-replay_sandbox_setup_network_mode: "bridge"
-replay_sandbox_benchmark_network_mode: "bridge"
+replay_sandbox_setup_network_mode: "none"
+replay_sandbox_benchmark_network_mode: "none"
 replay_sandbox_memory_limit: "16g"
 replay_sandbox_pids_limit: 512
 replay_sandbox_cpus: 0
@@ -53,14 +53,15 @@ max_replay_log_chars: 128000
 dry_run: false
 
 # Backend replay_spec returns heldout dataset handles, mix percentages, split,
-# and sync slot/number selectors to authenticated validators. Reward-active
-# heldout bytes stay local to this validator and are passed to benchmark replay
-# through local_benchmark_env.
+# sync slot/number selectors, and optional HF row-source JSON to authenticated
+# validators. The validator host resolves backend HF rows before Docker starts,
+# writes a local manifest into the replay workspace, and passes only local
+# manifest paths to the benchmark sandbox.
 local_benchmark_env:
   # AUTORESEARCH_PRIVATE_HELDOUT_MANIFEST: "/srv/bitsota/heldout/qwen-frontier-v2/manifest.json"
   # AUTORESEARCH_PRIVATE_HELDOUT_ROOT: "/srv/bitsota/heldout/qwen-frontier-v2"
-  # For Hugging Face-backed heldout handles from the backend, validators fetch
-  # locally. Use pinned backend handles like:
+  # For Hugging Face-backed heldout handles or backend row-source JSON,
+  # validators fetch locally outside Docker. Use pinned backend handles like:
   #   hf://org/private-heldout?revision=<commit>&manifest=manifest.json
   # HF_TOKEN: "hf_..."
   # AUTORESEARCH_PRIVATE_HELDOUT_CACHE_DIR: "/srv/bitsota/heldout-cache"

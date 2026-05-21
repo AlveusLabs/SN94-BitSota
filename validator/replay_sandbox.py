@@ -19,8 +19,8 @@ class DockerSandboxConfig:
     image: str = "bitsota-research-validator-cuda:local"
     dockerfile: str = "docker/research-validator-cuda.Dockerfile"
     gpus: str = ""
-    setup_network_mode: str = "bridge"
-    benchmark_network_mode: str = "bridge"
+    setup_network_mode: str = "none"
+    benchmark_network_mode: str = "none"
     memory_limit: str = "16g"
     pids_limit: int = 512
     cpus: float = 0.0

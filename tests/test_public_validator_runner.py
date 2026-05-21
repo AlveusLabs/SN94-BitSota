@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from pathlib import Path
 import py_compile
 import subprocess
@@ -337,6 +338,8 @@ def test_public_validator_runner_defaults_to_signed_worklist() -> None:
     config = _config_from_args(args)
 
     assert config.claim_path == DEFAULT_VALIDATOR_WORKLIST_PATH
+    assert config.replay_sandbox_setup_network_mode == "none"
+    assert config.replay_sandbox_benchmark_network_mode == "none"
 
 
 def test_validator_client_posts_signed_job_result() -> None:
@@ -561,6 +564,136 @@ def test_public_replay_engine_uses_docker_sandbox_without_host_replay(
     assert "secret-split" not in result.replay_log
     assert calls[0]["benchmark_env"]["AUTORESEARCH_HELDOUT_SPLIT"] == "secret-split"
     assert calls[0]["config"].gpus == "all"
+
+
+def test_public_replay_engine_prefetches_backend_heldout_for_docker(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    repo_dir = tmp_path / "repo"
+    repo_dir.mkdir()
+    _init_git_repo(repo_dir)
+    (repo_dir / "benchmark.py").write_text("print('score=1.0')\n", encoding="utf-8")
+    (repo_dir / "score.txt").write_text("1.0\n", encoding="utf-8")
+    subprocess.run(["git", "add", "."], cwd=repo_dir, check=True, capture_output=True)
+    subprocess.run(["git", "commit", "-m", "initial"], cwd=repo_dir, check=True, capture_output=True)
+    (repo_dir / "score.txt").write_text("2.0\n", encoding="utf-8")
+    patch = subprocess.run(
+        ["git", "diff", "--", "score.txt"],
+        cwd=repo_dir,
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout
+
+    sources_json = json.dumps(
+        {
+            "version": "qwen-frontier-test-hf-mix-v1",
+            "documents": [
+                {
+                    "category": "general",
+                    "source": "hf_rows",
+                    "dataset": "HuggingFaceFW/fineweb-edu",
+                    "config": "sample-10BT",
+                    "split": "train",
+                    "text_column": "text",
+                    "offset": 7,
+                    "limit": 2,
+                    "page_size": 2,
+                    "min_chars": 1,
+                    "rotate": False,
+                }
+            ],
+        }
+    )
+    job = ReplayJob(
+        job_id="job-heldout",
+        submission={"id": "submission-heldout", "task_id": "task-1", "base_ref": "HEAD", "patch": patch},
+        submission_id="submission-heldout",
+        task={
+            "id": "task-1",
+            "repository": str(repo_dir),
+            "base_ref": "HEAD",
+            "benchmark_command": "python3 benchmark.py",
+            "result_path": "result.json",
+            "allowed_patch_paths": ["score.txt"],
+            "metric_name": "score",
+            "time_budget_seconds": 60,
+            "validator_benchmark_env": {
+                "AUTORESEARCH_HELDOUT_DATASET": "validator-backend-heldout",
+                "AUTORESEARCH_HELDOUT_DATASET_MIX": "general:1.0",
+                "AUTORESEARCH_HELDOUT_SOURCES_JSON": sources_json,
+                "AUTORESEARCH_HELDOUT_SYNC_SLOT": "123",
+            },
+        },
+        replay_spec={},
+        detail={"metric_name": "score"},
+        source="test",
+    )
+    fetch_calls: list[dict] = []
+    sandbox_calls: list[dict] = []
+    manifest_payloads: list[dict] = []
+
+    def fake_fetch_hf_rows(**kwargs):
+        fetch_calls.append(kwargs)
+        offset = int(kwargs["offset"])
+        length = int(kwargs["length"])
+        return {
+            "rows": [
+                {"row": {"text": f"heldout row {offset + index}"}}
+                for index in range(length)
+            ]
+        }
+
+    def fake_sandbox(**kwargs):
+        sandbox_calls.append(kwargs)
+        env = kwargs["benchmark_env"]
+        manifest_path = kwargs["repo_dir"] / env["AUTORESEARCH_PRIVATE_HELDOUT_MANIFEST"]
+        manifest_payloads.append(json.loads(manifest_path.read_text(encoding="utf-8")))
+        result_path = kwargs["work_dir"] / "sandbox-results" / "result.json"
+        result_path.parent.mkdir(parents=True, exist_ok=True)
+        result_path.write_text('{"metrics": {"score": 1.0}}', encoding="utf-8")
+        return SandboxedReplayResult(
+            setup_result=None,
+            benchmark_result=SandboxCommandResult(returncode=0, stdout="score=1.0\n", stderr=""),
+            result_path=result_path,
+            image=kwargs["config"].image,
+        )
+
+    monkeypatch.setattr(public_replay_module, "_fetch_hf_rows", fake_fetch_hf_rows)
+    monkeypatch.setattr(public_replay_module, "run_replay_in_docker_sandbox", fake_sandbox)
+    engine = PublicReplayEngine(
+        workspace_root=tmp_path / "workspaces",
+        replay_sandbox_mode="docker",
+        local_benchmark_env={"HF_TOKEN": "secret-hf-token"},
+        docker_sandbox_config=DockerSandboxConfig(image="bitsota-test:local"),
+    )
+
+    result = engine.run(job)
+
+    assert result.status == "accepted", result.notes + "\n" + result.replay_log
+    assert fetch_calls == [
+        {
+            "dataset": "HuggingFaceFW/fineweb-edu",
+            "config": "sample-10BT",
+            "split": "train",
+            "offset": 7,
+            "length": 2,
+            "token": "secret-hf-token",
+        }
+    ]
+    benchmark_env = sandbox_calls[0]["benchmark_env"]
+    assert benchmark_env["AUTORESEARCH_HELDOUT_DATASET"] == "validator-private-shard"
+    assert benchmark_env["AUTORESEARCH_PRIVATE_HELDOUT_MANIFEST"] == ".autoresearch-heldout/manifest.json"
+    assert benchmark_env["AUTORESEARCH_PRIVATE_HELDOUT_ROOT"] == ".autoresearch-heldout"
+    assert "AUTORESEARCH_HELDOUT_SOURCES_JSON" not in benchmark_env
+    assert "HF_TOKEN" not in benchmark_env
+    assert manifest_payloads[0]["documents"] == [
+        {"text": "heldout row 7", "category": "general"},
+        {"text": "heldout row 8", "category": "general"},
+    ]
+    assert "heldout_prefetch=ok" in result.replay_log
+    assert "secret-hf-token" not in result.replay_log
 
 
 def test_public_replay_engine_passes_local_validator_benchmark_env(tmp_path: Path) -> None:
