@@ -141,7 +141,7 @@ def parse_metric_from_text(text: str, metric_name: str) -> float | None:
         return None
 
 
-def load_metric_from_result_file(result_path: Path, metric_name: str) -> float:
+def load_numeric_metrics_from_result_file(result_path: Path) -> dict[str, float]:
     try:
         payload = json.loads(result_path.read_text(encoding="utf-8"))
     except FileNotFoundError as exc:
@@ -149,14 +149,40 @@ def load_metric_from_result_file(result_path: Path, metric_name: str) -> float:
     except json.JSONDecodeError as exc:
         raise ValueError(f"result file is not valid JSON: {result_path}") from exc
 
+    values: dict[str, float] = {}
     if isinstance(payload, dict):
-        if payload.get("metric_name") == metric_name and "metric_value" in payload:
-            return float(payload["metric_value"])
         metrics = payload.get("metrics")
-        if isinstance(metrics, dict) and metric_name in metrics:
-            return float(metrics[metric_name])
-        if metric_name in payload:
-            return float(payload[metric_name])
+        if isinstance(metrics, dict):
+            for key, value in metrics.items():
+                try:
+                    parsed = float(value)
+                except (TypeError, ValueError):
+                    continue
+                if math.isfinite(parsed):
+                    values[str(key)] = parsed
+        if payload.get("metric_name") and "metric_value" in payload:
+            try:
+                parsed = float(payload["metric_value"])
+            except (TypeError, ValueError):
+                parsed = math.nan
+            if math.isfinite(parsed):
+                values[str(payload["metric_name"])] = parsed
+        for key, value in payload.items():
+            if key in {"metrics", "metric_name"}:
+                continue
+            try:
+                parsed = float(value)
+            except (TypeError, ValueError):
+                continue
+            if math.isfinite(parsed):
+                values[str(key)] = parsed
+    return values
+
+
+def load_metric_from_result_file(result_path: Path, metric_name: str) -> float:
+    values = load_numeric_metrics_from_result_file(result_path)
+    if metric_name in values:
+        return values[metric_name]
     raise ValueError(f"result file missing metric '{metric_name}': {result_path}")
 
 
@@ -652,12 +678,18 @@ class PublicReplayEngine:
 
         metric = None
         secondary_metric = None
+        result_file_metrics: dict[str, float] = {}
         if spec.result_path:
             result_path = result_file_path or repo_dir / spec.result_path
             try:
-                metric = load_metric_from_result_file(result_path, spec.metric_name)
+                result_file_metrics = load_numeric_metrics_from_result_file(result_path)
+                if spec.metric_name not in result_file_metrics:
+                    raise ValueError(f"result file missing metric '{spec.metric_name}': {result_path}")
+                metric = result_file_metrics[spec.metric_name]
                 if spec.secondary_metric_name:
-                    secondary_metric = load_metric_from_result_file(result_path, spec.secondary_metric_name)
+                    if spec.secondary_metric_name not in result_file_metrics:
+                        raise ValueError(f"result file missing metric '{spec.secondary_metric_name}': {result_path}")
+                    secondary_metric = result_file_metrics[spec.secondary_metric_name]
             except ValueError as exc:
                 return self._result(
                     job,
@@ -691,7 +723,8 @@ class PublicReplayEngine:
                 replay_log=replay_log,
             )
 
-        observed_metrics = {spec.metric_name: float(metric)}
+        observed_metrics = dict(result_file_metrics)
+        observed_metrics[spec.metric_name] = float(metric)
         if spec.secondary_metric_name and secondary_metric is not None:
             observed_metrics[spec.secondary_metric_name] = float(secondary_metric)
         return self._result(
