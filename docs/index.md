@@ -3,8 +3,8 @@
 BitSota is a decentralized research subnet on Bittensor. This documentation is organized around:
 
 - Roles: miner, validator, pool operator
-- Components: GUI, sidecar, relay, pool, coordinator-backed research agent
-- Workflows: direct mining, pool mining, research-agent mining, local end-to-end testing
+- Components: GUI, sidecar, autoresearch backend, public validator runner, pool, Merkle claim contract
+- Workflows: research-agent mining, backend validation, backend-directed weights, Pool/Merkle claims, local end-to-end testing
 
 ## Start here
 
@@ -27,20 +27,25 @@ flowchart TB
   end
 
   subgraph Services[Network services]
-    Relay[Relay API]
+    Backend[Autoresearch backend]
+    Validator[Public validator runner]
+    WeightSetter[Backend weight setter]
     PoolAPI[Pool API]
+    Contract[Merkle claim contract]
     Chain[Bittensor chain]
   end
 
-  GUI -->|direct submit| Relay
-  GUI -->|pool tasks| PoolAPI
-  Validator[Validator] -->|poll and vote| Relay
-  Validator -->|set weights| Chain
-  PoolAPI -->|optional relay submit| Relay
+  GUI -->|task discovery and submission| Backend
+  Miner -->|signed submission| Backend
+  Backend -->|signed worklist| Validator
+  Validator -->|observed metrics| Backend
+  Backend -->|reward snapshot| PoolAPI
+  PoolAPI -->|Merkle root| Contract
+  Backend -->|validator_weights| WeightSetter
+  WeightSetter -->|set_weights| Chain
 ```
 
 Default local ports used by the docs and scripts:
-- Relay: `8002`
 - Sidecar: `8123`
 - Pool API: `8434`
 - Pool monitor: `9000`

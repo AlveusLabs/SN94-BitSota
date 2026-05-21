@@ -116,7 +116,6 @@ Production replay config:
 ```yaml
 coordinator_url: "https://autoresearch.bitsota.com"
 claim_path: "/api/v1/validator/submissions/scan"
-pending_submissions_fallback: false
 
 wallet_name: "validator_wallet"
 wallet_hotkey: "validator_hotkey"
@@ -181,10 +180,8 @@ bitsota-research-validator --config research_validator_config.yaml
   the Docker/CUDA sandbox. `host` requires `--allow-unsafe-host-replay`.
 - `--replay-sandbox-gpus`: Docker `--gpus` value. Use `all` on a CUDA validator
   host.
-- `--claim-path`: override the signed backend worklist endpoint. Use
-  `/api/v1/validator/jobs/claim` only for legacy single-job compatibility.
-- `--pending-submissions-fallback`: use the older public pending-submissions
-  scan only when testing an undeployed or old backend.
+- `--claim-path`: override the signed backend worklist endpoint only when a
+  backend operator explicitly asks you to.
 - `--allow-local-artifacts`: allow `file://` or relative artifact URIs during
   local testing only.
 
@@ -243,16 +240,15 @@ Host mode executes submitted setup and benchmark commands directly on the
 validator machine and requires `allow_unsafe_host_replay: true`. Use host mode
 only for local development or a disposable isolated machine.
 
-## Backend Compatibility
+## Backend API
 
-- Current backends expose signed `POST /api/v1/validator/submissions/scan` and
+- The backend exposes signed `POST /api/v1/validator/submissions/scan` and
   `POST /api/v1/validator/jobs/{job_id}/result`.
 - The worklist response includes validator-only replay parameters, including
   hidden heldout handles and sync numbers. Validators do not need production DB,
   App Runner, or admin credentials.
-- The fallback path is only for older backends or explicitly enabled legacy
-  direct verification. It uses public task/submission APIs and cannot recover
-  backend-private replay values.
+- Public task and submission APIs do not include backend-private replay values.
+  Reward-active validation should use the signed validator worklist endpoint.
 
 Use the signed validator worklist endpoint for reward-active competitions.
 
@@ -323,18 +319,6 @@ For the production contract-hotkey path, the backend target set should include:
 ```text
 5F7MJ2fAyxBG7ci4xP7kQPJanoMdNurk1QBP1AQuFT2Jmzg2
 ```
-
-## Legacy Relay Or Capacitor Contract Node
-
-`neurons/validator_node.py` can run legacy relay/capacitor validation:
-
-- `reward_mode: "capacitor"` uses the old EVM Capacitor contract manager.
-- `reward_mode: "capacitorless"` and `reward_mode: "capacitorless_sticky"` use
-  relay votes plus Bittensor weight setting.
-
-Use this deliberately and separately from the public autoresearch replay runner.
-Do not describe the Pool/Merkle contract hotkey as an EVM Capacitor contract
-address.
 
 ## Systemd Unit For Replay Validator
 

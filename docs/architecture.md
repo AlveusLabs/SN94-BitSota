@@ -1,68 +1,74 @@
 # Architecture
 
-This page is a map of the runtime pieces and how they talk to each other.
+This page maps the current autoresearch production path. For operator
+responsibilities and key ownership, start with
+[SN94 System Structure](sn94-system-structure.md).
 
-For the current validator/operator view of the autoresearch backend, public
-validator runner, backend weight setter, Pool/Merkle claim path, and legacy
-relay boundary, start with [SN94 System Structure](sn94-system-structure.md).
-
-## Direct mining flow
+## Research Mining Flow
 
 ```mermaid
 sequenceDiagram
   participant GUI as Desktop GUI
   participant Sidecar as Sidecar API
-  participant Miner as Local Miner
-  participant Relay as Relay API
-  participant Val as Validator
+  participant Miner as Research miner or agent
+  participant Backend as Autoresearch backend
 
   GUI->>Sidecar: Start mining
   Sidecar->>Miner: Spawn miner process
-  Miner->>Sidecar: Logs, candidates, local best
+  Miner->>Backend: Claim task and submit patch or artifact
+  Backend-->>Miner: Submission status and task updates
+  Miner->>Sidecar: Logs, local progress, submission id
   GUI->>Sidecar: Poll logs and state
-  GUI->>Relay: Submit solution
-  Val->>Relay: Poll submissions
-  Val->>Val: Re-evaluate candidate
-  Val->>Relay: Vote on SOTA
 ```
 
-## Pool mining flow
+## Validation And Rewards
 
 ```mermaid
 sequenceDiagram
-  participant GUI as Desktop GUI
-  participant Pool as Pool API
-  participant Sidecar as Sidecar API
-  participant Worker as Pool Worker
+  participant Backend as Autoresearch backend
+  participant Validator as Public validator runner
+  participant WeightSetter as Backend weight setter
+  participant Chain as Bittensor SN94
+  participant Pool as Pool service
+  participant Contract as Merkle claim contract
+  participant Miner as Miner recipient
 
-  GUI->>Pool: Request tasks
-  Pool->>GUI: Lease batch
-  GUI->>Sidecar: Enqueue jobs
-  Worker->>Sidecar: Pull jobs
-  Worker->>Sidecar: Submit results
-  GUI->>Pool: Submit results
+  Validator->>Backend: Signed scan request
+  Backend-->>Validator: Replay worklist and private heldout handles
+  Validator->>Validator: Replay in Docker/CUDA sandbox
+  Validator->>Backend: Observed metrics
+  Backend->>Pool: Reward/accounting output
+  Pool->>Contract: Publish Merkle root
+  Miner->>Contract: Claim with Merkle proof
+  WeightSetter->>Backend: Read validator_weights
+  WeightSetter->>Chain: set_weights
 ```
 
-## Service boundaries
+## Service Boundaries
 
 ```mermaid
 flowchart TB
-  subgraph Local[Your machine]
+  subgraph Local[Operator machine]
     GUI[Desktop GUI]
     Sidecar[Sidecar API]
-    Miner[Local miner process]
+    Miner[Research miner or agent]
+    Validator[Public validator runner]
+    WeightSetter[Backend weight setter]
     GUI --> Sidecar
     Sidecar --> Miner
   end
 
   subgraph Remote[Network services]
-    Relay[Relay API]
+    Backend[Autoresearch backend]
     PoolAPI[Pool API]
+    Contract[Merkle claim contract]
     Chain[Bittensor chain]
   end
 
-  GUI --> Relay
-  GUI --> PoolAPI
-  Validator[Validator] --> Relay
-  Validator --> Chain
+  Miner --> Backend
+  Validator --> Backend
+  Backend --> PoolAPI
+  PoolAPI --> Contract
+  WeightSetter --> Backend
+  WeightSetter --> Chain
 ```

@@ -1,9 +1,9 @@
 # SN94 System Structure
 
 This page explains how the current SN94/BitSota/autoresearch stack is split
-across services. Read this before running a validator, because several older
-paths still exist in the repo and they are easy to confuse with the current
-autoresearch reward path.
+across services. Read this before running a validator so the backend,
+validator runner, weight setter, Pool service, and claim contract boundaries
+are clear.
 
 ## Current Production Path
 
@@ -21,9 +21,6 @@ flowchart LR
   Pool -->|Merkle root| Contract[Merkle claim contract]
   Miner -->|claim proof| Contract
 ```
-
-The older relay/capacitor path is still present for legacy flows, but it is not
-the primary autoresearch validation path.
 
 ## Repositories
 
@@ -102,8 +99,8 @@ contract hotkey:
 ```
 
 Only one weight-owning process should run per validator hotkey. If a validator
-runs both the backend weight setter and a legacy relay validator that also sets
-weights, those processes can fight each other.
+runs another process that also calls `set_weights`, those processes can fight
+each other.
 
 ### Pool Service
 
@@ -116,8 +113,7 @@ Validators run their own validation/verifier processes with their own keys.
 
 ### Merkle Claim Contract
 
-The Merkle contract is the claim settlement contract. It is not the old EVM
-Capacitor scoring contract.
+The Merkle contract is the claim settlement contract.
 
 Important concepts:
 
@@ -128,20 +124,6 @@ Important concepts:
   runners.
 
 Validators generally do not need Merkle contract owner or publisher keys.
-
-### Legacy Relay And Capacitor
-
-The repo still has `neurons/validator_node.py`, relay docs, and capacitor docs.
-That path belongs to older relay-driven SOTA validation:
-
-- validators poll relay submissions;
-- validators vote on relay SOTA candidates;
-- capacitor or capacitorless modes may set weights or vote through the old EVM
-  contract path.
-
-Do not mix this with the public autoresearch replay runner unless you are
-intentionally operating a legacy relay path. In particular, the production Pool
-contract hotkey is not an EVM Capacitor contract address.
 
 ## Identity And Key Roles
 
@@ -236,9 +218,8 @@ required for that target environment's behavior or safety.
 | --- | --- |
 | "The public validator runner sets weights." | It only replays submissions and posts metrics. Run the backend weight setter separately. |
 | "The task repo should fetch HF heldout rows in Docker." | The validator host fetches heldout rows before Docker and passes a local manifest into the sandbox. |
-| "Pool/Merkle contract equals Capacitor." | They are different paths. Pool/Merkle handles claim settlement; Capacitor is legacy EVM reward voting. |
 | "Validators need backend DB or AWS." | Public validators use signed HTTP APIs only. |
-| "One validator process can do everything safely." | Replay, weight setting, Pool publishing, and legacy relay verification are separate responsibilities. |
+| "One validator process can do everything safely." | Replay, weight setting, and Pool publishing are separate responsibilities. |
 | "Testing and production branches must be identical." | They can differ where environment settings differ. |
 
 ## Where To Go Next
@@ -246,4 +227,3 @@ required for that target environment's behavior or safety.
 - Public validator setup: [Public Autoresearch Validator Runner](public-validator-runner.md)
 - Miner/agent flow: [Research-Agent Mining](research-agent-mining.md)
 - Pool claims and testing: [Autoresearch Testnet E2E](guides/autoresearch-testnet-e2e.md)
-- Legacy reward modes: [Reward Modes](reward-modes.md)
