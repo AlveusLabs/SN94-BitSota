@@ -62,8 +62,9 @@ Log out and back in after adding the Docker group.
 
 ## Clone And Install
 
-Until the public validator fixes are merged into the default branch, use the
-active validator branch:
+For now, clone the branch below. It is the branch that currently contains the
+public validator runner fixes. The branch name does not decide whether you are
+validating testnet or production; `coordinator_url` does that later.
 
 ```bash
 sudo mkdir -p /opt/bitsota
@@ -79,13 +80,16 @@ pip install -r requirements.txt
 pip install -e .
 ```
 
-Required fix level:
+Check that your checkout includes the Docker heldout prefetch fix:
 
 ```bash
-git merge-base --is-ancestor 41e4375 HEAD
+if git merge-base --is-ancestor 41e4375 HEAD; then
+  echo "OK: validator fixes are present"
+else
+  echo "ERROR: checkout is missing validator fixes; pull the branch again"
+  exit 1
+fi
 ```
-
-If that exits nonzero, the checkout is missing the Docker heldout prefetch fix.
 
 ## Wallets
 
