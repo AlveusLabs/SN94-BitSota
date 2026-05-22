@@ -11,22 +11,24 @@ validator host runs two SN94 processes plus a Pool/Merkle contract check:
    on-chain contract state are healthy. Vetoer operators can also run the
    challenge-capable Pool verifier with their own key.
 
-The replay validator does not need the private backend database, AWS access,
-Pool publisher keys, or Merkle contract owner keys.
-
 If the service boundaries are unfamiliar, read
 [SN94 System Structure](sn94-system-structure.md) first.
 
 ## Production Values
 
-Use these values for SN94 production:
+Use these values in the exact places listed below. Do not leave this section as
+notes; copy the values into the later config files and commands.
 
-```text
-autoresearch backend: https://autoresearch.bitsota.com
-subtensor network: finney
-SN94 netuid: 94
-production contract-hotkey target: 5F7MJ2fAyxBG7ci4xP7kQPJanoMdNurk1QBP1AQuFT2Jmzg2
-```
+| Value | Put it here |
+| --- | --- |
+| `https://autoresearch.bitsota.com` | `research_validator_config.yaml` as `coordinator_url`; weight-setter command/systemd as `--coordinator-url`; Pool verifier env as `AUTORESEARCH_REWARD_SNAPSHOT_URL=https://autoresearch.bitsota.com/api/v1/reward-snapshot`. |
+| `finney` | `validator_config.weights.yaml` as `network`; `btcli subnet register` as `--network finney`. |
+| `wss://entrypoint-finney.opentensor.ai:443` | `validator_config.weights.yaml` as `subtensor_chain_endpoint`; Pool verifier env as `ONCHAIN_WS_URL`. |
+| `94` | `validator_config.weights.yaml` as `netuid`; `btcli subnet register` as `--netuid 94`; Pool verifier env as `ONCHAIN_STAKE_NETUID`. |
+| `5F7MJ2fAyxBG7ci4xP7kQPJanoMdNurk1QBP1AQuFT2Jmzg2` | Pool verifier env as `ONCHAIN_STAKE_CONTRACT_HOTKEY`; backend reward policy should publish this as the production contract-hotkey target for validator weights. |
+| `5CUo48Vuwidb4pTogCCqAeYyMRUwNieTjeEL8FyYvwmQ9XA5` | Pool verifier env as `ONCHAIN_CONTRACT`; Pool status checks should report this contract. |
+| `https://fsypi2vmmz.eu-central-1.awsapprunner.com/status` | Step 6 `POOL_STATUS_URL` for the live production Pool/contract status check. |
+| `https://fsypi2vmmz.eu-central-1.awsapprunner.com/claims` | Step 6 `POOL_CLAIMS_URL` for claim epoch/proof checks. |
 
 Testing uses `https://autoresearch-test.bitsota.com`, but production validators
 should use `https://autoresearch.bitsota.com`.
