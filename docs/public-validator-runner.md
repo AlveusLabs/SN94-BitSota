@@ -76,6 +76,7 @@ ONCHAIN_WS_URL=wss://entrypoint-finney.opentensor.ai:443
 ONCHAIN_CONTRACT=5CUo48Vuwidb4pTogCCqAeYyMRUwNieTjeEL8FyYvwmQ9XA5
 ONCHAIN_STAKE_CONTRACT_HOTKEY=5F7MJ2fAyxBG7ci4xP7kQPJanoMdNurk1QBP1AQuFT2Jmzg2
 ONCHAIN_STAKE_NETUID=94
+ONCHAIN_VETO_EPOCH=first-published
 AUTORESEARCH_REWARD_SNAPSHOT_URL=https://autoresearch.bitsota.com/api/v1/reward-snapshot
 ```
 
@@ -316,6 +317,7 @@ ONCHAIN_SURI=REPLACE_WITH_VALIDATOR_VETOER_SURI
 ONCHAIN_METADATA=/opt/bitsota/Pool/new_merkle/app/assets/merklepool.json
 ONCHAIN_STAKE_CONTRACT_HOTKEY=5F7MJ2fAyxBG7ci4xP7kQPJanoMdNurk1QBP1AQuFT2Jmzg2
 ONCHAIN_STAKE_NETUID=94
+ONCHAIN_VETO_EPOCH=first-published
 AUTORESEARCH_REWARD_SNAPSHOT_URL=https://autoresearch.bitsota.com/api/v1/reward-snapshot
 POOL_COMPETITION_WEIGHT=1.0
 STAKE_GAIN_SOURCE=contract_reserve
@@ -338,12 +340,19 @@ python -u scripts/consensus_daemon.py \
   --node-id contract-verifier \
   --out-dir /srv/bitsota/pool-epochs \
   --poll-s 60 \
-  --verify-bootstrap-mode history_then_latest_non_vetoed
+  --verify-bootstrap-mode history_then_latest_non_vetoed \
+  --onchain-veto-epoch first-published
 ```
 
 If `/srv/bitsota/pool-epochs` is empty and the operator has not provided an
 epoch artifact sync/feed, the verifier has nothing to compare yet. Do not treat
 an idle verifier as proof that the contract is checked.
+
+`ONCHAIN_VETO_EPOCH=first-published` means the verifier recomputes the real
+published epoch, but if it finds a blocking payout mismatch it vetoes the first
+successful contract epoch as the global lock epoch. If no successful contract
+epoch has been published yet, the verifier waits instead of sending an invalid
+veto.
 
 ## 7. Keep The Validator Running
 
@@ -407,7 +416,7 @@ Wants=network-online.target
 WorkingDirectory=/opt/bitsota/Pool
 Environment=PYTHONUNBUFFERED=1
 EnvironmentFile=/etc/bitsota/pool-contract-verifier.env
-ExecStart=/opt/bitsota/Pool/.venv/bin/python -u scripts/consensus_daemon.py --mode verify --node-id contract-verifier --out-dir /srv/bitsota/pool-epochs --poll-s 60 --verify-bootstrap-mode history_then_latest_non_vetoed
+ExecStart=/opt/bitsota/Pool/.venv/bin/python -u scripts/consensus_daemon.py --mode verify --node-id contract-verifier --out-dir /srv/bitsota/pool-epochs --poll-s 60 --verify-bootstrap-mode history_then_latest_non_vetoed --onchain-veto-epoch first-published
 Restart=always
 RestartSec=10
 
