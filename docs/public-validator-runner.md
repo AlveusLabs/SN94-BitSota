@@ -16,8 +16,28 @@ If the service boundaries are unfamiliar, read
 
 ## Production Values
 
-Use these values in the exact places listed below. Do not leave this section as
-notes; copy the values into the later config files and commands.
+The install steps below use these folders:
+
+```text
+/opt/bitsota/SN94-BitSota/
+  SN94 validator code, replay config, and weight-setter config.
+  Put research_validator_config.yaml and validator_config.weights.yaml here.
+
+/opt/bitsota/Pool/
+  Pool verifier code and Merkle contract metadata.
+  Put/read new_merkle/app/assets/merklepool.json here.
+
+/etc/bitsota/
+  Local machine secrets and env files.
+  Put pool-contract-verifier.env here.
+
+/etc/systemd/system/
+  Ubuntu background service files.
+  Put bitsota-replay-validator.service, bitsota-backend-weights.service,
+  and optional bitsota-contract-verifier.service here.
+```
+
+Use these values in the config files and commands later in this runbook:
 
 | Value | Put it here |
 | --- | --- |
