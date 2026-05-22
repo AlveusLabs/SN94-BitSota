@@ -37,18 +37,52 @@ The install steps below use these folders:
   and optional bitsota-contract-verifier.service here.
 ```
 
-Use these values in the config files and commands later in this runbook:
+Use these exact values when the later steps ask you to edit config files or run
+commands.
 
-| Value | Put it here |
-| --- | --- |
-| `https://autoresearch.bitsota.com` | `research_validator_config.yaml` as `coordinator_url`; weight-setter command/systemd as `--coordinator-url`; Pool verifier env as `AUTORESEARCH_REWARD_SNAPSHOT_URL=https://autoresearch.bitsota.com/api/v1/reward-snapshot`. |
-| `finney` | `validator_config.weights.yaml` as `network`; `btcli subnet register` as `--network finney`. |
-| `wss://entrypoint-finney.opentensor.ai:443` | `validator_config.weights.yaml` as `subtensor_chain_endpoint`; Pool verifier env as `ONCHAIN_WS_URL`. |
-| `94` | `validator_config.weights.yaml` as `netuid`; `btcli subnet register` as `--netuid 94`; Pool verifier env as `ONCHAIN_STAKE_NETUID`. |
-| `5F7MJ2fAyxBG7ci4xP7kQPJanoMdNurk1QBP1AQuFT2Jmzg2` | Pool verifier env as `ONCHAIN_STAKE_CONTRACT_HOTKEY`; backend reward policy should publish this as the production contract-hotkey target for validator weights. |
-| `5CUo48Vuwidb4pTogCCqAeYyMRUwNieTjeEL8FyYvwmQ9XA5` | Pool verifier env as `ONCHAIN_CONTRACT`; Pool status checks should report this contract. |
-| `https://fsypi2vmmz.eu-central-1.awsapprunner.com/status` | Step 6 `POOL_STATUS_URL` for the live production Pool/contract status check. |
-| `https://fsypi2vmmz.eu-central-1.awsapprunner.com/claims` | Step 6 `POOL_CLAIMS_URL` for claim epoch/proof checks. |
+In `/opt/bitsota/SN94-BitSota/research_validator_config.yaml`:
+
+```yaml
+coordinator_url: "https://autoresearch.bitsota.com"
+```
+
+In `/opt/bitsota/SN94-BitSota/validator_config.weights.yaml`:
+
+```yaml
+netuid: 94
+network: "finney"
+subtensor_chain_endpoint: "wss://entrypoint-finney.opentensor.ai:443"
+```
+
+When registering the validator hotkey with `btcli`:
+
+```bash
+--netuid 94 --network finney
+```
+
+When running the backend weight setter, including inside its systemd service:
+
+```bash
+--coordinator-url https://autoresearch.bitsota.com
+```
+
+In `/etc/bitsota/pool-contract-verifier.env`, if this validator also runs the
+Pool/Merkle contract verifier:
+
+```env
+ONCHAIN_WS_URL=wss://entrypoint-finney.opentensor.ai:443
+ONCHAIN_CONTRACT=5CUo48Vuwidb4pTogCCqAeYyMRUwNieTjeEL8FyYvwmQ9XA5
+ONCHAIN_STAKE_CONTRACT_HOTKEY=5F7MJ2fAyxBG7ci4xP7kQPJanoMdNurk1QBP1AQuFT2Jmzg2
+ONCHAIN_STAKE_NETUID=94
+AUTORESEARCH_REWARD_SNAPSHOT_URL=https://autoresearch.bitsota.com/api/v1/reward-snapshot
+```
+
+When checking the live production Pool/Merkle service in step 6:
+
+```bash
+POOL_STATUS_URL="https://fsypi2vmmz.eu-central-1.awsapprunner.com/status"
+POOL_CLAIMS_URL="https://fsypi2vmmz.eu-central-1.awsapprunner.com/claims"
+```
 
 Testing uses `https://autoresearch-test.bitsota.com`, but production validators
 should use `https://autoresearch.bitsota.com`.
