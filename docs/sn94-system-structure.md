@@ -27,7 +27,7 @@ flowchart LR
 | Repo | Responsibility | Who normally runs it |
 | --- | --- | --- |
 | `autoresearch-bittensor` | Coordinator API, task catalog, submissions, validator job worklists, validator result consensus, reward snapshots, private heldout delivery. | Backend operator / App Runner. |
-| `SN94-BitSota` | Public miner and validator client code: GUI, agent launcher, signed request helpers, Docker replay runner, backend weight setter, Pool/Merkle contract monitor. | Miners and validators. |
+| `SN94-BitSota` | Public miner and validator client code: GUI, agent launcher, signed request helpers, Docker replay runner, backend weight setter. | Miners and validators. |
 | Public task repos | Public replay specification per competition: benchmark scripts, allowed patch surface, result JSON contract, public smoke harness. | Cloned by public validator runner. |
 | `Pool` | Pool accounting, reward publication, Merkle proof API, Merkle contract package and deployment metadata. | Pool operator / App Runner. |
 | `94-agent-community` | Local operator memory, SOPs, endpoints, role prompts, and secrets notes for this machine. | Local agents/operators only. |
@@ -80,8 +80,7 @@ The public validator runner lives in `SN94-BitSota` and does this loop:
 8. Post observed metrics to `POST /api/v1/validator/jobs/{job_id}/result`.
 
 It does not set chain weights. It does not publish Merkle roots. It does not
-need Pool contract ownership. The same repo also ships the Pool/Merkle contract
-monitor used by validator hosts to check Pool publication and contract health.
+need Pool contract ownership.
 
 ### Backend Weight Setter
 
@@ -110,10 +109,9 @@ Pool consumes backend reward/accounting outputs, builds claimable Merkle leaves,
 publishes roots on-chain, and serves claim proofs.
 
 Production Pool should not include operator-launched verifier/challenge daemons.
-Validators run SN94-side replay validation, weight setting, and contract
-monitoring with their own validator keys. Challenge/veto recomputation is not a
-Pool App Runner process and should be exposed from SN94 before external vetoer
-operators are asked to run it.
+Validators run their own validation/verifier processes with their own keys. The
+challenge-capable Pool/Merkle verifier currently lives in the private `Pool`
+repo, so vetoer operators need GitHub access to that repo.
 
 ### Merkle Claim Contract
 

@@ -22,8 +22,6 @@ setuptools.setup(
             "bitsota-research-agent=neurons.research_agent_miner:main",
             "bitsota-research-validator=validator.research_validator_runner:main",
             "bitsota-autoresearch-weights=validator.backend_weight_setter:main",
-            "bitsota-pool-contract-verifier=validator.pool_contract_verifier:main",
-            "bitsota-pool-contract-monitor=validator.pool_contract_verifier:main",
         ],
     },
 )

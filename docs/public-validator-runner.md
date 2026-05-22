@@ -7,8 +7,9 @@ validator host runs two SN94 processes plus a Pool/Merkle contract check:
    in Docker/CUDA, and posts observed metrics back to the backend.
 2. Backend weight setter: reads the backend reward policy and submits Bittensor
    `set_weights` from the validator hotkey.
-3. Contract monitor: checks that Pool/Merkle publication, claim visibility, and
-   the on-chain contract state are healthy.
+3. Contract monitor/verifier: checks that Pool/Merkle publication and the
+   on-chain contract state are healthy. Vetoer operators can also run the
+   challenge-capable Pool verifier with their own key.
 
 If the service boundaries are unfamiliar, read
 [SN94 System Structure](sn94-system-structure.md) first.
@@ -19,14 +20,23 @@ The install steps below use these folders:
 
 ```text
 /opt/bitsota/SN94-BitSota/
-  SN94 validator code, replay config, weight-setter config, and Pool/Merkle
-  contract monitor.
+  SN94 validator code, replay config, and weight-setter config.
   Put research_validator_config.yaml and validator_config.weights.yaml here.
+
+/opt/bitsota/Pool/
+  Pool verifier code and Merkle contract metadata.
+  Put/read new_merkle/app/assets/merklepool.json here.
+  The validator operator needs GitHub access to AlveusLabs/Pool before this
+  clone step works.
+
+/etc/bitsota/
+  Local machine secrets and env files.
+  Put pool-contract-verifier.env here.
 
 /etc/systemd/system/
   Ubuntu background service files.
   Put bitsota-replay-validator.service, bitsota-backend-weights.service,
-  and bitsota-contract-verifier.service here.
+  and optional bitsota-contract-verifier.service here.
 ```
 
 Use these exact values when the later steps ask you to edit config files or run
@@ -38,12 +48,18 @@ In `/opt/bitsota/SN94-BitSota/research_validator_config.yaml`:
 coordinator_url: "https://autoresearch.bitsota.com"
 ```
 
-Example `/opt/bitsota/SN94-BitSota/validator_config.weights.yaml`:
+In `/opt/bitsota/SN94-BitSota/validator_config.weights.yaml`:
 
 ```yaml
 netuid: 94
 network: "finney"
 subtensor_chain_endpoint: "wss://entrypoint-finney.opentensor.ai:443"
+```
+
+When registering the validator hotkey with `btcli`:
+
+```bash
+--netuid 94 --network finney
 ```
 
 When running the backend weight setter, including inside its systemd service:
@@ -52,10 +68,22 @@ When running the backend weight setter, including inside its systemd service:
 --coordinator-url https://autoresearch.bitsota.com
 ```
 
-When checking the live production Pool/Merkle service in step 5:
+In `/etc/bitsota/pool-contract-verifier.env`, if this validator also runs the
+Pool/Merkle contract verifier:
+
+```env
+ONCHAIN_WS_URL=wss://entrypoint-finney.opentensor.ai:443
+ONCHAIN_CONTRACT=5CUo48Vuwidb4pTogCCqAeYyMRUwNieTjeEL8FyYvwmQ9XA5
+ONCHAIN_STAKE_CONTRACT_HOTKEY=5F7MJ2fAyxBG7ci4xP7kQPJanoMdNurk1QBP1AQuFT2Jmzg2
+ONCHAIN_STAKE_NETUID=94
+AUTORESEARCH_REWARD_SNAPSHOT_URL=https://autoresearch.bitsota.com/api/v1/reward-snapshot
+```
+
+When checking the live production Pool/Merkle service in step 6:
 
 ```bash
---pool-url https://pool.bitsota.com
+POOL_STATUS_URL="https://pool.bitsota.com/status"
+POOL_CLAIMS_URL="https://pool.bitsota.com/claims"
 ```
 
 Testing uses `https://autoresearch-test.bitsota.com`, but production validators
@@ -87,7 +115,7 @@ docker run --rm --gpus all nvidia/cuda:12.4.1-base-ubuntu22.04 nvidia-smi
 
 ## 2. Install SN94-BitSota
 
-Clone `main`. This gives you the validator code. Step 3 sets the production
+Clone `main`. This gives you the validator code. Step 4 sets the production
 backend URL in the config.
 
 ```bash
@@ -115,15 +143,23 @@ pip install -r requirements.txt
 pip install -e .
 ```
 
+## 3. Prepare The Validator Wallet
 
-## 3. Configure Replay Validation
+Use a Bittensor wallet whose hotkey is registered on SN94. The backend must
+allowlist this validator hotkey before signed validator scans return work.
 
-This host needs a Bittensor wallet whose hotkey is registered on SN94 and
-allowlisted by the autoresearch backend. If the validator already has a wallet,
-use its existing wallet name and hotkey name in the config below. If it does
-not, create/import the wallet with `btcli` first and register the hotkey on
-netuid `94` using network `finney`. Do not put mnemonics in tracked config
-files.
+Create a new wallet and hotkey:
+
+```bash
+btcli wallet new_coldkey --wallet.name validator_wallet
+btcli wallet new_hotkey --wallet.name validator_wallet --wallet.hotkey validator_hotkey
+btcli subnet register --netuid 94 --wallet.name validator_wallet --wallet.hotkey validator_hotkey --network finney
+```
+
+Existing validators can restore/import their real validator wallet instead. Do
+not put mnemonics in tracked config files.
+
+## 4. Configure Replay Validation
 
 Create the replay validator config:
 
@@ -176,7 +212,7 @@ python -m validator.research_validator_runner --config research_validator_config
 If this fails with an allowlist or auth error, the backend operator needs to add
 the validator hotkey to the backend validator allowlist.
 
-## 4. Configure Chain Weight Setting
+## 5. Configure Chain Weight Setting
 
 Create a weight-setter config:
 
@@ -221,43 +257,95 @@ The backend policy should include the production contract-hotkey target:
 Do not run any other process that also calls `set_weights` for the same
 validator hotkey.
 
-## 5. Check The Pool/Merkle Contract
+## 6. Check The Pool/Merkle Contract
 
-This is the validator-facing Pool/Merkle contract monitor. It checks that Pool
-is publishing normally, the claim API is visible, and the on-chain contract is
-not locked by a veto. It does not recompute rewards or submit vetoes yet.
+This is the contract-side check. It lives in the `Pool` repo because Pool owns
+Merkle publication, proof serving, and contract challenge logic.
 
-Run the SN94-side Pool/Merkle check:
+First check the live production Pool/contract state:
 
 ```bash
-cd /opt/bitsota/SN94-BitSota
+POOL_STATUS_URL="https://pool.bitsota.com/status"
+POOL_CLAIMS_URL="https://pool.bitsota.com/claims"
+
+curl -fsS "$POOL_STATUS_URL" | python3 -m json.tool
+curl -fsS "$POOL_CLAIMS_URL/epochs" | python3 -m json.tool
+```
+
+In the status output:
+
+- `onchain_runtime.enabled` should be `true`;
+- `onchain_runtime.contract_status.read_error` should be `null`;
+- `onchain_runtime.contract_status.is_veto_active` should normally be `false`;
+- `onchain_runtime.processes` should show the Pool publisher running;
+- `/claims/epochs` should list a claimable epoch after Pool publishes a
+  non-empty Merkle root.
+
+For challenge-capable verification, the validator also needs the Pool verifier.
+Run this only if the operator has given you the required private inputs:
+
+- GitHub access to `AlveusLabs/Pool`;
+- a verifier/vetoer SURI whose SS58 address is allowlisted in the Merkle
+  contract;
+- a read-only Pool `DATABASE_URL` or an approved local replica of the reward
+  input database;
+- access to the same epoch artifact directory/feed that the Pool publisher uses.
+
+Install the Pool verifier code:
+
+```bash
+git clone --branch production https://github.com/AlveusLabs/Pool.git /opt/bitsota/Pool
+cd /opt/bitsota/Pool
+
+python3 -m venv .venv
 source .venv/bin/activate
-bitsota-pool-contract-verifier --pool-url https://pool.bitsota.com
+pip install -U pip
+pip install -r requirements.txt
 ```
 
-That command checks:
-
-- Pool `/status` is healthy;
-- on-chain runtime is enabled;
-- contract reads do not return `read_error`;
-- veto is not active unless `--allow-active-veto` is passed;
-- the Pool publisher process is running;
-- `/claims/epochs` is readable.
-
-Use JSON output if you want machine-readable health evidence:
+Create the verifier secret file. Fill in only values the operator assigned to
+this validator:
 
 ```bash
-bitsota-pool-contract-verifier --pool-url https://pool.bitsota.com --json
+sudo install -d -m 0750 /etc/bitsota
+sudo tee /etc/bitsota/pool-contract-verifier.env >/dev/null <<'EOF'
+DATABASE_URL=postgresql://READ_ONLY_POOL_DB_URL
+ONCHAIN_WS_URL=wss://entrypoint-finney.opentensor.ai:443
+ONCHAIN_CONTRACT=5CUo48Vuwidb4pTogCCqAeYyMRUwNieTjeEL8FyYvwmQ9XA5
+ONCHAIN_SURI=REPLACE_WITH_VALIDATOR_VETOER_SURI
+ONCHAIN_METADATA=/opt/bitsota/Pool/new_merkle/app/assets/merklepool.json
+ONCHAIN_STAKE_CONTRACT_HOTKEY=5F7MJ2fAyxBG7ci4xP7kQPJanoMdNurk1QBP1AQuFT2Jmzg2
+ONCHAIN_STAKE_NETUID=94
+AUTORESEARCH_REWARD_SNAPSHOT_URL=https://autoresearch.bitsota.com/api/v1/reward-snapshot
+POOL_COMPETITION_WEIGHT=1.0
+STAKE_GAIN_SOURCE=contract_reserve
+VERIFY_BOOTSTRAP_MODE=history_then_latest_non_vetoed
+EOF
+sudo chmod 0600 /etc/bitsota/pool-contract-verifier.env
 ```
 
-Use `--require-claimable-epoch` only after Pool has published a non-empty
-Merkle root. It is normal for claim epochs to be empty during the first daily
-window or when no rewards are publishable yet.
+Run one foreground verifier pass:
 
-Reward recomputation and veto submission should also live in SN94 before
-external vetoer operators are asked to run that part.
+```bash
+cd /opt/bitsota/Pool
+source .venv/bin/activate
+set -a
+source /etc/bitsota/pool-contract-verifier.env
+set +a
 
-## 6. Keep The Validator Running
+python -u scripts/consensus_daemon.py \
+  --mode verify \
+  --node-id contract-verifier \
+  --out-dir /srv/bitsota/pool-epochs \
+  --poll-s 60 \
+  --verify-bootstrap-mode history_then_latest_non_vetoed
+```
+
+If `/srv/bitsota/pool-epochs` is empty and the operator has not provided an
+epoch artifact sync/feed, the verifier has nothing to compare yet. Do not treat
+an idle verifier as proof that the contract is checked.
+
+## 7. Keep The Validator Running
 
 On Ubuntu, `systemd` is the standard background-process manager. A `systemd
 unit` is just a config file that says: start this command on boot, restart it if
@@ -305,20 +393,21 @@ WantedBy=multi-user.target
 EOF
 ```
 
-Install a background service for the Pool/Merkle contract monitor. This runs the
-same health check every five minutes and restarts it if the process exits:
+If this validator is also running the challenge-capable Pool verifier, install
+its background service:
 
 ```bash
 sudo tee /etc/systemd/system/bitsota-contract-verifier.service >/dev/null <<'EOF'
 [Unit]
-Description=BitSota Pool/Merkle contract monitor
+Description=BitSota Pool/Merkle contract verifier
 After=network-online.target
 Wants=network-online.target
 
 [Service]
-WorkingDirectory=/opt/bitsota/SN94-BitSota
+WorkingDirectory=/opt/bitsota/Pool
 Environment=PYTHONUNBUFFERED=1
-ExecStart=/opt/bitsota/SN94-BitSota/.venv/bin/python -m validator.pool_contract_verifier --pool-url https://pool.bitsota.com --loop --interval-seconds 300
+EnvironmentFile=/etc/bitsota/pool-contract-verifier.env
+ExecStart=/opt/bitsota/Pool/.venv/bin/python -u scripts/consensus_daemon.py --mode verify --node-id contract-verifier --out-dir /srv/bitsota/pool-epochs --poll-s 60 --verify-bootstrap-mode history_then_latest_non_vetoed
 Restart=always
 RestartSec=10
 
@@ -333,6 +422,7 @@ Start the services and enable them after reboot:
 sudo systemctl daemon-reload
 sudo systemctl enable --now bitsota-replay-validator.service
 sudo systemctl enable --now bitsota-backend-weights.service
+# Only run this one after the Pool verifier prerequisites in step 6 are filled.
 sudo systemctl enable --now bitsota-contract-verifier.service
 ```
 
