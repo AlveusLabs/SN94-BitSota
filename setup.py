@@ -11,6 +11,7 @@ setuptools.setup(
     long_description_content_type="text/markdown",
     url="https://github.com/AlveusLabs/SN94-BitSota/",
     packages=setuptools.find_packages(),
+    package_data={"gui": ["assets/*.json"]},
     classifiers=[
         "Programming Language :: Python :: 3",
         "License :: OSI Approved :: MIT License",
@@ -22,6 +23,7 @@ setuptools.setup(
             "bitsota-research-agent=neurons.research_agent_miner:main",
             "bitsota-research-validator=validator.research_validator_runner:main",
             "bitsota-autoresearch-weights=validator.backend_weight_setter:main",
+            "bitsota-claim-rewards=gui.merkle_claim_cli:main",
         ],
     },
 )
