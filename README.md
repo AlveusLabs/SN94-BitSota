@@ -181,4 +181,11 @@ See LICENSE file for details.
 
 ---
 
-**Disclaimer:** This is experimental software. Use at your own risk. Always backup your keys and start with small amounts when testing. Cryptocurrency rewards involve financial risk.
+**Disclaimer:** By downloading, installing, running, submitting to, validating
+for, claiming through, connecting to, or otherwise continuing to use this
+software or related services, you acknowledge and agree to the full
+[Disclaimer](docs/disclaimer.md). This is experimental software. Rewards,
+claims, emissions, payouts, rankings, and validator acceptance are not
+guaranteed. Smart contracts, validators, Pool services, infrastructure, and
+operators can fail, pause, be exploited, or behave unexpectedly. No managed
+account, brokerage, insurance, or financial advice is provided.

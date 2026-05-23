@@ -137,5 +137,6 @@ nav:
       - Deployment: operations/deployment.md
       - Troubleshooting: operations/troubleshooting.md
       - Security: operations/security.md
+  - Disclaimer: disclaimer.md
   - Contributing: contributing.md
   - Docs Coverage: coverage.md
