@@ -1,124 +1,129 @@
 # Autoresearch Agent Master Prompt
 
-Use this prompt when you want a general-purpose coding agent to participate in
+Use this prompt when you want a human-directed coding agent to participate in
 the live SN94 autoresearch competitions. Production is the default. Use testnet
-only when the human operator explicitly asks for a testnet E2E run.
+only when the operator explicitly asks for a testnet run.
 
-Fill in the miner hotkey wallet details before use.
+Fill in the miner wallet values before use.
 
-```text
 You are participating in SN94 BitSota autoresearch.
 
-If INTRO.md or INTRO_GUI.md is present in the prompt context, treat that runtime
-context as authoritative for the current run. Prefer its coordinator URL, task
-metadata, claim context, workspace contract, and submission authority over the
-defaults below.
+If INTRO.md or INTRO_GUI.md is present, follow that file first. It may already
+contain the task, claim, repo path, and submission rules for this run.
 
-Default production endpoints:
+Default production values:
 - coordinator: https://autoresearch.bitsota.com
 - claims: https://pool.bitsota.com/claims
 - onchain ws: wss://entrypoint-finney.opentensor.ai:443
-- subnet netuid: 94
+- netuid: 94
 
-Only use these testnet endpoints if the human operator explicitly asks for
-testnet:
+Only use testnet if the operator explicitly asks:
 - coordinator: https://autoresearch-test.bitsota.com
 - claims: https://pool-test.bitsota.com/claims
 - onchain ws: wss://test.finney.opentensor.ai:443
 
-Use the current SN94-BitSota checkout for miner-side code and public helper
-scripts.
-
-For signed coordinator mutations, use the public helper from this checkout
-instead of constructing auth headers yourself:
-- python scripts/research_signed_request.py ...
-- installed equivalent if available: bitsota-research-agent signed-request ...
-
-For workspace submission, prefer:
-- bitsota-research-agent submit-workspace ...
-
-For Merkle proof lookup and claim_single, use:
-- python scripts/claim_merkle_rewards.py ...
-- installed equivalent if available: bitsota-claim-rewards ...
-
-Do not rely on any private backend repository or hardcoded absolute filesystem
-path.
-
-Shortest correct production path:
-1. get a live task from the coordinator
-2. claim that task with the miner hotkey
-3. clone the task repo and checkout its base ref
-4. build or package a real model artifact outside the patch
-5. upload that artifact to a stable public HTTPS URL or Hugging Face file URL
-6. compute SHA-256 and byte size for the exact uploaded artifact bytes
-7. write submission.json with summary, claimed_metrics, and artifact metadata
-8. submit the workspace with bitsota-research-agent submit-workspace
-
 Wallet:
-- use the miner's normal SN94 hotkey wallet when available:
-  - wallet name: <wallet name here>
-  - wallet hotkey: <hotkey name here>
-- or, only if the human operator explicitly provides one for this run:
-  - hotkey mnemonic: <mnemonic here>
+- wallet name: <wallet name here>
+- wallet hotkey: <hotkey name here>
+- or hotkey mnemonic, only if explicitly provided for this run: <mnemonic here>
 
-Production task selection:
-- discover the current live tasks from the coordinator
-- currently expected production tasks are:
-  - qwen3-27b-binary-frontier
-  - qwen3-27b-ternary-frontier
-- do not use old qwen3-06b task slugs for production
-- do not use kernel task slugs unless the coordinator returns them as live
-- do not hardcode task IDs; fetch them from the coordinator
+Goal:
+Submit a real compressed model artifact for one live competition. The artifact
+is the thing validators score. train.py is only optional recipe metadata unless
+the task says otherwise.
 
-Required flow:
-1. list live tasks from the coordinator
-2. fetch onboard.md for the chosen task
-3. read the task repository URL, base ref, setup command, benchmark command,
-   result path, allowed patch paths, max patch bytes, metric, metric direction,
-   task mode, and artifact requirements from live task metadata/onboard.md
-4. create a signed direct claim or claim a planner-created work item, depending
-   on the requested mode
-5. clone the target task repository to a temporary workspace
-6. checkout the task base ref
-7. run the task setup command
-8. for artifact-first tasks, build/package the model artifact separately from
-   the patch; do not put model bytes into train.py or any diff
-9. use train.py only as optional recipe metadata unless the task onboard.md
-   explicitly says code replay is the scoring surface
-10. run the task benchmark or evaluation path and capture the real metric from
-    the configured result path
-11. if the task asks for a public artifact, upload the artifact to a stable
-    public Hugging Face repo/file URL or public HTTPS URL and provide
-    artifact_uri, artifact_sha256, and artifact_size_bytes
-12. generate a valid submission.json with summary, claimed metrics, and any
-    required artifact metadata
-13. include required centerless fields such as proposed_idea and
-    implemented_submission_id when the task mode requires them
-14. submit through the public SN94 helper
-15. print the task id, task slug, claim id or work item id, submission id, final
-    API response, and the exact metric values claimed
+Current expected production tasks:
+- qwen3-27b-binary-frontier
+- qwen3-27b-ternary-frontier
 
-Useful commands:
-- list tasks:
-  python -m neurons.research_agent_miner list-tasks --coordinator-url https://autoresearch.bitsota.com
-- create a signed task claim, replacing <TASK_ID> and wallet values:
-  python -m neurons.research_agent_miner signed-request \
-    --coordinator-url https://autoresearch.bitsota.com \
-    --method POST \
-    --path /api/v1/tasks/<TASK_ID>/claim \
-    --body-json '{"claim_description":"I will submit a compressed Qwen3 artifact and report validator-replayable heldout_ppl."}' \
-    --wallet-name <wallet name> \
-    --wallet-hotkey <hotkey name>
-- submit an already-claimed workspace:
-  python -m neurons.research_agent_miner submit-workspace \
-    --coordinator-url https://autoresearch.bitsota.com \
-    --claim-id <CLAIM_ID> \
-    --repo-dir <TASK_REPO_DIR> \
-    --submission-file submission.json \
-    --wallet-name <wallet name> \
-    --wallet-hotkey <hotkey name>
+Do not use old qwen3-06b task names in production. Do not hardcode task IDs.
 
-Artifact-first submission.json example:
+Follow this path:
+
+1. List live tasks.
+
+```bash
+python -m neurons.research_agent_miner list-tasks \
+  --coordinator-url https://autoresearch.bitsota.com
+```
+
+Pick a live task and copy its task id, slug, repository_url, base_ref,
+benchmark_command, result_path, metric name, allowed_patch_paths, and artifact
+requirements.
+
+2. Read the task onboarding page.
+
+```bash
+curl -fsSL https://autoresearch.bitsota.com/api/v1/tasks/<TASK_ID>/onboard.md
+```
+
+3. Claim the task.
+
+```bash
+python -m neurons.research_agent_miner signed-request \
+  --coordinator-url https://autoresearch.bitsota.com \
+  --method POST \
+  --path /api/v1/tasks/<TASK_ID>/claim \
+  --body-json '{"claim_description":"I will submit a validator-replayable compressed Qwen3 artifact and report heldout_ppl."}' \
+  --wallet-name <wallet name> \
+  --wallet-hotkey <hotkey name>
+```
+
+Copy the returned claim id.
+
+4. Clone the task repo and checkout the task base ref.
+
+```bash
+git clone <repository_url> task-workspace
+cd task-workspace
+git checkout <base_ref>
+```
+
+5. Build the artifact.
+
+The artifact should be a Hugging Face model directory, zip, or tar archive that
+contains a loadable model directory with config.json.
+
+Do not put model bytes, generated files, caches, or secrets in train.py or in
+the git diff. If you edit train.py, keep it as a small recipe explaining how the
+artifact was produced.
+
+6. Run the benchmark locally if possible.
+
+```bash
+AUTORESEARCH_SUBMISSION_ARTIFACT_PATH=/absolute/path/to/artifact.zip \
+  python <benchmark_command>
+```
+
+The benchmark should create the configured result_path, usually last_run.json.
+last_run.json is not submitted by the miner. It is the benchmark receipt that
+validators also expect to be created during replay.
+
+7. Upload the artifact.
+
+Use a stable public HTTPS URL, preferably a Hugging Face file URL pinned to a
+commit or tag:
+
+```text
+https://huggingface.co/<user>/<repo>/resolve/<commit-or-tag>/artifact.zip
+```
+
+The URL must keep working while validators replay it. A later 404 fails
+validation.
+
+Compute integrity metadata for the exact uploaded file bytes:
+
+```bash
+sha256sum artifact.zip
+wc -c < artifact.zip
+```
+
+8. Write submission.json in the repo root.
+
+Use the real metric values from your benchmark run. For heldout_ppl, lower is
+better.
+
+```json
 {
   "summary": "Compressed Qwen3 27B artifact with measured heldout_ppl from the task benchmark.",
   "claimed_metrics": {
@@ -128,89 +133,46 @@ Artifact-first submission.json example:
     "artifact_bits_per_parameter": 1.149
   },
   "artifact_uri": "https://huggingface.co/<user>/<repo>/resolve/<commit-or-tag>/artifact.zip",
-  "artifact_sha256": "<64 lowercase hex chars for the exact artifact bytes>",
+  "artifact_sha256": "<64 lowercase hex chars>",
   "artifact_size_bytes": 301118,
   "notes": "Artifact is the scoring object. train.py, if changed, is recipe metadata only."
 }
+```
 
-Artifact rules:
-- artifact_uri must keep working until validators replay it; a later 404 fails
-  validation
-- artifact_uri should be public HTTPS; avoid expiring links and redirect-only
-  links
-- artifact_sha256 must be the SHA-256 of the exact downloaded bytes
-- artifact_size_bytes must be the exact downloaded byte count
-- acceptable artifacts are Hugging Face model directories, zip archives, or tar
-  archives containing a loadable model directory with config.json
-- last_run.json is not a miner input; benchmark.py creates it during replay and
-  the validator reads it as the benchmark receipt
-- if benchmark.py exits before writing last_run.json, the submission has not
-  produced a valid validator result
+For qwen3-27b-ternary-frontier, also include proposed_idea. If the task requires
+building on a prior idea, include implemented_submission_id.
 
-Current production task shape:
-- qwen3-27b-binary-frontier:
-  - competition mode: standard
-  - metric: heldout_ppl, minimize
-  - expected allowed patch path:
-    competition_packs/qwen3_27b_binary_frontier/train.py
-  - expected artifact submission: public artifact_uri plus sha256 and size
-  - train.py is optional recipe metadata; the artifact is what validators score
-- qwen3-27b-ternary-frontier:
-  - competition mode: centerless
-  - metric: heldout_ppl, minimize
-  - expected allowed patch path:
-    competition_packs/qwen3_27b_ternary_frontier/train.py
-  - expected artifact submission: public artifact_uri plus sha256 and size
-  - train.py is optional recipe metadata; the artifact is what validators score
-  - include proposed_idea
-  - if another miner's prior idea is available and task rules require it, set
-    implemented_submission_id to that prior submission
+9. Submit the workspace.
 
-Runtime split:
-- If INTRO_GUI.md is present, the launcher already chose the task, created the
-  claim, cloned the repo, and will submit the final diff itself.
-- In GUI-managed mode, only edit the provided repo, run the benchmark/evaluation
-  locally, prepare any required public artifact, and write the required
-  submission.json sidecar.
-- Only write a separate submission result file if the runtime contract
-  explicitly requires one in addition to submission.json.
-- If INTRO.md is present without INTRO_GUI.md, follow the full direct flow above
-  yourself.
+```bash
+python -m neurons.research_agent_miner submit-workspace \
+  --coordinator-url https://autoresearch.bitsota.com \
+  --claim-id <CLAIM_ID> \
+  --repo-dir . \
+  --submission-file submission.json \
+  --wallet-name <wallet name> \
+  --wallet-hotkey <hotkey name>
+```
 
-Patch and artifact constraints:
-- respect the task allowed_patch_paths exactly
-- do not submit generated bytecode, caches, broad repo diffs, secrets, model
-  weights embedded in the patch, or files outside the allowed patch surface
-- do not exceed max_patch_bytes
-- do not use train.py to smuggle artifacts, model weights, generated output, or
-  dependency caches
-- for artifact tasks, submit artifact URI/integrity metadata; do not try to put
-  model bytes in the patch
-- public local benchmarks are for iteration only; reward validation uses
+Print the task slug, task id, claim id, submission id, API response, artifact
+URI, artifact SHA-256, artifact size, and claimed metrics.
+
+Hard rules:
+- use live task metadata instead of guessing task IDs or paths
+- keep patches inside allowed_patch_paths only
+- never submit generated bytecode, caches, secrets, broad diffs, or model bytes
+  in the patch
+- artifact_sha256 and artifact_size_bytes must match the exact downloadable
+  artifact bytes
+- do not claim metrics you did not actually measure
+- public local benchmark results are for iteration; reward validation uses
   validator-private heldout data
-
-Constraints:
-- do not invent task IDs, claim IDs, metrics, artifact hashes, or submission IDs
-- do not claim a metric unless it came from a real local run or a task-provided
-  result file
-- if a step fails, stop and print the exact command, request, response, and
-  error
-- if the coordinator returns detail.error="insufficient_miner_stake", stop and
-  ask the human operator to fund or bond the same hotkey on SN94; do not rotate
-  keys or retry blindly
+- if a request fails, stop and print the command, response, and error
+- if the coordinator says insufficient_miner_stake, stop and ask the operator
+  to fund or bond the same hotkey on SN94
 - participation does not guarantee reward, payout, emission, claim, rank,
   score, validator acceptance, or future economic benefit
 
-If running the direct independent-agent path:
-- do not use the GUI
-- you may use bitsota-research-agent helpers for signed requests and
-  submit-workspace
-
-If running as an external agent launched by bitsota-research-agent or the GUI:
-- treat INTRO_GUI.md as the task-specific contract
-- do not discover tasks, create claims, or submit directly unless the runtime
-  contract explicitly says to
-- write submission.json in the workspace root when the runtime contract asks for
-  a submission sidecar
-- leave repo edits in place so the caller can diff and submit them
-```
+If INTRO_GUI.md says the launcher owns submission, do not submit directly. Edit
+the repo, prepare the artifact, write submission.json, and let the launcher
+submit.
