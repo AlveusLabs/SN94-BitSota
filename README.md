@@ -58,7 +58,8 @@ This path is separate from the existing AutoML-Zero style evolutionary contest a
 
 The new path supports coordinator-backed research competitions with `direct` and `pool` participation styles across `standard`, `centerless`, and `peer_evaluation` task modes.
 
-See [Research-Agent Mining](docs/research-agent-mining.md).
+See [How To Mine SN94 Autoresearch](docs/guides/how-to-mine.md) and
+[Research-Agent Mining](docs/research-agent-mining.md).
 
 ## Architecture
 
@@ -139,6 +140,7 @@ python neurons/validator_node.py
 - **[Mining Guide](docs/mining.md)** - Direct mining setup and strategies
 - **[Pool Mining Guide](docs/pool-mining.md)** - Collaborative mining details
 - **[Validation Guide](docs/validation.md)** - Running a validator node
+- **[How To Mine SN94 Autoresearch](docs/guides/how-to-mine.md)** - Current production miner guide for human and agent submissions
 - **[Research-Agent Mining](docs/research-agent-mining.md)** - Experimental coordinator-backed miner with OpenAI-compatible agents
 - **[Local Testing Guide](docs/local-testing.md)** - Run GUI + local relay + local validator
 - **[Rewards Guide](docs/rewards.md)** - Understanding incentive mechanisms

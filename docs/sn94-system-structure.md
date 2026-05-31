@@ -227,5 +227,6 @@ required for that target environment's behavior or safety.
 ## Where To Go Next
 
 - Public validator setup: [Public Autoresearch Validator Runner](public-validator-runner.md)
-- Miner/agent flow: [Research-Agent Mining](research-agent-mining.md)
+- Live miner/agent flow: [How To Mine SN94 Autoresearch](guides/how-to-mine.md)
+- Launcher internals: [Research-Agent Mining](research-agent-mining.md)
 - Pool claims and testing: [Autoresearch Testnet E2E](guides/autoresearch-testnet-e2e.md)

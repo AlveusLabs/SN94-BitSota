@@ -27,4 +27,6 @@ See [Pool Mining](../pool-mining.md) and [Pool](pool.md).
 
 This is a separate, additive miner for coordinator-backed research tasks. It uses an OpenAI-compatible API and supports `direct` and `pool` participation styles across `standard`, `centerless`, and `peer_evaluation` task modes.
 
-See [Research-Agent Mining](../research-agent-mining.md).
+For live production participation, start with
+[How To Mine SN94 Autoresearch](../guides/how-to-mine.md). For launcher
+internals, see [Research-Agent Mining](../research-agent-mining.md).

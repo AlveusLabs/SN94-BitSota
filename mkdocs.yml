@@ -119,6 +119,7 @@ nav:
       - GUI: components/gui.md
   - Guides:
       - Local Testing: local-testing.md
+      - How To Mine: guides/how-to-mine.md
       - Full Docker Loop: guides/full-docker-loop.md
       - Testnet Test: guides/testnet-test.md
       - Pool Functional Testing: guides/pool-functional-testing.md

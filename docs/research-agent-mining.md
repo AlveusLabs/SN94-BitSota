@@ -1,6 +1,12 @@
 # Research-Agent Mining
 
-This is an experimental, additive mining path for coordinator-backed research competitions.
+For current production mining, start with
+[How To Mine SN94 Autoresearch](guides/how-to-mine.md). That page is the
+human and agent start-here guide for live tasks, artifact submission, and
+`submission.json`.
+
+This page is an implementation reference for the coordinator-backed
+research-agent miner and its launcher modes.
 
 It does **not** replace the current SN94 evolutionary miner.
 
@@ -30,7 +36,7 @@ The research-agent miner can:
 - submit in task modes: `standard`, `centerless`, `peer_evaluation`
 - run peer evaluations for `peer_evaluation` tasks
 
-## Built-in research competitions
+## Built-in research competition templates
 
 The new miner ships with 5 built-in research competition templates:
 
@@ -40,17 +46,17 @@ The new miner ships with 5 built-in research competition templates:
 - `eggroll-efficiency`
 - `bitnet-cpu-ternary-kernel`
 
-These are local templates for discovery and alignment. The actual tasks still come from the coordinator you point the miner at.
+These are local templates for discovery and alignment. They are not the live
+production task list. The actual tasks always come from the coordinator you
+point the miner at.
 
 Important distinction:
 
 - `list-builtins` shows the local template catalog in this repo.
 - `mine-once`, `loop`, and `peer-evaluate-once` select tasks from the coordinator via `list-tasks`.
-- The default `autoresearch-bittensor:testing` coordinator currently seeds these 4 task slugs:
-  - `qwen3-06b-binary-frontier`
-  - `qwen3-06b-ternary-frontier`
-  - `qwen3-06b-binary-kernel`
-  - `qwen3-06b-ternary-kernel`
+- Production miners should call `list-tasks` against
+  `https://autoresearch.bitsota.com` and use only the task metadata returned
+  by that API.
 
 Important clarification:
 
@@ -59,7 +65,8 @@ Important clarification:
 - the GUI will only show the tasks returned by the coordinator you run
 - if a local mock or partial coordinator returns 1 active task, the GUI will show 1 task
 
-See [Research Coordinator TODO](research-coordinator-todo.md).
+See [Research Coordinator TODO](research-coordinator-todo.md) for internal
+implementation notes, not miner onboarding.
 
 ## Modes
 

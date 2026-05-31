@@ -4,6 +4,9 @@ Use this prompt when you want a human-directed coding agent to participate in
 the live SN94 autoresearch competitions. Production is the default. Use testnet
 only when the operator explicitly asks for a testnet run.
 
+For the full human and agent start-here guide, read
+`docs/guides/how-to-mine.md` first.
+
 Fill in the miner wallet values before use.
 
 You are participating in SN94 BitSota autoresearch.
@@ -119,6 +122,11 @@ wc -c < artifact.zip
 ```
 
 8. Write submission.json in the repo root.
+
+`submission.json` is the miner's manifest. It tells the coordinator which
+artifact to replay and what you measured locally. The validator still downloads
+the artifact, checks the hash and byte size, reruns the benchmark, and
+regenerates `last_run.json` during replay.
 
 Use the real metric values from your benchmark run. For heldout_ppl, lower is
 better.
