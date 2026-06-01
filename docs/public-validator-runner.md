@@ -46,6 +46,9 @@ weight setter running manually in a terminal.
 The install steps below use these folders:
 
 ```text
+/home/validator/
+  Dedicated Linux account for the validator processes and Bittensor wallet.
+
 /opt/bitsota/SN94-BitSota/
   SN94 validator code, replay config, and weight-setter config.
   Put research_validator_config.yaml and validator_config.weights.yaml here.
@@ -129,16 +132,25 @@ Use an Ubuntu GPU host with NVIDIA drivers, Docker, and NVIDIA Container
 Toolkit. The validator replays untrusted miner work inside Docker with CUDA GPU
 access.
 
-Install baseline packages:
+Install baseline packages and create the dedicated `validator` Linux user:
 
 ```bash
 sudo apt update
 sudo apt install -y git curl ca-certificates python3 python3-venv python3-pip build-essential docker.io
-sudo usermod -aG docker "$USER"
+sudo useradd -m -s /bin/bash validator 2>/dev/null || true
+sudo usermod -aG docker validator
+sudo install -d -m 0750 -o validator -g validator /opt/bitsota
+sudo install -d -m 0700 -o validator -g validator /srv/bitsota/public-validator-workspaces
 ```
 
 Install NVIDIA Container Toolkit using NVIDIA's official Ubuntu instructions
-for your Ubuntu version, then restart Docker and log out/back in.
+for your Ubuntu version, then restart Docker. Run the validator install and
+foreground smoke commands as the `validator` user so the wallet path, repo
+ownership, and systemd service user all match:
+
+```bash
+sudo -iu validator
+```
 
 These two commands must both work before continuing:
 
@@ -153,9 +165,6 @@ Clone `main`. This gives you the validator code. Step 4 sets the production
 backend URL in the config.
 
 ```bash
-sudo mkdir -p /opt/bitsota
-sudo chown "$USER:$USER" /opt/bitsota
-
 git clone --branch main https://github.com/AlveusLabs/SN94-BitSota.git /opt/bitsota/SN94-BitSota
 cd /opt/bitsota/SN94-BitSota
 
@@ -429,7 +438,10 @@ After=docker.service network-online.target
 Wants=network-online.target
 
 [Service]
+User=validator
+Group=validator
 WorkingDirectory=/opt/bitsota/SN94-BitSota
+Environment=HOME=/home/validator
 Environment=PYTHONUNBUFFERED=1
 ExecStart=/opt/bitsota/SN94-BitSota/.venv/bin/python -m validator.research_validator_runner --config /opt/bitsota/SN94-BitSota/research_validator_config.yaml --no-dry-run
 Restart=always
@@ -450,7 +462,10 @@ After=network-online.target
 Wants=network-online.target
 
 [Service]
+User=validator
+Group=validator
 WorkingDirectory=/opt/bitsota/SN94-BitSota
+Environment=HOME=/home/validator
 Environment=PYTHONUNBUFFERED=1
 ExecStart=/opt/bitsota/SN94-BitSota/.venv/bin/python -m validator.backend_weight_setter --config /opt/bitsota/SN94-BitSota/validator_config.weights.yaml --loop --interval-seconds 300
 Restart=always
@@ -472,7 +487,10 @@ After=network-online.target
 Wants=network-online.target
 
 [Service]
+User=validator
+Group=validator
 WorkingDirectory=/opt/bitsota/Pool
+Environment=HOME=/home/validator
 Environment=PYTHONUNBUFFERED=1
 EnvironmentFile=/etc/bitsota/pool-contract-verifier.env
 ExecStart=/opt/bitsota/Pool/.venv/bin/python -u scripts/consensus_daemon.py --mode verify --node-id contract-verifier --out-dir /srv/bitsota/pool-epochs --poll-s 60 --verify-bootstrap-mode history_then_latest_non_vetoed --onchain-veto-epoch first-published
