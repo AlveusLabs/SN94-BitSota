@@ -136,7 +136,7 @@ Install baseline packages and create the dedicated `validator` Linux user:
 
 ```bash
 sudo apt update
-sudo apt install -y git curl ca-certificates python3 python3-venv python3-pip build-essential
+sudo apt install -y git curl ca-certificates python3.11 python3.11-venv python3.11-dev python3-pip build-essential
 
 if ! command -v docker >/dev/null 2>&1; then
   sudo apt install -y docker.io || \
@@ -175,7 +175,7 @@ backend URL in the config.
 git clone --branch main https://github.com/AlveusLabs/SN94-BitSota.git /opt/bitsota/SN94-BitSota
 cd /opt/bitsota/SN94-BitSota
 
-python3 -m venv .venv
+python3.11 -m venv .venv
 source .venv/bin/activate
 pip install -U pip
 pip install -r requirements.txt
@@ -373,7 +373,7 @@ Install the Pool verifier code:
 git clone --branch production https://github.com/AlveusLabs/Pool.git /opt/bitsota/Pool
 cd /opt/bitsota/Pool
 
-python3 -m venv .venv
+python3.11 -m venv .venv
 source .venv/bin/activate
 pip install -U pip
 pip install -r requirements.txt
