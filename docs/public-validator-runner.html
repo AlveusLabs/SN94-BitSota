@@ -174,6 +174,18 @@ padding: 32px 18px 56px;
 </ol>
 <p>Production validators must not run the legacy relay/local validator weight path. Relay-based SOTA voting and local winner weight setting have been removed from the public validator path; production weights come only from the autoresearch backend reward snapshot.</p>
 <p>If the service boundaries are unfamiliar, read <a href="sn94-system-structure.md">SN94 System Structure</a> first.</p>
+<h2 id="production-service-model">Production Service Model</h2>
+<p>The normal production state is <code>systemd</code>-managed, not an interactive shell. The foreground commands in steps 4 and 5 are smoke checks to prove the wallet, backend allowlist, Docker replay, and backend weight policy are correct before the services are enabled.</p>
+<p>Required services on every production validator host:</p>
+<ul>
+<li><code>bitsota-replay-validator.service</code> runs <code>validator.research_validator_runner</code>.</li>
+<li><code>bitsota-backend-weights.service</code> runs <code>validator.backend_weight_setter</code>.</li>
+</ul>
+<p>Optional service, only for operators assigned Pool/Merkle verifier inputs:</p>
+<ul>
+<li><code>bitsota-contract-verifier.service</code> runs the Pool verifier.</li>
+</ul>
+<p>Create and enable these units in <a href="#keep-the-validator-running">Keep The Validator Running</a> after the foreground checks pass. Do not leave the replay validator or backend weight setter running manually in a terminal.</p>
 <h2 id="production-values">Production Values</h2>
 <p>The install steps below use these folders:</p>
 <pre class="text"><code>/opt/bitsota/SN94-BitSota/
@@ -295,6 +307,7 @@ AUTORESEARCH_REWARD_SNAPSHOT_URL=https://autoresearch.bitsota.com/api/v1/reward-
 <span id="cb14-2"><a href="#cb14-2" aria-hidden="true"></a><span class="bu">source</span> .venv/bin/activate</span>
 <span id="cb14-3"><a href="#cb14-3" aria-hidden="true"></a><span class="ex">python</span> -m validator.research_validator_runner --config research_validator_config.yaml --once --no-dry-run</span></code></pre></div>
 <p>If this fails with an allowlist or auth error, the backend operator needs to add the validator hotkey to the backend validator allowlist.</p>
+<p>After this passes, the replay validator should run as <code>bitsota-replay-validator.service</code>; the unit file is created in <a href="#keep-the-validator-running">Keep The Validator Running</a>. Do not leave the replay validator running manually in a terminal.</p>
 <h2 id="configure-chain-weight-setting">5. Configure Chain Weight Setting</h2>
 <p>Create a backend-only weight-setter config. Replace <code>validator_wallet</code> and <code>validator_hotkey</code> with the local wallet names on this host:</p>
 <div class="sourceCode" id="cb15"><pre class="sourceCode bash"><code class="sourceCode bash"><span id="cb15-1"><a href="#cb15-1" aria-hidden="true"></a><span class="bu">cd</span> /opt/bitsota/SN94-BitSota</span>
@@ -321,7 +334,7 @@ AUTORESEARCH_REWARD_SNAPSHOT_URL=https://autoresearch.bitsota.com/api/v1/reward-
 <p>The dry run must show the production contract-hotkey target:</p>
 <pre class="text"><code>5F7MJ2fAyxBG7ci4xP7kQPJanoMdNurk1QBP1AQuFT2Jmzg2</code></pre>
 <p>It should also show the current on-chain UID for that hotkey. Do not hardcode the UID permanently; UIDs can change when registration state changes.</p>
-<p>Run one live weight update only after the dry-run target is correct:</p>
+<p>Optional: run one live weight update only after the dry-run target is correct:</p>
 <div class="sourceCode" id="cb18"><pre class="sourceCode bash"><code class="sourceCode bash"><span id="cb18-1"><a href="#cb18-1" aria-hidden="true"></a><span class="ex">python</span> -m validator.backend_weight_setter <span class="kw">\</span></span>
 <span id="cb18-2"><a href="#cb18-2" aria-hidden="true"></a>  <span class="ex">--config</span> validator_config.weights.yaml</span></code></pre></div>
 <p>Do not run any other process that also calls <code>set_weights</code> for the same validator hotkey. In particular, stop any old relay/local validator services before starting backend-directed weights:</p>
@@ -329,6 +342,7 @@ AUTORESEARCH_REWARD_SNAPSHOT_URL=https://autoresearch.bitsota.com/api/v1/reward-
 <span id="cb19-2"><a href="#cb19-2" aria-hidden="true"></a><span class="fu">sudo</span> systemctl disable --now bitsota-capacitorless-weights.service <span class="op">2&gt;</span>/dev/null <span class="kw">||</span> <span class="fu">true</span></span>
 <span id="cb19-3"><a href="#cb19-3" aria-hidden="true"></a><span class="fu">sudo</span> systemctl disable --now bitsota-local-weights.service <span class="op">2&gt;</span>/dev/null <span class="kw">||</span> <span class="fu">true</span></span>
 <span id="cb19-4"><a href="#cb19-4" aria-hidden="true"></a><span class="ex">pgrep</span> -af <span class="st">&#39;validator_node|local_validator|capacitorless|relay_client|set_weights&#39;</span> <span class="kw">||</span> <span class="fu">true</span></span></code></pre></div>
+<p>After the dry run is correct and old weight setters are stopped, the backend weight setter should run as <code>bitsota-backend-weights.service</code>; the unit file is created in <a href="#keep-the-validator-running">Keep The Validator Running</a>. Do not leave the weight setter running manually in a terminal.</p>
 <h2 id="check-the-poolmerkle-contract">6. Check The Pool/Merkle Contract</h2>
 <p>This is the contract-side check. It lives in the <code>Pool</code> repo because Pool owns Merkle publication, proof serving, and contract challenge logic.</p>
 <p>First check the live production Pool/contract state:</p>

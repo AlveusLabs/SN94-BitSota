@@ -19,6 +19,28 @@ autoresearch backend reward snapshot.
 If the service boundaries are unfamiliar, read
 [SN94 System Structure](sn94-system-structure.md) first.
 
+## Production Service Model
+
+The normal production state is `systemd`-managed, not an interactive shell. The
+foreground commands in steps 4 and 5 are smoke checks to prove the wallet,
+backend allowlist, Docker replay, and backend weight policy are correct before
+the services are enabled.
+
+Required services on every production validator host:
+
+- `bitsota-replay-validator.service` runs
+  `validator.research_validator_runner`.
+- `bitsota-backend-weights.service` runs
+  `validator.backend_weight_setter`.
+
+Optional service, only for operators assigned Pool/Merkle verifier inputs:
+
+- `bitsota-contract-verifier.service` runs the Pool verifier.
+
+Create and enable these units in [Keep The Validator Running](#keep-the-validator-running)
+after the foreground checks pass. Do not leave the replay validator or backend
+weight setter running manually in a terminal.
+
 ## Production Values
 
 The install steps below use these folders:
@@ -224,6 +246,11 @@ python -m validator.research_validator_runner --config research_validator_config
 If this fails with an allowlist or auth error, the backend operator needs to add
 the validator hotkey to the backend validator allowlist.
 
+After this passes, the replay validator should run as
+`bitsota-replay-validator.service`; the unit file is created in
+[Keep The Validator Running](#keep-the-validator-running). Do not leave the
+replay validator running manually in a terminal.
+
 ## 5. Configure Chain Weight Setting
 
 Create a backend-only weight-setter config. Replace `validator_wallet` and
@@ -267,7 +294,7 @@ The dry run must show the production contract-hotkey target:
 It should also show the current on-chain UID for that hotkey. Do not hardcode
 the UID permanently; UIDs can change when registration state changes.
 
-Run one live weight update only after the dry-run target is correct:
+Optional: run one live weight update only after the dry-run target is correct:
 
 ```bash
 python -m validator.backend_weight_setter \
@@ -284,6 +311,11 @@ sudo systemctl disable --now bitsota-capacitorless-weights.service 2>/dev/null |
 sudo systemctl disable --now bitsota-local-weights.service 2>/dev/null || true
 pgrep -af 'validator_node|local_validator|capacitorless|relay_client|set_weights' || true
 ```
+
+After the dry run is correct and old weight setters are stopped, the backend
+weight setter should run as `bitsota-backend-weights.service`; the unit file is
+created in [Keep The Validator Running](#keep-the-validator-running). Do not
+leave the weight setter running manually in a terminal.
 
 ## 6. Check The Pool/Merkle Contract
 
