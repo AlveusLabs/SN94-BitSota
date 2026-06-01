@@ -227,44 +227,28 @@ Then start the GUI and select `Pool` in the Task dropdown. The GUI stays a thin 
 - It talks to the Pool API and enqueues sidecar jobs.
 - The pool worker does the compute via sidecar.
 
-## 3) Start a local validator (poll + verify + vote)
+## 3) Legacy local validator removed
 
-Create a hotkey if you don’t already have one:
+The old local relay validator and relay SOTA vote path have been removed from
+the public validator flow. This local relay guide can still exercise GUI miner
+submission against a local relay, but it no longer has a local validator step in
+this repo.
 
-```bash
-btcli wallet new_coldkey --wallet.name local_val
-btcli wallet new_hotkey --wallet.name local_val --wallet.hotkey local_val_hot
-```
+For production-style validation, use the current autoresearch runner and backend
+weight setter:
 
-Run the local relay validator:
-
-```bash
-python3 -m validator.local_validator \
-  --relay-url http://127.0.0.1:8002 \
-  --wallet-name local_val \
-  --wallet-hotkey local_val_hot \
-  --poll-interval 5
-```
-
-Tips:
-- Tune the suite in `validator_hyperparams.json` (`task_count` / `task_seed`).
-  - One-off override still works: `VALIDATOR_TASK_COUNT=8 python3 -m validator.local_validator ...`
-- If you want to test relay “consensus” with `SOTA_CONSENSUS_VOTES>1`, run two validator processes with different hotkeys (or set `--seen-block-mode fixed --seen-block 1` on both so they always vote in the same round).
-- Reduce log noise: add `--relay-client-log-level WARNING` (it controls the `validator.relay_client` HTTP poll logs).
-- Counters: `validator.local_validator` prints a periodic stats summary (default every 30s; change with `--stats-interval`, disable with `--stats-interval 0`) and writes JSONL metrics to `local_validator_metrics.log` (disable with `--metrics-log ""`).
+- [Public Autoresearch Validator Runner](public-validator-runner.md)
+- [Validation Guide](validation.md)
 
 ## 4) Run an end-to-end check
 
 1. Start relay (Section 1)
-2. Start local validator (Section 3)
-3. Start GUI miner (Section 2) and click “Start Mining”
+2. Start GUI miner (Section 2) and click “Start Mining”
 
 You should see:
 - GUI logs populated from the local sidecar
 - GUI “Local SOTA” updating from sidecar state as submissions succeed
 - GUI submissions accepted by the relay (`/submit_solution`)
-- Validator logs showing re-evaluation + `/sota/vote`
-	- Relay `/sota_threshold` increasing after accepted votes (when `SOTA_CONSENSUS_VOTES=1`)
 
 ## 5) Profile “1 generation” call paths (miner_local_og vs GUI-like vs actual GUI)
 

@@ -49,5 +49,7 @@ On-chain bridge behavior:
 
 ## Validator
 
-- `validator.local_validator` writes JSONL metrics to `local_validator_metrics.log` by default
-- Reduce HTTP poll log noise with `--relay-client-log-level WARNING`
+- `systemctl status bitsota-replay-validator.service --no-pager`
+- `systemctl status bitsota-backend-weights.service --no-pager`
+- `journalctl -u bitsota-replay-validator.service -n 100 --no-pager`
+- `journalctl -u bitsota-backend-weights.service -n 100 --no-pager`

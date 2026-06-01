@@ -6,7 +6,7 @@
 - `Pool/` is the pool service
 - `sidecar/` is the local API used by the GUI
 - `miner/` and `neurons/` contain miner entrypoints
-- `validator/` and `neurons/validator_node.py` contain validator entrypoints
+- `validator/` contains replay validator and backend weight-setter entrypoints
 
 ## Documentation changes
 

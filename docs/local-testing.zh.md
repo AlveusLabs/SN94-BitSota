@@ -227,44 +227,26 @@ python3 -m scripts.pool_monitor --pool-url http://127.0.0.1:8434 --task-type cif
 - 它与 Pool API 通信，并把 sidecar 作业入队
 - pool worker 通过 sidecar 执行计算
 
-## 3  启动本地 validator  轮询 验证 投票
+## 3  旧本地 validator 已移除
 
-如果你还没有热键，请先创建：
+旧的本地 relay validator 与 relay SOTA 投票路径已经从 public validator
+流程中移除。这个本地 relay 指南仍可用于测试 GUI miner 向本地 relay
+提交结果，但仓库中不再提供本地 validator 步骤。
 
-```bash
-btcli wallet new_coldkey --wallet.name local_val
-btcli wallet new_hotkey --wallet.name local_val --wallet.hotkey local_val_hot
-```
+生产风格的验证请使用当前 autoresearch runner 与 backend weight setter：
 
-运行本地 relay validator：
-
-```bash
-python3 -m validator.local_validator \
-  --relay-url http://127.0.0.1:8002 \
-  --wallet-name local_val \
-  --wallet-hotkey local_val_hot \
-  --poll-interval 5
-```
-
-提示：
-- 在 `validator_hyperparams.json` 中调整评估套件：`task_count` 与 `task_seed`。
-  - 一次性覆盖仍然可用：`VALIDATOR_TASK_COUNT=8 python3 -m validator.local_validator ...`
-- 如果要用 `SOTA_CONSENSUS_VOTES>1` 测试 relay 的共识，请用不同 hotkey 跑两个 validator 进程。或者在两个进程上都设置 `--seen-block-mode fixed --seen-block 1`，让它们总是在同一轮投票。
-- 降低日志噪声：添加 `--relay-client-log-level WARNING`，它控制 `validator.relay_client` 的 HTTP 轮询日志。
-- 计数器：`validator.local_validator` 会周期性打印统计摘要，默认每 30 秒一次，可用 `--stats-interval` 调整，`--stats-interval 0` 关闭。同时会把 JSONL 指标写入 `local_validator_metrics.log`，用 `--metrics-log \"\"` 关闭。
+- [Public Autoresearch Validator Runner](public-validator-runner.md)
+- [验证者指南](validation.md)
 
 ## 4  运行端到端检查
 
 1. 启动 relay 见第 1 节
-2. 启动本地 validator 见第 3 节
-3. 启动 GUI miner 见第 2 节，并点击 “Start Mining”
+2. 启动 GUI miner 见第 2 节，并点击 “Start Mining”
 
 你应该看到：
 - GUI 日志来自本地 sidecar
 - 当提交成功后，GUI “Local SOTA” 会基于 sidecar state 更新
 - GUI 提交能被 relay 接收：`/submit_solution`
-- validator 日志显示重新评估以及 `/sota/vote`
-	- 当 `SOTA_CONSENSUS_VOTES=1` 时，relay 的 `/sota_threshold` 会在投票被接受后提升
 
 ## 5  对比一次 generation 的调用路径  miner_local_og vs GUI-like vs 实际 GUI
 

@@ -1,9 +1,9 @@
 from __future__ import annotations
 
 import argparse
+import time
 from dataclasses import dataclass
 from typing import Any, Callable, Mapping, Sequence
-import time
 
 import requests
 
@@ -25,9 +25,13 @@ def _join_url(base_url: str, path: str) -> str:
     return f"{str(base_url).rstrip('/')}/{str(path).lstrip('/')}"
 
 
+def _policy_mode(policy: Mapping[str, Any]) -> str:
+    return str(policy.get("mode") or "local").strip().lower()
+
+
 def fetch_reward_snapshot(
     *,
-    coordinator_url: str,
+    coordinator_url: str = DEFAULT_AUTORESEARCH_COORDINATOR_URL,
     snapshot_path: str = DEFAULT_REWARD_SNAPSHOT_PATH,
     timeout_s: float = 30.0,
     session: requests.Session | None = None,
@@ -55,10 +59,6 @@ def extract_validator_weight_policy(snapshot: Mapping[str, Any]) -> dict[str, An
     if not isinstance(validator_weights, Mapping):
         raise RuntimeError("reward_policy.validator_weights must be an object")
     return dict(validator_weights)
-
-
-def _policy_mode(policy: Mapping[str, Any]) -> str:
-    return str(policy.get("mode") or "local").strip().lower()
 
 
 def _hotkey_for_uid(metagraph_hotkeys: Sequence[str], uid: int) -> str:
@@ -121,8 +121,8 @@ def resolve_validator_weight_scores(
             )
 
         has_uid = raw_target.get("uid") is not None
-        hotkey = str(raw_target.get("hotkey") or "").strip()
-        has_hotkey = bool(hotkey)
+        raw_hotkey = str(raw_target.get("hotkey") or "").strip()
+        has_hotkey = bool(raw_hotkey)
         if has_uid == has_hotkey:
             raise RuntimeError(
                 f"validator_weights.targets[{index}] must define exactly one of uid or hotkey"
@@ -130,19 +130,19 @@ def resolve_validator_weight_scores(
 
         if has_uid:
             try:
-                resolved_hotkey = _hotkey_for_uid(hotkeys, int(raw_target["uid"]))
+                hotkey = _hotkey_for_uid(hotkeys, int(raw_target["uid"]))
             except (TypeError, ValueError) as exc:
                 raise RuntimeError(
                     f"validator_weights.targets[{index}].uid must be an integer"
                 ) from exc
         else:
-            if hotkey not in hotkeys:
+            if raw_hotkey not in hotkeys:
                 raise RuntimeError(
-                    f"backend validator weight target hotkey is not in metagraph: {hotkey}"
+                    f"backend validator weight target hotkey is not in metagraph: {raw_hotkey}"
                 )
-            resolved_hotkey = hotkey
+            hotkey = raw_hotkey
 
-        scores[resolved_hotkey] = scores.get(resolved_hotkey, 0.0) + weight
+        scores[hotkey] = scores.get(hotkey, 0.0) + weight
 
     return _normalise_scores(scores)
 
@@ -170,7 +170,7 @@ def apply_backend_weight_policy(
             status="skipped_local",
             scores={},
             dry_run=bool(dry_run),
-            message="backend policy mode is local; leaving existing validator weight logic unchanged",
+            message="backend policy mode is local; no legacy relay/local fallback is run",
         )
 
     for hotkey, weight in scores.items():
@@ -215,15 +215,13 @@ def apply_backend_weight_policy(
 
 def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        description=(
-            "Set SN94 validator weights from the autoresearch backend reward snapshot."
-        )
+        description="Set SN94 validator weights from the autoresearch backend reward snapshot."
     )
     parser.add_argument(
         "--config",
         "-c",
-        default="validator_config.yaml",
-        help="Path to validator_config.yaml with wallet and subtensor settings.",
+        default="validator_config.weights.yaml",
+        help="Path to validator weight config with wallet and subtensor settings.",
     )
     parser.add_argument(
         "--coordinator-url",

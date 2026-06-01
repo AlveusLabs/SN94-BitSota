@@ -2,14 +2,16 @@
 
 验证者会：
 
-- 轮询 relay 拉取矿工提交
-- 在确定性的任务套件上重新评估候选
-- 通过投票最终确定 SOTA 事件，并设置链上权重
+- 从 autoresearch backend 请求已签名的 replay job
+- 在 Docker/CUDA public replay sandbox 中重新评估分配到的提交
+- 把观测到的指标提交回 backend
+- 运行独立的 backend weight setter，应用 backend `validator_weights`
 
 ## 入口
 
-- `python neurons/validator_node.py` 运行主验证者节点
-  - 可选：`--accept-test` 启用仅 UID0 的 relay 测试提交评估，用于日志，不会设置权重
-- `python3 -m validator.local_validator` 运行用于测试的本地验证者，主要面向 relay
+- `python -m validator.research_validator_runner` 运行 replay validator
+- `python -m validator.backend_weight_setter` 运行 backend 指定的链上权重设置
 
-配置与调参请参考 [验证](../validation.md) 与 [配置参考](../configuration.md) 中的 `validator_config.yaml`。
+旧的 relay validator 与本地 winner 权重设置路径已经移除。请参考
+[验证](../validation.md)、[Public Autoresearch Validator Runner](../public-validator-runner.md)
+与 [配置参考](../configuration.md)。

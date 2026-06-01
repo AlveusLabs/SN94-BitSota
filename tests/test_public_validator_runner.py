@@ -305,7 +305,6 @@ cycles: 9
 interval_seconds: 60
 dry_run: true
 allow_unsafe_host_replay: true
-pending_submissions_fallback: true
 """.lstrip(),
         encoding="utf-8",
     )
@@ -338,6 +337,7 @@ def test_public_validator_runner_defaults_to_signed_worklist() -> None:
 
     config = _config_from_args(args)
 
+    assert config.coordinator_url == "https://autoresearch.bitsota.com"
     assert config.claim_path == DEFAULT_VALIDATOR_WORKLIST_PATH
     assert config.replay_sandbox_setup_network_mode == "none"
     assert config.replay_sandbox_benchmark_network_mode == "none"
@@ -372,58 +372,6 @@ def test_validator_client_posts_signed_job_result() -> None:
     assert request["headers"]["X-Hotkey"] == keypair.ss58_address
     assert request["headers"]["X-Signature"]
     assert request["headers"]["Content-Type"] == "application/json"
-
-
-def test_validator_client_claims_oldest_pending_non_peer_submission(monkeypatch) -> None:
-    wallet = SimpleNamespace(hotkey=SimpleNamespace(ss58_address="validator-hotkey"))
-    client = AutoresearchValidatorClient(base_url="http://127.0.0.1:8000", wallet=wallet)
-    monkeypatch.setattr(
-        client,
-        "list_tasks",
-        lambda: [
-            {"id": "task-peer", "slug": "peer", "competition_mode": "peer_evaluation"},
-            {
-                "id": "task-standard",
-                "slug": "standard",
-                "competition_mode": "standard",
-                "repository": "repo",
-                "base_ref": "HEAD",
-                "benchmark_command": "python benchmark.py",
-                "metric_name": "score",
-                "time_budget_seconds": 60,
-            },
-        ],
-    )
-    monkeypatch.setattr(
-        client,
-        "list_pending_submissions",
-        lambda *, task_id=None: [
-            {"id": "peer-submission", "task_id": "task-peer", "created_at": "2026-04-01T00:00:00"},
-            {"id": "standard-submission", "task_id": "task-standard", "created_at": "2026-04-01T00:00:01"},
-        ],
-    )
-    monkeypatch.setattr(
-        client,
-        "get_submission_detail",
-        lambda submission_id: {
-            "submission": {
-                "id": submission_id,
-                "task_id": "task-standard",
-                "base_ref": "HEAD",
-                "patch": "",
-            },
-            "metric_name": "score",
-        },
-    )
-
-    job = client.claim_replay_job(claim_path=None)
-
-    assert job is not None
-    assert job.job_id is None
-    assert job.submission_id == "standard-submission"
-    assert job.task["id"] == "task-standard"
-    assert job.replay_spec["benchmark_command"] == "python benchmark.py"
-    assert job.replay_spec["_source"] == "task_response_fallback"
 
 
 def test_public_replay_engine_accepts_local_patch(tmp_path: Path, monkeypatch) -> None:

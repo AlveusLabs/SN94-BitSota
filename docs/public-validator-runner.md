@@ -11,6 +11,11 @@ validator host runs two SN94 processes plus a Pool/Merkle contract check:
    on-chain contract state are healthy. Vetoer operators can also run the
    challenge-capable Pool verifier with their own key.
 
+Production validators must not run the legacy relay/local validator weight
+path. Relay-based SOTA voting and local winner weight setting have been removed
+from the public validator path; production weights come only from the
+autoresearch backend reward snapshot.
+
 If the service boundaries are unfamiliar, read
 [SN94 System Structure](sn94-system-structure.md) first.
 
@@ -52,8 +57,16 @@ In `/opt/bitsota/SN94-BitSota/validator_config.weights.yaml`:
 
 ```yaml
 netuid: 94
+wallet_name: "validator_wallet"
+wallet_hotkey: "validator_hotkey"
+path: "~/.bittensor/wallets/"
 network: "finney"
 subtensor_chain_endpoint: "wss://entrypoint-finney.opentensor.ai:443"
+epoch_length: 100
+
+weights:
+  wait_for_inclusion: true
+  wait_for_finalization: false
 ```
 
 When registering the validator hotkey with `btcli`:
@@ -62,11 +75,9 @@ When registering the validator hotkey with `btcli`:
 --netuid 94 --network finney
 ```
 
-When running the backend weight setter, including inside its systemd service:
-
-```bash
---coordinator-url https://autoresearch.bitsota.com
-```
+The backend weight setter defaults to `https://autoresearch.bitsota.com`.
+Testing uses `https://autoresearch-test.bitsota.com`, but production validators
+should not point weight setting at test or relay endpoints.
 
 In `/etc/bitsota/pool-contract-verifier.env`, if this validator also runs the
 Pool/Merkle contract verifier:
@@ -83,7 +94,7 @@ AUTORESEARCH_REWARD_SNAPSHOT_URL=https://autoresearch.bitsota.com/api/v1/reward-
 When checking the live production Pool/Merkle service in step 6:
 
 ```bash
-POOL_STATUS_URL="https://pool.bitsota.com/status"
+POOL_STATUS_URL="https://pool.bitsota.com/health"
 POOL_CLAIMS_URL="https://pool.bitsota.com/claims"
 ```
 
@@ -215,17 +226,12 @@ the validator hotkey to the backend validator allowlist.
 
 ## 5. Configure Chain Weight Setting
 
-Create a weight-setter config:
+Create a backend-only weight-setter config. Replace `validator_wallet` and
+`validator_hotkey` with the local wallet names on this host:
 
 ```bash
 cd /opt/bitsota/SN94-BitSota
-cp validator_config.yaml.example validator_config.weights.yaml
-```
-
-Edit `validator_config.weights.yaml` so it uses the same validator wallet and
-SN94 production chain:
-
-```yaml
+cat > validator_config.weights.yaml <<'EOF'
 netuid: 94
 wallet_name: "validator_wallet"
 wallet_hotkey: "validator_hotkey"
@@ -237,26 +243,47 @@ epoch_length: 100
 weights:
   wait_for_inclusion: true
   wait_for_finalization: false
+EOF
 ```
 
-Run one weight update:
+Confirm the backend policy resolves to the production contract hotkey before
+submitting any chain transaction:
 
 ```bash
 cd /opt/bitsota/SN94-BitSota
 source .venv/bin/activate
-python scripts/autoresearch_weight_setter.py \
+python -m validator.backend_weight_setter \
   --config validator_config.weights.yaml \
-  --coordinator-url https://autoresearch.bitsota.com
+  --dry-run \
+  --ignore-rate-limit
 ```
 
-The backend policy should include the production contract-hotkey target:
+The dry run must show the production contract-hotkey target:
 
 ```text
 5F7MJ2fAyxBG7ci4xP7kQPJanoMdNurk1QBP1AQuFT2Jmzg2
 ```
 
+It should also show the current on-chain UID for that hotkey. Do not hardcode
+the UID permanently; UIDs can change when registration state changes.
+
+Run one live weight update only after the dry-run target is correct:
+
+```bash
+python -m validator.backend_weight_setter \
+  --config validator_config.weights.yaml
+```
+
 Do not run any other process that also calls `set_weights` for the same
-validator hotkey.
+validator hotkey. In particular, stop any old relay/local validator services
+before starting backend-directed weights:
+
+```bash
+sudo systemctl disable --now bitsota-validator.service 2>/dev/null || true
+sudo systemctl disable --now bitsota-capacitorless-weights.service 2>/dev/null || true
+sudo systemctl disable --now bitsota-local-weights.service 2>/dev/null || true
+pgrep -af 'validator_node|local_validator|capacitorless|relay_client|set_weights' || true
+```
 
 ## 6. Check The Pool/Merkle Contract
 
@@ -266,7 +293,7 @@ Merkle publication, proof serving, and contract challenge logic.
 First check the live production Pool/contract state:
 
 ```bash
-POOL_STATUS_URL="https://pool.bitsota.com/status"
+POOL_STATUS_URL="https://pool.bitsota.com/health"
 POOL_CLAIMS_URL="https://pool.bitsota.com/claims"
 
 curl -fsS "$POOL_STATUS_URL" | python3 -m json.tool
@@ -393,7 +420,7 @@ Wants=network-online.target
 [Service]
 WorkingDirectory=/opt/bitsota/SN94-BitSota
 Environment=PYTHONUNBUFFERED=1
-ExecStart=/opt/bitsota/SN94-BitSota/.venv/bin/python -m validator.backend_weight_setter --config /opt/bitsota/SN94-BitSota/validator_config.weights.yaml --coordinator-url https://autoresearch.bitsota.com --loop --interval-seconds 300
+ExecStart=/opt/bitsota/SN94-BitSota/.venv/bin/python -m validator.backend_weight_setter --config /opt/bitsota/SN94-BitSota/validator_config.weights.yaml --loop --interval-seconds 300
 Restart=always
 RestartSec=10
 

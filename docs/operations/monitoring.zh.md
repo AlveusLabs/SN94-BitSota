@@ -49,5 +49,7 @@ Dashboard 与 JSON 指标重点：
 
 ## Validator
 
-- `validator.local_validator` 默认把 JSONL 指标写入 `local_validator_metrics.log`
-- 用 `--relay-client-log-level WARNING` 降低 HTTP 轮询日志噪声
+- `systemctl status bitsota-replay-validator.service --no-pager`
+- `systemctl status bitsota-backend-weights.service --no-pager`
+- `journalctl -u bitsota-replay-validator.service -n 100 --no-pager`
+- `journalctl -u bitsota-backend-weights.service -n 100 --no-pager`

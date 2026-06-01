@@ -116,7 +116,7 @@ class PublicValidatorRunner:
                 )
                 self.log(
                     "[public-validator] submitted verification "
-                    f"job={job.job_id or 'legacy'} submission={replay.submission_id} status={verification.get('status')}"
+                    f"job={job.job_id or 'unassigned'} submission={replay.submission_id} status={verification.get('status')}"
                 )
             latest_outcome = PublicValidatorRunOutcome(
                 job_id=job.job_id,
@@ -167,12 +167,6 @@ def _build_parser() -> argparse.ArgumentParser:
         help=(
             "Signed backend worklist path. Defaults to the public validator scan endpoint."
         ),
-    )
-    parser.add_argument(
-        "--pending-submissions-fallback",
-        action=argparse.BooleanOptionalAction,
-        default=None,
-        help="Use the legacy pending-submissions scan instead of the backend validator worklist endpoint.",
     )
     parser.add_argument(
         "--workspace-root",
@@ -436,12 +430,6 @@ def _config_from_args(
         cycles = 1
     else:
         cycles = int(_value_from_args_or_config(args, config_data, "cycles", 0))
-    pending_fallback = _bool_value_from_args_or_config(
-        args,
-        config_data,
-        "pending_submissions_fallback",
-        False,
-    )
     claim_path_value = _value_from_args_or_config(
         args,
         config_data,
@@ -477,11 +465,7 @@ def _config_from_args(
             _value_from_args_or_config(args, config_data, "task_slug", "") or ""
         ).strip()
         or None,
-        claim_path=(
-            None
-            if pending_fallback and getattr(args, "claim_path", None) is None
-            else str(claim_path_value or DEFAULT_VALIDATOR_WORKLIST_PATH).strip()
-        ),
+        claim_path=str(claim_path_value or DEFAULT_VALIDATOR_WORKLIST_PATH).strip(),
         interval_seconds=float(
             _value_from_args_or_config(args, config_data, "interval_seconds", 30.0)
         ),

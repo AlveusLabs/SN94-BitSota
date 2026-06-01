@@ -57,18 +57,13 @@
 - `logging.level`  字符串：Python 日志级别 `DEBUG`、`INFO`、`WARNING`、`ERROR`。
 - `logging.file`  字符串或 `null`：如果设置，则把日志写到此文件。目录会自动创建。
 
-## Validator  `validator_config.yaml`
+## Validator Weight Setter  `validator_config.weights.yaml`
 
-使用方：`neurons/validator_node.py` 以及 `bittensor_network/*` 辅助模块。
-
-### `reward_mode`
-
-- `reward_mode`  字符串：
-  - `capacitor` → 通过 EVM 合约投票提交奖励  `ContractManager`
-  - `capacitorless` → relay SOTA 投票 加 链上权重
-  - `capacitorless_sticky` → relay 或本地 winner 加 sticky 的 burn split 权重
-
-行为差异见 `docs/reward-modes.md`。
+使用方：`validator.backend_weight_setter` 以及 `bittensor_network/*` 辅助模块。
+旧的 relay/local validator 路径已经从生产验证流程中移除。生产验证者不应
+把 relay、`reward_mode` 或 `capacitorless` 配置复制到
+`validator_config.weights.yaml`；它们应从 autoresearch backend reward
+snapshot 读取 targets。
 
 ### Bittensor 网络设置
 
@@ -80,61 +75,16 @@
 - `subtensor_chain_endpoint`  字符串或 `null`：覆盖 websocket endpoint，例如 `wss://test.finney.opentensor.ai:443`。`null` 让 bittensor 自行选择。
 - `epoch_length`  int：本地用作权重更新的最小区块间隔门限，并与链上限速对比。
 
-### Capacitor  EVM 合约 设置
+### Backend reward snapshot
 
-仅当 `reward_mode: capacitor` 时使用。
+backend weight setter 获取：
 
-- `evm_key_path`  字符串或 `null`：包含 `{\"private_key\": \"0x...\"}` 的 EVM key JSON 文件路径。
-  - 如果省略，validator 会回退到 `EVM_PRIVATE_KEY` 或 bittensor 钱包的 `h160/` key 文件。
-- `contract.rpc_url`  字符串：EVM JSON RPC endpoint。
-- `contract.address`  字符串：合约地址。
-- `contract.abi_file`  字符串：ABI JSON 路径，默认 `capacitor_abi.json`。
+```text
+GET https://autoresearch.bitsota.com/api/v1/reward-snapshot
+```
 
-### Capacitorless 设置  `reward_mode: capacitorless*`
-
-以下键都在 `capacitorless:` 下。
-
-- `capacitorless.mode`  字符串：
-  - `sticky_burnsplit` 默认行为 → burn 加 winner 分成，winner 会保持直到被替换
-  - `windowed` → 仅在 relay 奖励窗口内把全部权重给 winner，否则为 burn
-- `capacitorless.burn_hotkey`  字符串 必填：接收 burn emissions 的已注册 hotkey。
-- `capacitorless.burn_share`  float：用于 `sticky_burnsplit`，默认 `0.9`。
-- `capacitorless.winner_share`  float 或省略：用于 `sticky_burnsplit`，默认 `1 - burn_share`。如果总和不为 1，会做归一化。
-- `capacitorless.winner_source`  字符串：`relay` 或 `local`，仅 sticky 模式使用。
-- `capacitorless.min_winner_improvement`  float：仅本地 winner 模式使用，替换当前本地 winner 的最小提升幅度。
-- `capacitorless.submit_sota_votes`  bool：若为 `false`，不向 relay 发送 `/sota/vote`，用于纯本地 capacitorless 运行。
-- `capacitorless.apply_weights_inline`  bool：仅本地 winner 模式使用，若为 `true`，在评估后立即应用权重变化，而不是等待后台循环。
-- `capacitorless.alignment_mod`  int：仅 windowed 模式使用，对齐权重更新的区块间隔，默认 `360`。
-- `capacitorless.events_limit`  int：权重调度抓取 relay events 的上限。
-- `capacitorless.event_refresh_interval_s`  int：刷新 relay events 的频率，sticky 模式使用。
-- `capacitorless.metagraph_refresh_interval_s`  int：权重循环刷新 metagraph 的频率。
-- `capacitorless.poll_interval_s`  float：权重循环的轮询间隔。
-- `capacitorless.retry_interval_s`  float：两次尝试应用权重的最小间隔秒数。
-
-### Relay 轮询
-
-- `relay.url`  字符串：relay base URL。用于 relay 轮询时必填，capacitroless 模式也必填。
-- `relay.poll_interval_seconds`  int：抓取新提交的轮询间隔。
-
-### 提交调度  可选限流
-
-- `submission_schedule.mode`  字符串：`immediate`、`interval` 或 `utc_times`。
-- `submission_schedule.interval_seconds`  int：当 mode 为 `interval` 时使用。
-- `submission_schedule.utc_times`  list[string]：当 mode 为 `utc_times` 时使用，例如 `\"00:00\"`  以 UTC 为准。
-
-### 提交阈值门
-
-- `submission_threshold.mode`  字符串：`sota_only` 或 `local_best`。
-  - `local_best` 还要求候选必须超过该 validator 进程生命周期内看到的本地最佳分数。
-
-### 黑名单策略
-
-- `blacklist.cutoff_percentage`  float：矿工声称分数与 validator 分数之间允许的最大 **绝对** 差值，超过则投票拉黑。分数在 `[0, 1]` 时，`0.1` 约等于 10%。
-
-### SOTA 回退
-
-- `sota.cache_duration`  int 秒：保留字段。当前 validator 在内部缓存 SOTA，relay 也会单独缓存。
-- `sota.default_threshold`  float：当无法从 relay 或合约获取 SOTA 时使用的默认阈值。
+它读取 `reward_policy.validator_weights` 并只应用这些 targets。服务默认使用
+生产 autoresearch backend；只有明确测试环境才使用 `--coordinator-url`。
 
 ### 权重
 
@@ -142,10 +92,6 @@
 - `weights.wait_for_finalization`  bool：通过 `bittensor_network/_weights.py` 传给 `subtensor.set_weights(...)`。
 - `weights.check_interval`  int 秒：保留字段，预期用于控制权重后台循环运行频率。
 - `weights.auto_restart`  bool：保留字段，预期用于权重循环崩溃后自动重启。
-
-### 可选  `contract_bots`
-
-- `contract_bots`  list[string]：在 `reward_mode: capacitor` 中由 `WeightManager` 使用，用于对固定一组 hotkey 设置权重。
 
 ---
 
@@ -214,10 +160,6 @@ miner 与 validator 的评估默认值现在来自仓库根目录的 JSON 文件
 ### CIFAR 任务缓存
 
 - `CIFAR_TASK_CACHE_MAXSIZE`  默认 `512`：准备好的 CIFAR 投影任务的 LRU 缓存大小。
-
-### EVM key  capacitor 模式
-
-- `EVM_PRIVATE_KEY`  可选：当 `evm_key_path` 未提供且钱包 `h160/` 文件不存在时，由 `common/contract_manager.py` 使用。
 
 ### 脚本 key  运维工具
 

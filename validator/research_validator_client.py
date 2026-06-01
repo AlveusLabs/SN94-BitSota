@@ -9,7 +9,7 @@ import requests
 from miner.research_auth import sign_hotkey_request
 
 
-DEFAULT_RESEARCH_COORDINATOR_URL = "https://chvp2wytst.eu-central-1.awsapprunner.com"
+DEFAULT_RESEARCH_COORDINATOR_URL = "https://autoresearch.bitsota.com"
 DEFAULT_VALIDATOR_JOB_CLAIM_PATH = "/api/v1/validator/jobs/claim"
 DEFAULT_VALIDATOR_WORKLIST_PATH = "/api/v1/validator/submissions/scan"
 
@@ -116,12 +116,6 @@ class AutoresearchValidatorClient:
     def list_tasks(self) -> list[dict[str, Any]]:
         return list(self._request("GET", "/api/v1/tasks").json() or [])
 
-    def list_pending_submissions(self, *, task_id: str | None = None) -> list[dict[str, Any]]:
-        params: dict[str, Any] = {"status": "pending_verification"}
-        if task_id:
-            params["task_id"] = str(task_id)
-        return list(self._request("GET", "/api/v1/submissions", params=params).json() or [])
-
     def get_submission_detail(self, submission_id: str) -> dict[str, Any]:
         return dict(self._request("GET", f"/api/v1/submissions/{submission_id}/detail").json() or {})
 
@@ -133,23 +127,22 @@ class AutoresearchValidatorClient:
         claim_path: str | None = DEFAULT_VALIDATOR_JOB_CLAIM_PATH,
     ) -> ReplayJob | None:
         resolved_task_id = self._resolve_task_id(task_id=task_id, task_slug=task_slug)
-        if claim_path:
-            body: dict[str, Any] = {}
-            if resolved_task_id:
-                body["task_id"] = resolved_task_id
-            try:
-                response = self._request("POST", claim_path, body=body or None, sign=True)
-            except PublicValidatorApiError as exc:
-                if exc.status_code == 404:
-                    if claim_path == DEFAULT_VALIDATOR_JOB_CLAIM_PATH and "no pending validator jobs" not in str(exc):
-                        raise
-                    return None
-                raise
-            payload = response.json() if response.text else None
-            if not payload:
+        claim_path = claim_path or DEFAULT_VALIDATOR_JOB_CLAIM_PATH
+        body: dict[str, Any] = {}
+        if resolved_task_id:
+            body["task_id"] = resolved_task_id
+        try:
+            response = self._request("POST", claim_path, body=body or None, sign=True)
+        except PublicValidatorApiError as exc:
+            if exc.status_code == 404:
+                if claim_path == DEFAULT_VALIDATOR_JOB_CLAIM_PATH and "no pending validator jobs" not in str(exc):
+                    raise
                 return None
-            return self._job_from_payload(dict(payload), source=f"claim_endpoint:{claim_path}")
-        return self._claim_from_pending_list(task_id=resolved_task_id)
+            raise
+        payload = response.json() if response.text else None
+        if not payload:
+            return None
+        return self._job_from_payload(dict(payload), source=f"claim_endpoint:{claim_path}")
 
     def claim_replay_jobs(
         self,
@@ -256,31 +249,6 @@ class AutoresearchValidatorClient:
             if str(task.get("slug", "")).strip().lower() == wanted_slug:
                 return str(task.get("id") or "")
         raise PublicValidatorApiError(f"no task found for slug: {task_slug}")
-
-    def _claim_from_pending_list(self, *, task_id: str | None) -> ReplayJob | None:
-        tasks_by_id = {str(row.get("id")): dict(row) for row in self.list_tasks()}
-        candidates = sorted(
-            self.list_pending_submissions(task_id=task_id),
-            key=lambda row: str(row.get("created_at", "")),
-        )
-        for submission in candidates:
-            submission_id = str(submission.get("id") or "").strip()
-            if not submission_id:
-                continue
-            task = tasks_by_id.get(str(submission.get("task_id") or ""))
-            if task is None:
-                continue
-            if str(task.get("competition_mode") or "").strip() == "peer_evaluation":
-                continue
-            detail = self.get_submission_detail(submission_id)
-            return self._job_from_parts(
-                submission=dict(detail.get("submission") or submission),
-                task=task,
-                detail=detail,
-                replay_spec=dict(detail.get("replay_spec") or {}),
-                source="pending_submissions",
-            )
-        return None
 
     def _job_from_payload(self, payload: dict[str, Any], *, source: str) -> ReplayJob | None:
         if str(payload.get("status") or "").strip().lower() in {"idle", "empty", "none"}:

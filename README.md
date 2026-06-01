@@ -3,7 +3,7 @@
 **Decentralized Research Network on Bittensor**
 
 BitSota is a decentralized research network that evolves machine learning algorithms through competitive optimization. We're a problem agnostic platform and enable the optimization of different categories of problems, with a focus on self-improving and self-generating AI.
-Currently, Miners develop ML algorithms using genetic programming, while validators evaluate performance and distribute rewards through smart contract voting on the Bittensor network.
+Currently, miners develop ML algorithms using genetic programming, while validators run autoresearch replay validation and apply backend-directed Bittensor weights.
 
 ## Overview
 
@@ -46,37 +46,34 @@ Collaborative mining where participants handle smaller evolution and evaluation 
 
 ### Validation
 
-Validators evaluate algorithm submissions, verify performance claims, and vote on rewards through multi-signature smart contracts.
+Validators evaluate assigned submissions through the autoresearch backend and apply backend-directed Bittensor weights.
 
 **[→ Validation Guide](docs/validation.md)**
 
 ### Experimental Research-Agent Mining
 
-SN94 now also includes an additive, coordinator-backed research miner that uses an OpenAI-compatible chat completions API.
+SN94 now also includes an additive, coordinator-backed research miner that can launch an external agent CLI, with the older OpenAI-compatible chat-completions path kept as a fallback.
 
 This path is separate from the existing AutoML-Zero style evolutionary contest and does not replace the current direct mining, pool mining, GUI, or validator flows.
 
 The new path supports coordinator-backed research competitions with `direct` and `pool` participation styles across `standard`, `centerless`, and `peer_evaluation` task modes.
 
-See [How To Mine SN94 Autoresearch](docs/guides/how-to-mine.md) and
-[Research-Agent Mining](docs/research-agent-mining.md).
+See [Research-Agent Mining](docs/research-agent-mining.md).
 
 ## Architecture
 
 ### Direct Mining Flow
 
 ```
-Miner → Evolve Locally → Beat SOTA → Submit to Relay → Validators Verify → Relay Consensus → Weight Update → Emissions
+Miner → Evolve Locally → Submit Results → Backend/Pool Consensus → Backend Weight Snapshot → Validator Weight Setter → Emissions
 ```
 
 1. Miner runs genetic programming engine for up to 150 generations
-2. When algorithm beats State-of-the-Art threshold, submits to relay
-3. Validators download submission and independently re-evaluate
-4. Validators choose weight setting mode:
-   - Relay mode: Vote on relay, wait for consensus, then set weights
-   - Local mode: Set weights immediately based on own evaluation
-5. Validators set on-chain weights: 90% burn, 10% winner
-6. Network emissions flow to winner via Yuma consensus
+2. Results are submitted through the current backend or pool path
+3. Validators replay assigned work and post observed metrics back to the backend
+4. The backend publishes `reward_policy.validator_weights`
+5. Validators run `validator.backend_weight_setter` to submit Bittensor weights
+6. Network emissions flow according to Yuma consensus
 
 ### Pool Mining Flow
 
@@ -110,18 +107,17 @@ See detailed setup guides:
 ### For Validators
 
 ```bash
-git clone https://github.com/AlveusLabs/BitSota.git
-cd BitSota
+git clone https://github.com/AlveusLabs/SN94-BitSota.git
+cd SN94-BitSota
 pip install -r requirements.txt
 pip install -e .
 
-cp validator_config.yaml.example validator_config.yaml
-# Edit validator_config.yaml with your wallet and burn_hotkey
-
-python neurons/validator_node.py
+python -m validator.research_validator_runner --help
+python -m validator.backend_weight_setter --help
 ```
 
-**[→ Full Validator Setup](docs/validation.md#setup)**
+The legacy relay/local validator path has been removed. Production validators
+should follow **[Public Autoresearch Validator Runner](docs/public-validator-runner.md)**.
 
 ## Requirements
 
@@ -140,9 +136,8 @@ python neurons/validator_node.py
 - **[Mining Guide](docs/mining.md)** - Direct mining setup and strategies
 - **[Pool Mining Guide](docs/pool-mining.md)** - Collaborative mining details
 - **[Validation Guide](docs/validation.md)** - Running a validator node
-- **[How To Mine SN94 Autoresearch](docs/guides/how-to-mine.md)** - Current production miner guide for human and agent submissions
-- **[Research-Agent Mining](docs/research-agent-mining.md)** - Experimental coordinator-backed miner with OpenAI-compatible agents
-- **[Local Testing Guide](docs/local-testing.md)** - Run GUI + local relay + local validator
+- **[Research-Agent Mining](docs/research-agent-mining.md)** - Experimental coordinator-backed miner and launcher for external agents, with the older OpenAI-compatible planner path kept as a fallback
+- **[Local Testing Guide](docs/local-testing.md)** - Run GUI + local relay submission checks
 - **[Rewards Guide](docs/rewards.md)** - Understanding incentive mechanisms
 
 ### Docs website

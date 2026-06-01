@@ -1,18 +1,15 @@
 # Public autoresearch validator runner config.
 # Copy this file to research_validator_config.yaml and edit the wallet values.
 
-# Testnet coordinator. Replace with the production coordinator URL when running
-# against production.
-coordinator_url: "https://chvp2wytst.eu-central-1.awsapprunner.com"
+# Production autoresearch backend.
+coordinator_url: "https://autoresearch.bitsota.com"
 
 # Optional task filter. Leave unset to scan every available recent submission.
 # task_id: ""
 # task_slug: ""
 
-# Default signed worklist endpoint. Use pending_submissions_fallback only against
-# old backends that do not expose the signed validator scan endpoint.
+# Default signed worklist endpoint.
 claim_path: "/api/v1/validator/submissions/scan"
-pending_submissions_fallback: false
 
 # Bittensor wallet used to sign validator requests. Prefer wallet files over
 # hotkey_mnemonic in shared or long-lived configs.

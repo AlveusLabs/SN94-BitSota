@@ -6,7 +6,7 @@
 - `Pool/` 是 pool 服务
 - `sidecar/` 是 GUI 使用的本地 API
 - `miner/` 与 `neurons/` 包含 miner 入口
-- `validator/` 与 `neurons/validator_node.py` 包含 validator 入口
+- `validator/` 包含 replay validator 与 backend weight setter 入口
 
 ## 修改文档
 
