@@ -126,6 +126,32 @@ POOL_CLAIMS_URL="https://pool.bitsota.com/claims"
 Testing uses `https://autoresearch-test.bitsota.com`, but production validators
 should use `https://autoresearch.bitsota.com`.
 
+## Host Requirements
+
+Use a dedicated Ubuntu GPU host. CPU-only instances such as `t3.*` are not
+production replay validators; replay validation needs Docker with CUDA GPU
+access.
+
+Known-good production baseline:
+
+- OS: Ubuntu 22.04 LTS or newer.
+- GPU: one NVIDIA CUDA-capable GPU with at least 24 GB VRAM.
+- Tested EC2 class: `g5.2xlarge` with one NVIDIA A10G, 24 GB VRAM, 8 vCPU,
+  and 32 GiB system RAM.
+- CUDA: NVIDIA driver must run CUDA 12.4 containers. Both `nvidia-smi` and
+  `docker run --rm --gpus all nvidia/cuda:12.4.1-base-ubuntu22.04 nvidia-smi`
+  must pass before validator setup continues.
+- RAM: 32 GiB is the tested minimum for the current replay sandbox config.
+  Prefer 64 GiB or more if the host also runs Pool/Merkle verification or other
+  services.
+- Disk: use at least 150 GB of fast SSD/EBS storage; 200 GB is recommended.
+  Keep at least 50 GB free for Docker images, Python wheels, cloned replay
+  repos, and temporary replay workspaces.
+
+The default replay config gives each replay container a `32g` memory limit and
+a 16 GiB workspace cap. Larger future tasks may require raising the host class
+and the replay limits together.
+
 ## 1. Prepare The Host
 
 Use an Ubuntu GPU host with NVIDIA drivers, Docker, and NVIDIA Container

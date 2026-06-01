@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html xmlns="http://www.w3.org/1999/xhtml" lang="" xml:lang="">
+<html xmlns="http://www.w3.org/1999/xhtml" lang xml:lang>
 <head>
   <meta charset="utf-8" />
   <meta name="generator" content="pandoc" />
@@ -75,94 +75,94 @@
     code span.vs { color: #4070a0; } /* VerbatimString */
     code span.wa { color: #60a0b0; font-weight: bold; font-style: italic; } /* Warning */
   </style>
-        <style type="text/css">:root {
-      color-scheme: light;
-      --bitsota-ink: #18084a;
-      --bitsota-muted: #5f5a78;
-      --bitsota-line: #d8d4e8;
-      --bitsota-bg: #fbfaff;
-      --bitsota-panel: #ffffff;
-      --bitsota-accent: #70edf0;
-      --bitsota-purple: #2a0b68;
-      }
-      * {
-      box-sizing: border-box;
-      }
-      html {
-      background: var(--bitsota-bg);
-      }
-      body {
-      max-width: 980px;
-      margin: 0 auto;
-      padding: 48px 28px 72px;
-      background: var(--bitsota-bg);
-      color: var(--bitsota-ink);
-      font-family:
-      Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI",
-      sans-serif;
-      line-height: 1.62;
-      }
-      h1 {
-      margin: 0 0 12px;
-      padding-bottom: 18px;
-      border-bottom: 4px solid var(--bitsota-accent);
-      font-size: clamp(2rem, 5vw, 3.25rem);
-      line-height: 1.05;
-      letter-spacing: 0;
-      }
-      h2 {
-      margin-top: 42px;
-      padding-top: 22px;
-      border-top: 1px solid var(--bitsota-line);
-      font-size: 1.55rem;
-      line-height: 1.2;
-      }
-      p,
-      li {
-      font-size: 1rem;
-      }
-      a {
-      color: var(--bitsota-purple);
-      font-weight: 700;
-      }
-      pre {
-      overflow-x: auto;
-      border: 1px solid var(--bitsota-line);
-      background: #12062f;
-      color: #f8f7ff;
-      padding: 18px;
-      border-radius: 8px;
-      font-size: 0.92rem;
-      }
-      code {
-      font-family:
-      "JetBrains Mono", "SFMono-Regular", Consolas, "Liberation Mono", monospace;
-      }
-      p code,
-      li code {
-      border: 1px solid #e5e0f1;
-      background: #f4f0ff;
-      color: var(--bitsota-purple);
-      padding: 0.12rem 0.32rem;
-      border-radius: 5px;
-      font-size: 0.93em;
-      }
-      ul {
-      padding-left: 1.35rem;
-      }
-      blockquote {
-      margin: 24px 0;
-      padding: 14px 18px;
-      border-left: 5px solid var(--bitsota-accent);
-      background: var(--bitsota-panel);
-      color: var(--bitsota-muted);
-      }
-      @media (max-width: 720px) {
-      body {
-      padding: 32px 18px 56px;
-      }
-      }
-      </style>
+  <style type="text/css">:root {
+color-scheme: light;
+--bitsota-ink: #18084a;
+--bitsota-muted: #5f5a78;
+--bitsota-line: #d8d4e8;
+--bitsota-bg: #fbfaff;
+--bitsota-panel: #ffffff;
+--bitsota-accent: #70edf0;
+--bitsota-purple: #2a0b68;
+}
+* {
+box-sizing: border-box;
+}
+html {
+background: var(--bitsota-bg);
+}
+body {
+max-width: 980px;
+margin: 0 auto;
+padding: 48px 28px 72px;
+background: var(--bitsota-bg);
+color: var(--bitsota-ink);
+font-family:
+Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI",
+sans-serif;
+line-height: 1.62;
+}
+h1 {
+margin: 0 0 12px;
+padding-bottom: 18px;
+border-bottom: 4px solid var(--bitsota-accent);
+font-size: clamp(2rem, 5vw, 3.25rem);
+line-height: 1.05;
+letter-spacing: 0;
+}
+h2 {
+margin-top: 42px;
+padding-top: 22px;
+border-top: 1px solid var(--bitsota-line);
+font-size: 1.55rem;
+line-height: 1.2;
+}
+p,
+li {
+font-size: 1rem;
+}
+a {
+color: var(--bitsota-purple);
+font-weight: 700;
+}
+pre {
+overflow-x: auto;
+border: 1px solid var(--bitsota-line);
+background: #12062f;
+color: #f8f7ff;
+padding: 18px;
+border-radius: 8px;
+font-size: 0.92rem;
+}
+code {
+font-family:
+"JetBrains Mono", "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+}
+p code,
+li code {
+border: 1px solid #e5e0f1;
+background: #f4f0ff;
+color: var(--bitsota-purple);
+padding: 0.12rem 0.32rem;
+border-radius: 5px;
+font-size: 0.93em;
+}
+ul {
+padding-left: 1.35rem;
+}
+blockquote {
+margin: 24px 0;
+padding: 14px 18px;
+border-left: 5px solid var(--bitsota-accent);
+background: var(--bitsota-panel);
+color: var(--bitsota-muted);
+}
+@media (max-width: 720px) {
+body {
+padding: 32px 18px 56px;
+}
+}
+</style>
 </head>
 <body>
 <h1 id="public-autoresearch-validator-runner">Public Autoresearch Validator Runner</h1>
@@ -238,6 +238,18 @@ AUTORESEARCH_REWARD_SNAPSHOT_URL=https://autoresearch.bitsota.com/api/v1/reward-
 <div class="sourceCode" id="cb6"><pre class="sourceCode bash"><code class="sourceCode bash"><span id="cb6-1"><a href="#cb6-1" aria-hidden="true"></a><span class="va">POOL_STATUS_URL=</span><span class="st">&quot;https://pool.bitsota.com/health&quot;</span></span>
 <span id="cb6-2"><a href="#cb6-2" aria-hidden="true"></a><span class="va">POOL_CLAIMS_URL=</span><span class="st">&quot;https://pool.bitsota.com/claims&quot;</span></span></code></pre></div>
 <p>Testing uses <code>https://autoresearch-test.bitsota.com</code>, but production validators should use <code>https://autoresearch.bitsota.com</code>.</p>
+<h2 id="host-requirements">Host Requirements</h2>
+<p>Use a dedicated Ubuntu GPU host. CPU-only instances such as <code>t3.*</code> are not production replay validators; replay validation needs Docker with CUDA GPU access.</p>
+<p>Known-good production baseline:</p>
+<ul>
+<li>OS: Ubuntu 22.04 LTS or newer.</li>
+<li>GPU: one NVIDIA CUDA-capable GPU with at least 24 GB VRAM.</li>
+<li>Tested EC2 class: <code>g5.2xlarge</code> with one NVIDIA A10G, 24 GB VRAM, 8 vCPU, and 32 GiB system RAM.</li>
+<li>CUDA: NVIDIA driver must run CUDA 12.4 containers. Both <code>nvidia-smi</code> and <code>docker run --rm --gpus all nvidia/cuda:12.4.1-base-ubuntu22.04 nvidia-smi</code> must pass before validator setup continues.</li>
+<li>RAM: 32 GiB is the tested minimum for the current replay sandbox config. Prefer 64 GiB or more if the host also runs Pool/Merkle verification or other services.</li>
+<li>Disk: use at least 150 GB of fast SSD/EBS storage; 200 GB is recommended. Keep at least 50 GB free for Docker images, Python wheels, cloned replay repos, and temporary replay workspaces.</li>
+</ul>
+<p>The default replay config gives each replay container a <code>32g</code> memory limit and a 16 GiB workspace cap. Larger future tasks may require raising the host class and the replay limits together.</p>
 <h2 id="prepare-the-host">1. Prepare The Host</h2>
 <p>Use an Ubuntu GPU host with NVIDIA drivers, Docker, and NVIDIA Container Toolkit. The validator replays untrusted miner work inside Docker with CUDA GPU access.</p>
 <p>Install baseline packages and create the dedicated <code>validator</code> Linux user:</p>
