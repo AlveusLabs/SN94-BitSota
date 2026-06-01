@@ -136,7 +136,14 @@ Install baseline packages and create the dedicated `validator` Linux user:
 
 ```bash
 sudo apt update
-sudo apt install -y git curl ca-certificates python3 python3-venv python3-pip build-essential docker.io
+sudo apt install -y git curl ca-certificates python3 python3-venv python3-pip build-essential
+
+if ! command -v docker >/dev/null 2>&1; then
+  sudo apt install -y docker.io || \
+    sudo apt install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
+fi
+sudo systemctl enable --now docker
+
 sudo useradd -m -s /bin/bash validator 2>/dev/null || true
 sudo usermod -aG docker validator
 sudo install -d -m 0750 -o validator -g validator /opt/bitsota
