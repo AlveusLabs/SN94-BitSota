@@ -141,9 +141,7 @@ Known-good production baseline:
 - CUDA: NVIDIA driver must run CUDA 12.4 containers. Both `nvidia-smi` and
   `docker run --rm --gpus all nvidia/cuda:12.4.1-base-ubuntu22.04 nvidia-smi`
   must pass before validator setup continues.
-- RAM: 32 GiB is the tested minimum for the current replay sandbox config.
-  Prefer 64 GiB or more if the host also runs Pool/Merkle verification or other
-  services.
+- RAM: 32 GiB for the current replay sandbox config.
 - Disk: use at least 150 GB of fast SSD/EBS storage; 200 GB is recommended.
   Keep at least 50 GB free for Docker images, Python wheels, cloned replay
   repos, and temporary replay workspaces.
