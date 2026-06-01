@@ -18,6 +18,7 @@ that calls `set_weights` from relay/local SOTA state.
 Use the public runbook for current production instructions:
 
 - [Public Autoresearch Validator Runner](public-validator-runner.md)
+- [Public Validator Quickstart](public-validator-quickstart.md)
 - [SN94 System Structure](sn94-system-structure.md)
 
 Minimal process model:

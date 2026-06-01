@@ -19,6 +19,10 @@ autoresearch backend reward snapshot.
 If the service boundaries are unfamiliar, read
 [SN94 System Structure](sn94-system-structure.md) first.
 
+If you already have a clean GPU host and want the short path, use
+[Public Validator Quickstart](public-validator-quickstart.md). This full
+runbook remains the canonical setup and troubleshooting reference.
+
 ## Production Service Model
 
 The normal production state is `systemd`-managed, not an interactive shell. The
@@ -346,10 +350,11 @@ validator hotkey. In particular, stop any old relay/local validator services
 before starting backend-directed weights:
 
 ```bash
+sudo systemctl disable --now bitsota-prod-weight-setter.service 2>/dev/null || true
 sudo systemctl disable --now bitsota-validator.service 2>/dev/null || true
 sudo systemctl disable --now bitsota-capacitorless-weights.service 2>/dev/null || true
 sudo systemctl disable --now bitsota-local-weights.service 2>/dev/null || true
-pgrep -af 'validator_node|local_validator|capacitorless|relay_client|set_weights' || true
+pgrep -af 'prod_weight_setter|validator_node|local_validator|capacitorless|relay_client|set_weights' || true
 ```
 
 After the dry run is correct and old weight setters are stopped, the backend

@@ -1,0 +1,342 @@
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml" lang xml:lang>
+<head>
+  <meta charset="utf-8" />
+  <meta name="generator" content="pandoc" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes" />
+  <title>Public Validator Quickstart</title>
+  <style>
+    code{white-space: pre-wrap;}
+    span.smallcaps{font-variant: small-caps;}
+    span.underline{text-decoration: underline;}
+    div.column{display: inline-block; vertical-align: top; width: 50%;}
+    div.hanging-indent{margin-left: 1.5em; text-indent: -1.5em;}
+    ul.task-list{list-style: none;}
+    pre > code.sourceCode { white-space: pre; position: relative; }
+    pre > code.sourceCode > span { display: inline-block; line-height: 1.25; }
+    pre > code.sourceCode > span:empty { height: 1.2em; }
+    code.sourceCode > span { color: inherit; text-decoration: inherit; }
+    div.sourceCode { margin: 1em 0; }
+    pre.sourceCode { margin: 0; }
+    @media screen {
+    div.sourceCode { overflow: auto; }
+    }
+    @media print {
+    pre > code.sourceCode { white-space: pre-wrap; }
+    pre > code.sourceCode > span { text-indent: -5em; padding-left: 5em; }
+    }
+    pre.numberSource code
+      { counter-reset: source-line 0; }
+    pre.numberSource code > span
+      { position: relative; left: -4em; counter-increment: source-line; }
+    pre.numberSource code > span > a:first-child::before
+      { content: counter(source-line);
+        position: relative; left: -1em; text-align: right; vertical-align: baseline;
+        border: none; display: inline-block;
+        -webkit-touch-callout: none; -webkit-user-select: none;
+        -khtml-user-select: none; -moz-user-select: none;
+        -ms-user-select: none; user-select: none;
+        padding: 0 4px; width: 4em;
+        color: #aaaaaa;
+      }
+    pre.numberSource { margin-left: 3em; border-left: 1px solid #aaaaaa;  padding-left: 4px; }
+    div.sourceCode
+      {   }
+    @media screen {
+    pre > code.sourceCode > span > a:first-child::before { text-decoration: underline; }
+    }
+    code span.al { color: #ff0000; font-weight: bold; } /* Alert */
+    code span.an { color: #60a0b0; font-weight: bold; font-style: italic; } /* Annotation */
+    code span.at { color: #7d9029; } /* Attribute */
+    code span.bn { color: #40a070; } /* BaseN */
+    code span.bu { } /* BuiltIn */
+    code span.cf { color: #007020; font-weight: bold; } /* ControlFlow */
+    code span.ch { color: #4070a0; } /* Char */
+    code span.cn { color: #880000; } /* Constant */
+    code span.co { color: #60a0b0; font-style: italic; } /* Comment */
+    code span.cv { color: #60a0b0; font-weight: bold; font-style: italic; } /* CommentVar */
+    code span.do { color: #ba2121; font-style: italic; } /* Documentation */
+    code span.dt { color: #902000; } /* DataType */
+    code span.dv { color: #40a070; } /* DecVal */
+    code span.er { color: #ff0000; font-weight: bold; } /* Error */
+    code span.ex { } /* Extension */
+    code span.fl { color: #40a070; } /* Float */
+    code span.fu { color: #06287e; } /* Function */
+    code span.im { } /* Import */
+    code span.in { color: #60a0b0; font-weight: bold; font-style: italic; } /* Information */
+    code span.kw { color: #007020; font-weight: bold; } /* Keyword */
+    code span.op { color: #666666; } /* Operator */
+    code span.ot { color: #007020; } /* Other */
+    code span.pp { color: #bc7a00; } /* Preprocessor */
+    code span.sc { color: #4070a0; } /* SpecialChar */
+    code span.ss { color: #bb6688; } /* SpecialString */
+    code span.st { color: #4070a0; } /* String */
+    code span.va { color: #19177c; } /* Variable */
+    code span.vs { color: #4070a0; } /* VerbatimString */
+    code span.wa { color: #60a0b0; font-weight: bold; font-style: italic; } /* Warning */
+  </style>
+  <style type="text/css">:root {
+color-scheme: light;
+--bitsota-ink: #18084a;
+--bitsota-muted: #5f5a78;
+--bitsota-line: #d8d4e8;
+--bitsota-bg: #fbfaff;
+--bitsota-panel: #ffffff;
+--bitsota-accent: #70edf0;
+--bitsota-purple: #2a0b68;
+}
+* {
+box-sizing: border-box;
+}
+html {
+background: var(--bitsota-bg);
+}
+body {
+max-width: 980px;
+margin: 0 auto;
+padding: 48px 28px 72px;
+background: var(--bitsota-bg);
+color: var(--bitsota-ink);
+font-family:
+Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI",
+sans-serif;
+line-height: 1.62;
+}
+h1 {
+margin: 0 0 12px;
+padding-bottom: 18px;
+border-bottom: 4px solid var(--bitsota-accent);
+font-size: clamp(2rem, 5vw, 3.25rem);
+line-height: 1.05;
+letter-spacing: 0;
+}
+h2 {
+margin-top: 42px;
+padding-top: 22px;
+border-top: 1px solid var(--bitsota-line);
+font-size: 1.55rem;
+line-height: 1.2;
+}
+p,
+li {
+font-size: 1rem;
+}
+a {
+color: var(--bitsota-purple);
+font-weight: 700;
+}
+pre {
+overflow-x: auto;
+border: 1px solid var(--bitsota-line);
+background: #12062f;
+color: #f8f7ff;
+padding: 18px;
+border-radius: 8px;
+font-size: 0.92rem;
+}
+code {
+font-family:
+"JetBrains Mono", "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+}
+p code,
+li code {
+border: 1px solid #e5e0f1;
+background: #f4f0ff;
+color: var(--bitsota-purple);
+padding: 0.12rem 0.32rem;
+border-radius: 5px;
+font-size: 0.93em;
+}
+ul {
+padding-left: 1.35rem;
+}
+blockquote {
+margin: 24px 0;
+padding: 14px 18px;
+border-left: 5px solid var(--bitsota-accent);
+background: var(--bitsota-panel);
+color: var(--bitsota-muted);
+}
+@media (max-width: 720px) {
+body {
+padding: 32px 18px 56px;
+}
+}
+</style>
+</head>
+<body>
+<h1 id="public-validator-quickstart">Public Validator Quickstart</h1>
+<p>This is the short path for operators who already have a clean Ubuntu GPU host and want the minimum production validator setup. It skips the Pool/Merkle verifier and most troubleshooting checks from the full runbook.</p>
+<p>Use the full <a href="public-validator-runner.md">Public Autoresearch Validator Runner</a> if any command here fails or if you are migrating from an old relay/local validator.</p>
+<h2 id="minimum-host">Minimum Host</h2>
+<ul>
+<li>Ubuntu 22.04 LTS or newer.</li>
+<li>One NVIDIA CUDA-capable GPU with at least 24 GB VRAM.</li>
+<li>Tested EC2 class: <code>g5.2xlarge</code> with one NVIDIA A10G, 24 GB VRAM, 8 vCPU, and 32 GiB RAM.</li>
+<li>At least 150 GB SSD/EBS disk; 200 GB recommended.</li>
+<li>Docker must be able to run CUDA containers.</li>
+</ul>
+<p>Production validators run two services:</p>
+<ul>
+<li><code>bitsota-replay-validator.service</code></li>
+<li><code>bitsota-backend-weights.service</code></li>
+</ul>
+<p>Do not run any legacy relay/local validator process or any other process that calls <code>set_weights</code> for the same validator hotkey.</p>
+<h2 id="prepare-host">1. Prepare Host</h2>
+<div class="sourceCode" id="cb1"><pre class="sourceCode bash"><code class="sourceCode bash"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true"></a><span class="fu">sudo</span> apt update</span>
+<span id="cb1-2"><a href="#cb1-2" aria-hidden="true"></a><span class="fu">sudo</span> apt install -y git curl ca-certificates python3.11 python3.11-venv python3.11-dev python3-pip build-essential docker.io</span>
+<span id="cb1-3"><a href="#cb1-3" aria-hidden="true"></a><span class="fu">sudo</span> systemctl enable --now docker</span>
+<span id="cb1-4"><a href="#cb1-4" aria-hidden="true"></a></span>
+<span id="cb1-5"><a href="#cb1-5" aria-hidden="true"></a><span class="fu">sudo</span> useradd -m -s /bin/bash validator <span class="op">2&gt;</span>/dev/null <span class="kw">||</span> <span class="fu">true</span></span>
+<span id="cb1-6"><a href="#cb1-6" aria-hidden="true"></a><span class="fu">sudo</span> usermod -aG docker validator</span>
+<span id="cb1-7"><a href="#cb1-7" aria-hidden="true"></a><span class="fu">sudo</span> install -d -m 0750 -o validator -g validator /opt/bitsota</span>
+<span id="cb1-8"><a href="#cb1-8" aria-hidden="true"></a><span class="fu">sudo</span> install -d -m 0700 -o validator -g validator /srv/bitsota/public-validator-workspaces</span></code></pre></div>
+<p>Install NVIDIA Container Toolkit for your Ubuntu version, restart Docker, then confirm CUDA works:</p>
+<div class="sourceCode" id="cb2"><pre class="sourceCode bash"><code class="sourceCode bash"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true"></a><span class="ex">nvidia-smi</span></span>
+<span id="cb2-2"><a href="#cb2-2" aria-hidden="true"></a><span class="ex">docker</span> run --rm --gpus all nvidia/cuda:12.4.1-base-ubuntu22.04 nvidia-smi</span></code></pre></div>
+<p>Continue as the validator user:</p>
+<div class="sourceCode" id="cb3"><pre class="sourceCode bash"><code class="sourceCode bash"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true"></a><span class="fu">sudo</span> -iu validator</span></code></pre></div>
+<h2 id="install-code">2. Install Code</h2>
+<div class="sourceCode" id="cb4"><pre class="sourceCode bash"><code class="sourceCode bash"><span id="cb4-1"><a href="#cb4-1" aria-hidden="true"></a><span class="fu">git</span> clone --branch main https://github.com/AlveusLabs/SN94-BitSota.git /opt/bitsota/SN94-BitSota</span>
+<span id="cb4-2"><a href="#cb4-2" aria-hidden="true"></a><span class="bu">cd</span> /opt/bitsota/SN94-BitSota</span>
+<span id="cb4-3"><a href="#cb4-3" aria-hidden="true"></a></span>
+<span id="cb4-4"><a href="#cb4-4" aria-hidden="true"></a><span class="ex">python3.11</span> -m venv .venv</span>
+<span id="cb4-5"><a href="#cb4-5" aria-hidden="true"></a><span class="bu">source</span> .venv/bin/activate</span>
+<span id="cb4-6"><a href="#cb4-6" aria-hidden="true"></a><span class="ex">pip</span> install -U pip</span>
+<span id="cb4-7"><a href="#cb4-7" aria-hidden="true"></a><span class="ex">pip</span> install -r requirements.txt</span>
+<span id="cb4-8"><a href="#cb4-8" aria-hidden="true"></a><span class="ex">pip</span> install -e .</span></code></pre></div>
+<p>If the repo already exists:</p>
+<div class="sourceCode" id="cb5"><pre class="sourceCode bash"><code class="sourceCode bash"><span id="cb5-1"><a href="#cb5-1" aria-hidden="true"></a><span class="bu">cd</span> /opt/bitsota/SN94-BitSota</span>
+<span id="cb5-2"><a href="#cb5-2" aria-hidden="true"></a><span class="fu">git</span> checkout main</span>
+<span id="cb5-3"><a href="#cb5-3" aria-hidden="true"></a><span class="fu">git</span> pull --ff-only origin main</span>
+<span id="cb5-4"><a href="#cb5-4" aria-hidden="true"></a><span class="bu">source</span> .venv/bin/activate</span>
+<span id="cb5-5"><a href="#cb5-5" aria-hidden="true"></a><span class="ex">pip</span> install -r requirements.txt</span>
+<span id="cb5-6"><a href="#cb5-6" aria-hidden="true"></a><span class="ex">pip</span> install -e .</span></code></pre></div>
+<h2 id="prepare-wallet">3. Prepare Wallet</h2>
+<p>Use a validator hotkey registered on SN94 netuid 94 and allowlisted by the autoresearch backend.</p>
+<p>For a new wallet:</p>
+<div class="sourceCode" id="cb6"><pre class="sourceCode bash"><code class="sourceCode bash"><span id="cb6-1"><a href="#cb6-1" aria-hidden="true"></a><span class="ex">btcli</span> wallet new_coldkey --wallet.name validator_wallet</span>
+<span id="cb6-2"><a href="#cb6-2" aria-hidden="true"></a><span class="ex">btcli</span> wallet new_hotkey --wallet.name validator_wallet --wallet.hotkey validator_hotkey</span>
+<span id="cb6-3"><a href="#cb6-3" aria-hidden="true"></a><span class="ex">btcli</span> subnet register --netuid 94 --wallet.name validator_wallet --wallet.hotkey validator_hotkey --network finney</span></code></pre></div>
+<p>Existing validators can restore/import their real validator wallet instead. Do not put mnemonics in tracked files.</p>
+<h2 id="configure-replay">4. Configure Replay</h2>
+<div class="sourceCode" id="cb7"><pre class="sourceCode bash"><code class="sourceCode bash"><span id="cb7-1"><a href="#cb7-1" aria-hidden="true"></a><span class="bu">cd</span> /opt/bitsota/SN94-BitSota</span>
+<span id="cb7-2"><a href="#cb7-2" aria-hidden="true"></a><span class="fu">cat</span> <span class="op">&gt;</span> research_validator_config.yaml <span class="op">&lt;&lt;&#39;EOF&#39;</span></span>
+<span id="cb7-3"><a href="#cb7-3" aria-hidden="true"></a>coordinator_url: &quot;https://autoresearch.bitsota.com&quot;</span>
+<span id="cb7-4"><a href="#cb7-4" aria-hidden="true"></a>claim_path: &quot;/api/v1/validator/submissions/scan&quot;</span>
+<span id="cb7-5"><a href="#cb7-5" aria-hidden="true"></a></span>
+<span id="cb7-6"><a href="#cb7-6" aria-hidden="true"></a>wallet_name: &quot;validator_wallet&quot;</span>
+<span id="cb7-7"><a href="#cb7-7" aria-hidden="true"></a>wallet_hotkey: &quot;validator_hotkey&quot;</span>
+<span id="cb7-8"><a href="#cb7-8" aria-hidden="true"></a>wallet_path: &quot;~/.bittensor/wallets/&quot;</span>
+<span id="cb7-9"><a href="#cb7-9" aria-hidden="true"></a></span>
+<span id="cb7-10"><a href="#cb7-10" aria-hidden="true"></a>workspace_root: &quot;/srv/bitsota/public-validator-workspaces&quot;</span>
+<span id="cb7-11"><a href="#cb7-11" aria-hidden="true"></a>cycles: 0</span>
+<span id="cb7-12"><a href="#cb7-12" aria-hidden="true"></a>interval_seconds: 30</span>
+<span id="cb7-13"><a href="#cb7-13" aria-hidden="true"></a>timeout_s: 7200</span>
+<span id="cb7-14"><a href="#cb7-14" aria-hidden="true"></a></span>
+<span id="cb7-15"><a href="#cb7-15" aria-hidden="true"></a>replay_sandbox_mode: &quot;docker&quot;</span>
+<span id="cb7-16"><a href="#cb7-16" aria-hidden="true"></a>replay_sandbox_image: &quot;bitsota-research-validator-cuda:local&quot;</span>
+<span id="cb7-17"><a href="#cb7-17" aria-hidden="true"></a>replay_sandbox_dockerfile: &quot;docker/research-validator-cuda.Dockerfile&quot;</span>
+<span id="cb7-18"><a href="#cb7-18" aria-hidden="true"></a>replay_sandbox_gpus: &quot;all&quot;</span>
+<span id="cb7-19"><a href="#cb7-19" aria-hidden="true"></a>replay_sandbox_setup_network_mode: &quot;none&quot;</span>
+<span id="cb7-20"><a href="#cb7-20" aria-hidden="true"></a>replay_sandbox_benchmark_network_mode: &quot;none&quot;</span>
+<span id="cb7-21"><a href="#cb7-21" aria-hidden="true"></a>replay_sandbox_memory_limit: &quot;32g&quot;</span>
+<span id="cb7-22"><a href="#cb7-22" aria-hidden="true"></a>replay_sandbox_pids_limit: 512</span>
+<span id="cb7-23"><a href="#cb7-23" aria-hidden="true"></a>replay_sandbox_workspace_size_bytes: 17179869184</span>
+<span id="cb7-24"><a href="#cb7-24" aria-hidden="true"></a></span>
+<span id="cb7-25"><a href="#cb7-25" aria-hidden="true"></a>allow_unsafe_host_replay: false</span>
+<span id="cb7-26"><a href="#cb7-26" aria-hidden="true"></a>allow_local_artifacts: false</span>
+<span id="cb7-27"><a href="#cb7-27" aria-hidden="true"></a>dry_run: false</span>
+<span id="cb7-28"><a href="#cb7-28" aria-hidden="true"></a><span class="op">EOF</span></span></code></pre></div>
+<p>Replace <code>validator_wallet</code> and <code>validator_hotkey</code> with the local wallet names.</p>
+<p>Run one replay pass:</p>
+<div class="sourceCode" id="cb8"><pre class="sourceCode bash"><code class="sourceCode bash"><span id="cb8-1"><a href="#cb8-1" aria-hidden="true"></a><span class="bu">source</span> .venv/bin/activate</span>
+<span id="cb8-2"><a href="#cb8-2" aria-hidden="true"></a><span class="ex">python</span> -m validator.research_validator_runner --config research_validator_config.yaml --once --no-dry-run</span></code></pre></div>
+<p><code>idle: no pending replay jobs</code> is acceptable. Allowlist or auth errors mean the backend operator must allowlist your validator hotkey.</p>
+<h2 id="configure-weights">5. Configure Weights</h2>
+<div class="sourceCode" id="cb9"><pre class="sourceCode bash"><code class="sourceCode bash"><span id="cb9-1"><a href="#cb9-1" aria-hidden="true"></a><span class="bu">cd</span> /opt/bitsota/SN94-BitSota</span>
+<span id="cb9-2"><a href="#cb9-2" aria-hidden="true"></a><span class="fu">cat</span> <span class="op">&gt;</span> validator_config.weights.yaml <span class="op">&lt;&lt;&#39;EOF&#39;</span></span>
+<span id="cb9-3"><a href="#cb9-3" aria-hidden="true"></a>netuid: 94</span>
+<span id="cb9-4"><a href="#cb9-4" aria-hidden="true"></a>wallet_name: &quot;validator_wallet&quot;</span>
+<span id="cb9-5"><a href="#cb9-5" aria-hidden="true"></a>wallet_hotkey: &quot;validator_hotkey&quot;</span>
+<span id="cb9-6"><a href="#cb9-6" aria-hidden="true"></a>path: &quot;~/.bittensor/wallets/&quot;</span>
+<span id="cb9-7"><a href="#cb9-7" aria-hidden="true"></a>network: &quot;finney&quot;</span>
+<span id="cb9-8"><a href="#cb9-8" aria-hidden="true"></a>subtensor_chain_endpoint: &quot;wss://entrypoint-finney.opentensor.ai:443&quot;</span>
+<span id="cb9-9"><a href="#cb9-9" aria-hidden="true"></a>epoch_length: 100</span>
+<span id="cb9-10"><a href="#cb9-10" aria-hidden="true"></a></span>
+<span id="cb9-11"><a href="#cb9-11" aria-hidden="true"></a>weights:</span>
+<span id="cb9-12"><a href="#cb9-12" aria-hidden="true"></a>  wait_for_inclusion: true</span>
+<span id="cb9-13"><a href="#cb9-13" aria-hidden="true"></a>  wait_for_finalization: false</span>
+<span id="cb9-14"><a href="#cb9-14" aria-hidden="true"></a><span class="op">EOF</span></span></code></pre></div>
+<p>Replace <code>validator_wallet</code> and <code>validator_hotkey</code> with the local wallet names.</p>
+<p>Check the backend target before enabling the service:</p>
+<div class="sourceCode" id="cb10"><pre class="sourceCode bash"><code class="sourceCode bash"><span id="cb10-1"><a href="#cb10-1" aria-hidden="true"></a><span class="bu">source</span> .venv/bin/activate</span>
+<span id="cb10-2"><a href="#cb10-2" aria-hidden="true"></a><span class="ex">python</span> -m validator.backend_weight_setter <span class="kw">\</span></span>
+<span id="cb10-3"><a href="#cb10-3" aria-hidden="true"></a>  <span class="ex">--config</span> validator_config.weights.yaml <span class="kw">\</span></span>
+<span id="cb10-4"><a href="#cb10-4" aria-hidden="true"></a>  <span class="ex">--dry-run</span> <span class="kw">\</span></span>
+<span id="cb10-5"><a href="#cb10-5" aria-hidden="true"></a>  <span class="ex">--ignore-rate-limit</span></span></code></pre></div>
+<p>The dry run must show the production contract hotkey:</p>
+<pre class="text"><code>5F7MJ2fAyxBG7ci4xP7kQPJanoMdNurk1QBP1AQuFT2Jmzg2</code></pre>
+<p>Stop old weight setters if this host was previously used:</p>
+<div class="sourceCode" id="cb12"><pre class="sourceCode bash"><code class="sourceCode bash"><span id="cb12-1"><a href="#cb12-1" aria-hidden="true"></a><span class="fu">sudo</span> systemctl disable --now bitsota-prod-weight-setter.service <span class="op">2&gt;</span>/dev/null <span class="kw">||</span> <span class="fu">true</span></span>
+<span id="cb12-2"><a href="#cb12-2" aria-hidden="true"></a><span class="fu">sudo</span> systemctl disable --now bitsota-validator.service <span class="op">2&gt;</span>/dev/null <span class="kw">||</span> <span class="fu">true</span></span>
+<span id="cb12-3"><a href="#cb12-3" aria-hidden="true"></a><span class="fu">sudo</span> systemctl disable --now bitsota-capacitorless-weights.service <span class="op">2&gt;</span>/dev/null <span class="kw">||</span> <span class="fu">true</span></span>
+<span id="cb12-4"><a href="#cb12-4" aria-hidden="true"></a><span class="fu">sudo</span> systemctl disable --now bitsota-local-weights.service <span class="op">2&gt;</span>/dev/null <span class="kw">||</span> <span class="fu">true</span></span>
+<span id="cb12-5"><a href="#cb12-5" aria-hidden="true"></a><span class="ex">pgrep</span> -af <span class="st">&#39;prod_weight_setter|validator_node|local_validator|capacitorless|relay_client|set_weights&#39;</span> <span class="kw">||</span> <span class="fu">true</span></span></code></pre></div>
+<h2 id="install-services">6. Install Services</h2>
+<p>Exit the validator shell for the <code>sudo tee</code> commands:</p>
+<div class="sourceCode" id="cb13"><pre class="sourceCode bash"><code class="sourceCode bash"><span id="cb13-1"><a href="#cb13-1" aria-hidden="true"></a><span class="bu">exit</span></span></code></pre></div>
+<p>Create the replay service:</p>
+<div class="sourceCode" id="cb14"><pre class="sourceCode bash"><code class="sourceCode bash"><span id="cb14-1"><a href="#cb14-1" aria-hidden="true"></a><span class="fu">sudo</span> tee /etc/systemd/system/bitsota-replay-validator.service <span class="op">&gt;</span>/dev/null <span class="op">&lt;&lt;&#39;EOF&#39;</span></span>
+<span id="cb14-2"><a href="#cb14-2" aria-hidden="true"></a>[Unit]</span>
+<span id="cb14-3"><a href="#cb14-3" aria-hidden="true"></a>Description=BitSota SN94 autoresearch replay validator</span>
+<span id="cb14-4"><a href="#cb14-4" aria-hidden="true"></a>After=network-online.target docker.service</span>
+<span id="cb14-5"><a href="#cb14-5" aria-hidden="true"></a>Wants=network-online.target docker.service</span>
+<span id="cb14-6"><a href="#cb14-6" aria-hidden="true"></a></span>
+<span id="cb14-7"><a href="#cb14-7" aria-hidden="true"></a>[Service]</span>
+<span id="cb14-8"><a href="#cb14-8" aria-hidden="true"></a>User=validator</span>
+<span id="cb14-9"><a href="#cb14-9" aria-hidden="true"></a>Group=validator</span>
+<span id="cb14-10"><a href="#cb14-10" aria-hidden="true"></a>WorkingDirectory=/opt/bitsota/SN94-BitSota</span>
+<span id="cb14-11"><a href="#cb14-11" aria-hidden="true"></a>Environment=HOME=/home/validator</span>
+<span id="cb14-12"><a href="#cb14-12" aria-hidden="true"></a>Environment=PYTHONUNBUFFERED=1</span>
+<span id="cb14-13"><a href="#cb14-13" aria-hidden="true"></a>ExecStart=/opt/bitsota/SN94-BitSota/.venv/bin/python -m validator.research_validator_runner --config /opt/bitsota/SN94-BitSota/research_validator_config.yaml --no-dry-run</span>
+<span id="cb14-14"><a href="#cb14-14" aria-hidden="true"></a>Restart=always</span>
+<span id="cb14-15"><a href="#cb14-15" aria-hidden="true"></a>RestartSec=10</span>
+<span id="cb14-16"><a href="#cb14-16" aria-hidden="true"></a></span>
+<span id="cb14-17"><a href="#cb14-17" aria-hidden="true"></a>[Install]</span>
+<span id="cb14-18"><a href="#cb14-18" aria-hidden="true"></a>WantedBy=multi-user.target</span>
+<span id="cb14-19"><a href="#cb14-19" aria-hidden="true"></a><span class="op">EOF</span></span></code></pre></div>
+<p>Create the backend weight service:</p>
+<div class="sourceCode" id="cb15"><pre class="sourceCode bash"><code class="sourceCode bash"><span id="cb15-1"><a href="#cb15-1" aria-hidden="true"></a><span class="fu">sudo</span> tee /etc/systemd/system/bitsota-backend-weights.service <span class="op">&gt;</span>/dev/null <span class="op">&lt;&lt;&#39;EOF&#39;</span></span>
+<span id="cb15-2"><a href="#cb15-2" aria-hidden="true"></a>[Unit]</span>
+<span id="cb15-3"><a href="#cb15-3" aria-hidden="true"></a>Description=BitSota backend-policy validator weights</span>
+<span id="cb15-4"><a href="#cb15-4" aria-hidden="true"></a>After=network-online.target</span>
+<span id="cb15-5"><a href="#cb15-5" aria-hidden="true"></a>Wants=network-online.target</span>
+<span id="cb15-6"><a href="#cb15-6" aria-hidden="true"></a></span>
+<span id="cb15-7"><a href="#cb15-7" aria-hidden="true"></a>[Service]</span>
+<span id="cb15-8"><a href="#cb15-8" aria-hidden="true"></a>User=validator</span>
+<span id="cb15-9"><a href="#cb15-9" aria-hidden="true"></a>Group=validator</span>
+<span id="cb15-10"><a href="#cb15-10" aria-hidden="true"></a>WorkingDirectory=/opt/bitsota/SN94-BitSota</span>
+<span id="cb15-11"><a href="#cb15-11" aria-hidden="true"></a>Environment=HOME=/home/validator</span>
+<span id="cb15-12"><a href="#cb15-12" aria-hidden="true"></a>Environment=PYTHONUNBUFFERED=1</span>
+<span id="cb15-13"><a href="#cb15-13" aria-hidden="true"></a>ExecStart=/opt/bitsota/SN94-BitSota/.venv/bin/python -m validator.backend_weight_setter --config /opt/bitsota/SN94-BitSota/validator_config.weights.yaml --loop --interval-seconds 300</span>
+<span id="cb15-14"><a href="#cb15-14" aria-hidden="true"></a>Restart=always</span>
+<span id="cb15-15"><a href="#cb15-15" aria-hidden="true"></a>RestartSec=10</span>
+<span id="cb15-16"><a href="#cb15-16" aria-hidden="true"></a></span>
+<span id="cb15-17"><a href="#cb15-17" aria-hidden="true"></a>[Install]</span>
+<span id="cb15-18"><a href="#cb15-18" aria-hidden="true"></a>WantedBy=multi-user.target</span>
+<span id="cb15-19"><a href="#cb15-19" aria-hidden="true"></a><span class="op">EOF</span></span></code></pre></div>
+<p>Enable both services:</p>
+<div class="sourceCode" id="cb16"><pre class="sourceCode bash"><code class="sourceCode bash"><span id="cb16-1"><a href="#cb16-1" aria-hidden="true"></a><span class="fu">sudo</span> systemctl daemon-reload</span>
+<span id="cb16-2"><a href="#cb16-2" aria-hidden="true"></a><span class="fu">sudo</span> systemctl enable --now bitsota-replay-validator.service</span>
+<span id="cb16-3"><a href="#cb16-3" aria-hidden="true"></a><span class="fu">sudo</span> systemctl enable --now bitsota-backend-weights.service</span></code></pre></div>
+<h2 id="check-status">7. Check Status</h2>
+<div class="sourceCode" id="cb17"><pre class="sourceCode bash"><code class="sourceCode bash"><span id="cb17-1"><a href="#cb17-1" aria-hidden="true"></a><span class="ex">systemctl</span> status bitsota-replay-validator.service --no-pager</span>
+<span id="cb17-2"><a href="#cb17-2" aria-hidden="true"></a><span class="ex">systemctl</span> status bitsota-backend-weights.service --no-pager</span>
+<span id="cb17-3"><a href="#cb17-3" aria-hidden="true"></a></span>
+<span id="cb17-4"><a href="#cb17-4" aria-hidden="true"></a><span class="ex">journalctl</span> -u bitsota-replay-validator.service -f</span>
+<span id="cb17-5"><a href="#cb17-5" aria-hidden="true"></a><span class="ex">journalctl</span> -u bitsota-backend-weights.service -f</span></code></pre></div>
+<p>Healthy weight logs should repeatedly show backend <code>targets</code> mode, the validator hotkey, and the contract hotkey. <code>skipped_rate_limit</code> is normal between permitted Bittensor weight updates.</p>
+<p>If the quickstart fails, switch to the full <a href="public-validator-runner.md">Public Autoresearch Validator Runner</a>.</p>
+</body>
+</html>

@@ -128,6 +128,8 @@ nav:
       - Mining: mining.md
       - Pool Mining: pool-mining.md
       - Validation: validation.md
+      - Public Validator Quickstart: public-validator-quickstart.md
+      - Public Validator Runner: public-validator-runner.md
       - Rewards: rewards.md
       - Reward Modes: reward-modes.md
       - Capacitor: capacitor.md

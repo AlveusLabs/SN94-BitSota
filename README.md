@@ -118,6 +118,8 @@ python -m validator.backend_weight_setter --help
 
 The legacy relay/local validator path has been removed. Production validators
 should follow **[Public Autoresearch Validator Runner](docs/public-validator-runner.md)**.
+Experienced operators with a clean GPU host can use the shorter
+**[Public Validator Quickstart](docs/public-validator-quickstart.md)**.
 
 ## Requirements
 
