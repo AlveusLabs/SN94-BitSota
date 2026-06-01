@@ -44,3 +44,23 @@ class WalletHolder:
         cls.base_scores = torch.zeros(
             cls.metagraph.n, dtype=torch.float32, device=cls.device
         )
+
+    @classmethod
+    def close(cls):
+        """Best-effort shutdown for subtensor websocket clients."""
+        subtensor = cls.subtensor
+        for candidate in (getattr(subtensor, "substrate", None), subtensor):
+            close = getattr(candidate, "close", None)
+            if callable(close):
+                try:
+                    close()
+                except Exception:  # pragma: no cover - shutdown best effort
+                    logging.debug("failed to close bittensor client", exc_info=True)
+
+        cls.wallet = None
+        cls.subtensor = None
+        cls.metagraph = None
+        cls.config = None
+        cls.uid = 0
+        cls.device = "cpu"
+        cls.base_scores = None

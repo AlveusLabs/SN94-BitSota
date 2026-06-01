@@ -84,3 +84,10 @@ class BittensorNetwork(metaclass=_SingletonMeta):
                 _state.WalletHolder.config.netuid, lite=lite
             )
         return _state.WalletHolder.metagraph
+
+    @classmethod
+    def close(cls):
+        _state.WalletHolder.close()
+        cls._default_config = None
+        cls._initialized = False
+        cls._inst = None

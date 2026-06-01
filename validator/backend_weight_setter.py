@@ -331,22 +331,27 @@ def main(argv: Sequence[str] | None = None) -> int:
     def log(message: str) -> None:
         print(message, flush=True)
 
-    while True:
-        try:
-            outcome = _run_once(args=args, network=network, log=log)
-            log(
-                "[backend-weights] "
-                f"status={outcome.status} mode={outcome.mode} dry_run={outcome.dry_run} "
-                f"message={outcome.message}"
-            )
-        except Exception as exc:
-            log(f"[backend-weights] failed: {exc}")
-            if not args.loop:
-                return 1
+    try:
+        while True:
+            try:
+                outcome = _run_once(args=args, network=network, log=log)
+                log(
+                    "[backend-weights] "
+                    f"status={outcome.status} mode={outcome.mode} dry_run={outcome.dry_run} "
+                    f"message={outcome.message}"
+                )
+            except Exception as exc:
+                log(f"[backend-weights] failed: {exc}")
+                if not args.loop:
+                    return 1
 
-        if not args.loop:
-            return 0 if outcome.status != "failed" else 1
-        time.sleep(max(1.0, float(args.interval_seconds)))
+            if not args.loop:
+                return 0 if outcome.status != "failed" else 1
+            time.sleep(max(1.0, float(args.interval_seconds)))
+    finally:
+        close = getattr(network, "close", None)
+        if callable(close):
+            close()
 
 
 if __name__ == "__main__":  # pragma: no cover
