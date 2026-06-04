@@ -1,0 +1,262 @@
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml" lang="" xml:lang="">
+<head>
+  <meta charset="utf-8" />
+  <meta name="generator" content="pandoc" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes" />
+  <title>SN94 System Structure</title>
+  <style>
+    code{white-space: pre-wrap;}
+    span.smallcaps{font-variant: small-caps;}
+    span.underline{text-decoration: underline;}
+    div.column{display: inline-block; vertical-align: top; width: 50%;}
+    div.hanging-indent{margin-left: 1.5em; text-indent: -1.5em;}
+    ul.task-list{list-style: none;}
+  </style>
+  <script type="module">
+  import mermaid from "https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.esm.min.mjs";
+  mermaid.initialize({ startOnLoad: true });
+  </script>
+</head>
+<body>
+<header id="title-block-header">
+<h1 class="title">SN94 System Structure</h1>
+</header>
+<h1 id="sn94-system-structure">SN94 System Structure</h1>
+<p>This page explains how the current SN94/BitSota/autoresearch stack is split across services. Read this before running a validator so the backend, validator runner, weight setter, Pool service, and claim contract boundaries are clear.</p>
+<h2 id="current-production-path">Current Production Path</h2>
+<p>The reward-active production path is coordinator-backed autoresearch:</p>
+<pre class="mermaid"><code>flowchart LR
+  Miner[Research miner or agent] --&gt;|signed claim and submission| Backend[Autoresearch backend]
+  Backend --&gt;|signed replay worklist| Validator[Public validator runner]
+  Validator --&gt;|observed metrics| Backend
+  Backend --&gt;|reward snapshot and validator_weights| WeightSetter[Backend weight setter]
+  WeightSetter --&gt;|set_weights| Chain[Bittensor SN94]
+  Chain --&gt;|emissions| ContractHotkey[Pool contract hotkey]
+  Backend --&gt;|reward snapshot /api/v1/reward-snapshot| Pool[Pool service]
+  Pool --&gt;|Merkle root| Contract[Merkle claim contract]
+  Pool --&gt;|claim package + proof| Claims[Pool claims API]
+  Claims --&gt;|Merkle proof| Miner
+  Miner --&gt;|claim transaction with proof| Contract
+</code></pre>
+<h2 id="repositories">Repositories</h2>
+<table>
+<thead>
+<tr class="header">
+<th>Repo</th>
+<th>Responsibility</th>
+<th>Who normally runs it</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td><code>autoresearch-bittensor</code></td>
+<td>Coordinator API, task catalog, submissions, validator job worklists, validator result consensus, reward snapshots, private heldout delivery.</td>
+<td>Backend operator / App Runner.</td>
+</tr>
+<tr class="even">
+<td><code>SN94-BitSota</code></td>
+<td>Public miner and validator client code: GUI, Codex/manual mining docs, signed request helpers, Docker replay runner, backend weight setter.</td>
+<td>Miners and validators.</td>
+</tr>
+<tr class="odd">
+<td>Public task repos</td>
+<td>Public replay specification per competition: benchmark scripts, allowed patch surface, result JSON contract, public smoke harness.</td>
+<td>Cloned by public validator runner.</td>
+</tr>
+<tr class="even">
+<td><code>Pool</code></td>
+<td>Pool accounting, reward publication, Merkle proof API, Merkle contract package and deployment metadata.</td>
+<td>Pool operator / App Runner.</td>
+</tr>
+<tr class="odd">
+<td><code>94-agent-community</code></td>
+<td>Local operator memory, SOPs, endpoints, role prompts, and secrets notes for this machine.</td>
+<td>Local agents/operators only.</td>
+</tr>
+</tbody>
+</table>
+<p>Validators normally need <code>SN94-BitSota</code> only. They do not need the private coordinator database, AWS App Runner access, or Pool publisher secrets.</p>
+<h2 id="main-runtime-components">Main Runtime Components</h2>
+<h3 id="autoresearch-backend">Autoresearch Backend</h3>
+<p>The backend is the source of truth for:</p>
+<ul>
+<li>active competitions and task metadata;</li>
+<li>miner claims and submissions;</li>
+<li>validator allowlist and signed validator worklists;</li>
+<li>private heldout selectors and Hugging Face row-source specs;</li>
+<li>validator result collection and consensus;</li>
+<li>reward snapshot output for Pool and validator weight setting.</li>
+</ul>
+<p>Public miner task APIs hide validator-private replay parameters. Allowlisted validators get private replay parameters only through signed validator endpoints.</p>
+<h3 id="public-task-repos">Public Task Repos</h3>
+<p>Each competition points to a public task repo plus a pinned base ref. The task repo owns:</p>
+<ul>
+<li>benchmark command;</li>
+<li>result JSON schema;</li>
+<li>public smoke/golden checks;</li>
+<li>allowed miner edit paths;</li>
+<li>local manifest reader used by private heldout replay.</li>
+</ul>
+<p>The task repo should not fetch private heldout data during reward validation. The validator host resolves backend-heldout inputs before Docker starts and passes only local manifest paths into the sandbox.</p>
+<h3 id="sn94-public-validator-runner">SN94 Public Validator Runner</h3>
+<p>The public validator runner lives in <code>SN94-BitSota</code> and does this loop:</p>
+<ol>
+<li>Sign a request with the validator hotkey.</li>
+<li>Call <code>POST /api/v1/validator/submissions/scan</code>.</li>
+<li>Clone the task repo and checkout the pinned base ref.</li>
+<li>Apply the miner patch or download the submitted artifact.</li>
+<li>Prefetch backend-provided heldout rows on the host.</li>
+<li>Run setup and benchmark in the Docker/CUDA sandbox.</li>
+<li>Parse the result JSON.</li>
+<li>Post observed metrics to <code>POST /api/v1/validator/jobs/{job_id}/result</code>.</li>
+</ol>
+<p>It does not set chain weights. It does not publish Merkle roots. It does not need Pool contract ownership.</p>
+<h3 id="backend-weight-setter">Backend Weight Setter</h3>
+<p>The backend weight setter is a separate process in <code>SN94-BitSota</code>. It polls:</p>
+<pre class="text"><code>GET /api/v1/reward-snapshot
+</code></pre>
+<p>Then it reads <code>reward_policy.validator_weights</code> and calls Bittensor <code>set_weights</code>. Production should point some configured percentage at the Pool contract hotkey:</p>
+<pre class="text"><code>5F7MJ2fAyxBG7ci4xP7kQPJanoMdNurk1QBP1AQuFT2Jmzg2
+</code></pre>
+<p>Only one weight-owning process should run per validator hotkey. If a validator runs another process that also calls <code>set_weights</code>, those processes can fight each other.</p>
+<h3 id="pool-service">Pool Service</h3>
+<p>Pool is a separate service and repo. In the current autoresearch payout path, Pool consumes backend reward/accounting outputs, builds claimable Merkle leaves, publishes roots on-chain, and serves claim proofs.</p>
+<p>Production Pool should not include operator-launched verifier/challenge daemons. Validators run their own validation/verifier processes with their own keys. The challenge-capable Pool/Merkle verifier currently lives in the private <code>Pool</code> repo, so vetoer operators need GitHub access to that repo.</p>
+<h3 id="merkle-claim-contract">Merkle Claim Contract</h3>
+<p>The Merkle contract is the claim settlement contract.</p>
+<p>Important concepts:</p>
+<ul>
+<li>Pool publisher posts Merkle roots.</li>
+<li>Users claim from leaves with Merkle proofs.</li>
+<li>Veto state can lock claims while an active challenge exists.</li>
+<li>Contract vetoers/arbiter are contract governance roles, not validator job runners.</li>
+</ul>
+<p>Validators generally do not need Merkle contract owner or publisher keys.</p>
+<h2 id="identity-and-key-roles">Identity And Key Roles</h2>
+<table>
+<thead>
+<tr class="header">
+<th>Key/address</th>
+<th>Used for</th>
+<th>Held by</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>Miner hotkey</td>
+<td>Signs claims/submissions; identifies miner work.</td>
+<td>Miner.</td>
+</tr>
+<tr class="even">
+<td>Recipient coldkey</td>
+<td>Receives Pool/Merkle claim payout.</td>
+<td>Miner/operator chosen recipient.</td>
+</tr>
+<tr class="odd">
+<td>Validator hotkey</td>
+<td>Signs validator scan/result requests and may set chain weights.</td>
+<td>Validator.</td>
+</tr>
+<tr class="even">
+<td>Backend validator allowlist</td>
+<td>Controls which validator hotkeys receive private replay work.</td>
+<td>Backend operator.</td>
+</tr>
+<tr class="odd">
+<td>Pool publisher key</td>
+<td>Publishes Merkle roots.</td>
+<td>Pool operator only.</td>
+</tr>
+<tr class="even">
+<td>Contract hotkey</td>
+<td>Receives validator-set subnet emissions for the Pool/contract path.</td>
+<td>Registered hotkey controlled by the contract coldkey path.</td>
+</tr>
+<tr class="odd">
+<td>Vetoer/arbiter keys</td>
+<td>Lock or clear contract claimability according to contract rules.</td>
+<td>Governance operators.</td>
+</tr>
+</tbody>
+</table>
+<p>Do not put mnemonics or private keys in tracked docs.</p>
+<h2 id="data-flow-by-phase">Data Flow By Phase</h2>
+<h3 id="1-task-discovery">1. Task Discovery</h3>
+<p>Miners read public task metadata from the backend. Public metadata is enough to know what to edit or what artifact to submit, but it does not reveal private heldout data.</p>
+<h3 id="2-submission">2. Submission</h3>
+<p>The miner submits a patch or artifact URI plus integrity metadata. Artifact competitions require validators to download the exact bytes and verify SHA-256 and size.</p>
+<h3 id="3-validation">3. Validation</h3>
+<p>Allowlisted validators receive replay specs through signed backend worklists. For <code>standard</code> and <code>centerless</code> tasks, an accepted replay's observed task metric is the canonical score; claimed metrics do not decide acceptance and the normal path does not average validator results. For <code>peer_evaluation</code> tasks, peer evaluations finalize consensus once accepted or rejected counts reach <code>min_peer_evaluations</code>, and accepted peer metrics use the median task metric.</p>
+<h3 id="4-reward-snapshot">4. Reward Snapshot</h3>
+<p>The backend turns accepted submissions and competition policy into a reward snapshot. The snapshot can contain both miner reward accounting and <code>validator_weights</code> for validators to apply on-chain.</p>
+<h3 id="5-chain-weights">5. Chain Weights</h3>
+<p>Validators that opt in to backend-controlled weights run the backend weight setter. That process reads <code>validator_weights</code> and submits Bittensor <code>set_weights</code> from the validator hotkey.</p>
+<h3 id="6-poolmerkle-claim">6. Pool/Merkle Claim</h3>
+<p>Pool consumes the reward data, builds a claim epoch, publishes a Merkle root, and serves proofs. Users claim against the contract when the root is published and no veto locks claims.</p>
+<h2 id="what-a-public-validator-needs">What A Public Validator Needs</h2>
+<p>Required:</p>
+<ul>
+<li><code>SN94-BitSota:main</code> checkout unless an operator explicitly gives a staging branch;</li>
+<li>registered SN94 validator hotkey;</li>
+<li>backend allowlist entry for that hotkey;</li>
+<li>Docker and NVIDIA Container Toolkit on a GPU host;</li>
+<li>enough disk/workspace for task repos, artifacts, and temporary heldout manifests;</li>
+<li>optional Hugging Face token on the host if backend-selected datasets require authentication.</li>
+</ul>
+<p>Not required:</p>
+<ul>
+<li>production database access;</li>
+<li>AWS App Runner access;</li>
+<li>Pool publisher key;</li>
+<li>Merkle contract owner key;</li>
+<li>private task source beyond what the backend returns in signed replay specs.</li>
+</ul>
+<h2 id="environment-separation">Environment Separation</h2>
+<p>Testing and production are intentionally different:</p>
+<ul>
+<li>test backend and prod backend can point at different App Runner services;</li>
+<li>testing and production branches can drift for environment config;</li>
+<li>SN402 testnet values must not be copied into SN94 production config;</li>
+<li>production Pool should publish and serve claims, not run operator-owned verifier daemons.</li>
+</ul>
+<p>Treat endpoint or branch drift as a problem only when the missing change is required for that target environment's behavior or safety.</p>
+<h2 id="common-confusions">Common Confusions</h2>
+<table>
+<thead>
+<tr class="header">
+<th>Confusion</th>
+<th>Correct model</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>"The public validator runner sets weights."</td>
+<td>It only replays submissions and posts metrics. Run the backend weight setter separately.</td>
+</tr>
+<tr class="even">
+<td>"The task repo should fetch HF heldout rows in Docker."</td>
+<td>The validator host fetches heldout rows before Docker and passes a local manifest into the sandbox.</td>
+</tr>
+<tr class="odd">
+<td>"Validators need backend DB or AWS."</td>
+<td>Public validators use signed HTTP APIs only.</td>
+</tr>
+<tr class="even">
+<td>"One validator process can do everything safely."</td>
+<td>Replay, weight setting, and Pool publishing are separate responsibilities.</td>
+</tr>
+<tr class="odd">
+<td>"Testing and production branches must be identical."</td>
+<td>They can differ where environment settings differ.</td>
+</tr>
+</tbody>
+</table>
+<h2 id="where-to-go-next">Where To Go Next</h2>
+<ul>
+<li>Public validator setup: <a href="public-validator-runner.md">Public Autoresearch Validator Runner</a></li>
+<li>Miner flow: <a href="mining.md">Mining Without an Agent</a> and <a href="codex-only-mining.md">Codex-Only Mining</a></li>
+<li>Pool claims and testing: <a href="guides/autoresearch-testnet-e2e.md">Autoresearch Testnet E2E</a></li>
+</ul>
+</body>
+</html>

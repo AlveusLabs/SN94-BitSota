@@ -1,6 +1,14 @@
 :root {
-  --md-primary-fg-color: #5b21b6;
-  --md-accent-fg-color: #4f46e5;
+  --md-primary-fg-color: #18084a;
+  --md-accent-fg-color: #70edf0;
+  --bitsota-ink: #18084a;
+  --bitsota-muted: #5f5a78;
+  --bitsota-line: #d8d4e8;
+  --bitsota-soft-line: #ebe8f5;
+  --bitsota-bg: #fdfdfd;
+  --bitsota-panel: #ffffff;
+  --bitsota-panel-muted: #e4e7ea;
+  --bitsota-accent: #70edf0;
 }
 
 .md-typeset .mermaid {
@@ -8,3 +16,141 @@
   justify-content: center;
 }
 
+.md-typeset h1,
+.md-typeset h2,
+.md-typeset h3 {
+  color: var(--bitsota-ink);
+  letter-spacing: 0;
+}
+
+.md-typeset a {
+  color: var(--bitsota-ink);
+  font-weight: 700;
+}
+
+.md-typeset table:not([class]) {
+  border: 1px solid var(--bitsota-line);
+}
+
+.md-typeset table:not([class]) th {
+  background: var(--bitsota-panel-muted);
+  color: var(--bitsota-ink);
+}
+
+.md-typeset code {
+  border-radius: 5px;
+}
+
+.bitsota-hero {
+  margin: 0 0 2rem;
+  padding: 2rem;
+  border: 1px solid var(--bitsota-line);
+  background: var(--bitsota-bg);
+  color: var(--bitsota-ink);
+}
+
+.bitsota-hero.compact {
+  padding: 1.5rem;
+}
+
+.bitsota-hero h1 {
+  margin: 0;
+  font-size: clamp(2rem, 6vw, 4rem);
+  font-weight: 500;
+  line-height: 1.08;
+  letter-spacing: 0;
+}
+
+.bitsota-kicker {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin: 0 0 0.75rem;
+  font-family: "JetBrains Mono", "SFMono-Regular", Consolas, monospace;
+  font-size: 0.78rem;
+  font-weight: 700;
+  letter-spacing: 0;
+  text-transform: uppercase;
+}
+
+.bitsota-kicker::before {
+  content: "";
+  width: 0.55rem;
+  height: 0.55rem;
+  background: var(--bitsota-accent);
+  box-shadow: 0.35rem 0.35rem 0 var(--bitsota-ink);
+}
+
+.bitsota-lede {
+  max-width: 52rem;
+  margin: 1rem 0 0;
+  color: var(--bitsota-muted);
+  font-size: 1.05rem;
+}
+
+.bitsota-strip {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 1px;
+  margin-top: 2rem;
+  border: 1px solid var(--bitsota-line);
+  background: var(--bitsota-line);
+}
+
+.bitsota-strip span {
+  display: flex;
+  min-height: 4rem;
+  align-items: center;
+  justify-content: center;
+  padding: 0.75rem;
+  background: var(--bitsota-panel);
+  color: var(--bitsota-ink);
+  font-family: "JetBrains Mono", "SFMono-Regular", Consolas, monospace;
+  font-size: 0.8rem;
+  text-align: center;
+}
+
+.bitsota-card-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1px;
+  margin: 1.5rem 0;
+  border: 1px solid var(--bitsota-line);
+  background: var(--bitsota-line);
+}
+
+.bitsota-card {
+  display: flex;
+  min-height: 7rem;
+  flex-direction: column;
+  gap: 0.5rem;
+  padding: 1rem;
+  background: var(--bitsota-panel);
+  color: var(--bitsota-ink);
+  text-decoration: none;
+}
+
+.bitsota-card:hover {
+  background: var(--bitsota-panel-muted);
+}
+
+.bitsota-card strong {
+  color: var(--bitsota-ink);
+  font-size: 1rem;
+}
+
+.bitsota-card span {
+  color: var(--bitsota-muted);
+  font-weight: 400;
+}
+
+@media (max-width: 760px) {
+  .bitsota-hero {
+    padding: 1.25rem;
+  }
+
+  .bitsota-strip,
+  .bitsota-card-grid {
+    grid-template-columns: 1fr;
+  }
+}

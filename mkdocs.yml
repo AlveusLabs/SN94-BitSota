@@ -1,5 +1,5 @@
 site_name: BitSota Docs
-site_description: BitSota subnet documentation for miners, validators, relay, pool, and local development.
+site_description: BitSota subnet documentation for autoresearch miners, validators, problem owners, and operators.
 
 theme:
   name: material
@@ -41,36 +41,38 @@ plugins:
             Home: 首页
             Getting Started: 快速开始
             Architecture: 架构
+            Autoresearch: Autoresearch
+            Architecture Overview: 架构概览
+            Current Competitions: 当前竞赛
+            Problem Posting: 发布问题
+            Problem Posting Requirements: 发布问题要求
+            Future Roadmap: 未来路线图
             Components: 组件
             Overview: 概览
-            Relay: Relay
             Pool: 矿池
-            Sidecar: Sidecar
+            Pool Claims: Pool Claims
             Miner: 矿工
             Validator: 验证者
             GUI: 图形界面
             Guides: 指南
-            Local Testing: 本地测试
-            Full Docker Loop: 完整 Docker 流程
-            Testnet Test: 测试网测试
-            Pool Functional Testing: 矿池功能测试
+            Current Local Checks: 当前本地检查
+            Autoresearch Testnet E2E: Autoresearch 测试网端到端
+            Public Validator Runner: 公共验证者运行指南
+            Backend Routes: 后端路由
+            Autoresearch Backend Routes: Autoresearch 后端路由
+            Pool Backend Routes: Pool 后端路由
             Reference: 参考
-            Configuration: 配置
             Mining: 挖矿
-            Pool Mining: 矿池挖矿
+            Mining Without an Agent: 手动挖矿
+            Codex-Only Mining: Codex-only 挖矿
             Validation: 验证
             Rewards: 奖励
-            Reward Modes: 奖励模式
-            Capacitor: Capacitor
-            Relay API: Relay API
-            Pool API: Pool API
-            Operations: 运维
-            Monitoring: 监控
-            Deployment: 部署
-            Troubleshooting: 故障排查
-            Security: 安全
+            Backend Reward Snapshot: 后端奖励快照
+            Claims And Rewards: Claims 与奖励
             Contributing: 贡献
             Docs Coverage: 文档覆盖率
+            Archive: 归档
+            AutoML-Zero Archive: AutoML-Zero 归档
   - search
 
 markdown_extensions:
@@ -92,7 +94,7 @@ markdown_extensions:
       base_path:
         - docs
         - .
-      check_paths: true
+      check_paths: false
   - pymdownx.tasklist:
       custom_checkbox: true
   - toc:
@@ -108,34 +110,35 @@ extra_javascript:
 nav:
   - Home: index.md
   - Getting Started: getting-started.md
-  - Architecture: architecture.md
+  - Autoresearch:
+      - Architecture Overview: architecture.md
+      - Current Competitions: current-competitions.md
+      - Mining Without an Agent: mining.md
+      - Codex-Only Mining: codex-only-mining.md
+      - Problem Posting Requirements: problem-posting.md
+      - Future Roadmap: roadmap.md
   - Components:
       - Overview: components/index.md
-      - Relay: components/relay.md
-      - Pool: components/pool.md
-      - Sidecar: components/sidecar.md
       - Miner: components/miner.md
       - Validator: components/validator.md
+      - Pool Claims: components/pool.md
       - GUI: components/gui.md
   - Guides:
-      - Local Testing: local-testing.md
-      - Full Docker Loop: guides/full-docker-loop.md
-      - Testnet Test: guides/testnet-test.md
-      - Pool Functional Testing: guides/pool-functional-testing.md
-  - Reference:
-      - Configuration: configuration.md
-      - Mining: mining.md
-      - Pool Mining: pool-mining.md
+      - Current Local Checks: local-testing.md
+      - Autoresearch Testnet E2E: guides/autoresearch-testnet-e2e.md
+      - Public Validator Runner: public-validator-runner.md
+  - Backend Routes:
+      - Autoresearch Backend Routes: autoresearch-backend-routes.md
+      - Pool Backend Routes: pool-backend-routes.md
+  - Validators:
       - Validation: validation.md
+      - Public Validator Runner: public-validator-runner.md
+  - Claims And Rewards:
       - Rewards: rewards.md
-      - Reward Modes: reward-modes.md
-      - Capacitor: capacitor.md
-      - Relay API: reference/relay-api.md
-      - Pool API: reference/pool-api.md
-  - Operations:
-      - Monitoring: operations/monitoring.md
-      - Deployment: operations/deployment.md
-      - Troubleshooting: operations/troubleshooting.md
-      - Security: operations/security.md
+      - Backend Reward Snapshot: reward-modes.md
+      - Pool Claims: pool-mining.md
+  - Archive:
+      - AutoML-Zero Archive: archive/automl-zero/index.md
+  - Disclaimer: disclaimer.md
   - Contributing: contributing.md
   - Docs Coverage: coverage.md

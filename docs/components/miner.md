@@ -1,30 +1,19 @@
 # Miner
 
-There are two paths to run mining code:
+Current public mining is coordinator-backed.
 
-- Desktop GUI mode via sidecar
-- CLI mode via `neurons/miner.py`
-- Experimental coordinator-backed research-agent mode via `bitsota-research-agent`
+Miner tools in this repo:
 
-## CLI entrypoint
+- `bitsota-research-agent list-tasks`
+- `bitsota-research-agent submit-workspace`
+- `bitsota-research-agent signed-request`
 
-The CLI miner reads `miner_config.yaml` and can run in:
+## Paths
 
-- direct mode: submit to the relay
-- pool mode: talk to the Pool API
+| Path | Use it when |
+| --- | --- |
+| [Mining Without an Agent](../mining.md) | You edit and submit the task repo yourself. |
+| [Codex-Only Mining](../codex-only-mining.md) | You run Codex directly against the task repo and submit only after local checks pass. |
 
-See [Configuration Reference](../configuration.md) for `miner_config.yaml` keys.
-
-## Direct mining
-
-See [Mining](../mining.md).
-
-## Pool mining
-
-See [Pool Mining](../pool-mining.md) and [Pool](pool.md).
-
-## Research-agent mining
-
-This is a separate, additive miner for coordinator-backed research tasks. It uses an OpenAI-compatible API and supports `direct` and `pool` participation styles across `standard`, `centerless`, and `peer_evaluation` task modes.
-
-See [Research-Agent Mining](../research-agent-mining.md).
+The legacy `neurons/miner.py` AutoML-Zero path is archived and is not the
+current production mining path.

@@ -2,11 +2,11 @@
 
 ## Repo layout
 
-- `relay/` is the relay service
-- `Pool/` is the pool service
-- `sidecar/` is the local API used by the GUI
-- `miner/` and `neurons/` contain miner entrypoints
-- `validator/` and `neurons/validator_node.py` contain validator entrypoints
+- `miner/` and `neurons/` contain public miner and research-agent entrypoints.
+- `validator/` contains the public replay validator and backend weight setter.
+- `scripts/` contains signing, claim, and operational helpers.
+- `docs/` contains the public MkDocs site.
+- `docs/archive/automl-zero/` contains historical relay/AutoML-Zero docs.
 
 ## Documentation changes
 

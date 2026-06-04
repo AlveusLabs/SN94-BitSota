@@ -57,18 +57,13 @@ Used by:
 - `logging.level` (string): Python log level (`DEBUG`, `INFO`, `WARNING`, `ERROR`).
 - `logging.file` (string or `null`): If set, logs are written to this file (directories are created automatically).
 
-## Validator (`validator_config.yaml`)
+## Validator Weight Setter (`validator_config.weights.yaml`)
 
-Used by: `neurons/validator_node.py` (plus `bittensor_network/*` helpers).
-
-### `reward_mode`
-
-- `reward_mode` (string):
-  - `capacitor` → submit rewards via EVM contract votes (`ContractManager`)
-  - `capacitorless` → relay SOTA voting + on-chain weights
-  - `capacitorless_sticky` → relay/local winner + sticky burn-split weights
-
-See `docs/reward-modes.md` for behavior differences.
+Used by: `validator.backend_weight_setter` plus `bittensor_network/*` helpers.
+The legacy relay/local validator path has been removed from production
+validation. Production validators should not copy relay, `reward_mode`, or
+`capacitorless` settings into `validator_config.weights.yaml`; they should read
+targets from the autoresearch backend reward snapshot.
 
 ### Bittensor network settings
 
@@ -80,44 +75,17 @@ See `docs/reward-modes.md` for behavior differences.
 - `subtensor_chain_endpoint` (string or `null`): Override websocket endpoint (e.g. `wss://test.finney.opentensor.ai:443`). `null` lets bittensor choose.
 - `epoch_length` (int): Used as a local *minimum blocks between weight updates* gate (and compared against chain rate limits).
 
-### Capacitor (EVM contract) settings
+### Backend reward snapshot
 
-Only used when `reward_mode: capacitor`.
+The backend weight setter fetches:
 
-- `evm_key_path` (string or `null`): Path to an EVM key JSON file containing `{"private_key": "0x..."}`.
-  - If omitted, the validator falls back to `EVM_PRIVATE_KEY` or the bittensor wallet `h160/` key file.
-- `contract.rpc_url` (string): EVM JSON-RPC endpoint.
-- `contract.address` (string): Contract address.
-- `contract.abi_file` (string): Path to ABI JSON (default: `capacitor_abi.json`).
+```text
+GET https://autoresearch.bitsota.com/api/v1/reward-snapshot
+```
 
-### Capacitorless settings (`reward_mode: capacitorless*`)
-
-All keys below live under `capacitorless:`.
-
-- `capacitorless.mode` (string):
-  - `sticky_burnsplit` (default behavior) → burn + winner split, winner stays until replaced
-  - `windowed` → full weight to winner only during relay reward windows, else burn
-- `capacitorless.burn_hotkey` (string, required): Registered hotkey that receives “burn” emissions.
-- `capacitorless.burn_share` (float): Used by `sticky_burnsplit`. Default: `0.9`.
-- `capacitorless.winner_share` (float or omitted): Used by `sticky_burnsplit`. Default: `1 - burn_share` (normalized if totals don’t sum to 1).
-- `capacitorless.winner_source` (string): `relay` or `local` (sticky mode only).
-- `capacitorless.min_winner_improvement` (float): Local-winner mode only; minimum delta required to replace the current local winner.
-- `capacitorless.submit_sota_votes` (bool): If `false`, do not submit `/sota/vote` requests to the relay (local-only capacitorless operation).
-- `capacitorless.apply_weights_inline` (bool): Local-winner mode only; if `true`, apply weight changes immediately after evaluation rather than waiting for the background loop.
-- `capacitorless.alignment_mod` (int): Windowed mode only; block interval used to align weight updates (default: `360`).
-- `capacitorless.events_limit` (int): Relay events fetch limit for weight scheduling.
-- `capacitorless.event_refresh_interval_s` (int): How often to refresh relay events (sticky mode).
-- `capacitorless.metagraph_refresh_interval_s` (int): How often to refresh metagraph in the weight loop.
-- `capacitorless.poll_interval_s` (float): Weight loop polling interval.
-- `capacitorless.retry_interval_s` (float): Minimum seconds between weight apply attempts.
-- `capacitorless.backend_policy_url` (string or empty): Optional coordinator base URL for backend-driven validator weight overrides. If set, the validator polls `GET /api/v1/reward-snapshot` and applies `validator_weights` before local sticky/windowed logic.
-- `capacitorless.backend_policy_poll_interval_s` (int): Optional polling interval for backend weight policy refresh.
-- `capacitorless.backend_policy_timeout_s` (float): Optional HTTP timeout for backend weight policy fetches.
-
-### Relay polling
-
-- `relay.url` (string): Relay base URL (required for relay polling; required for capacitorless modes).
-- `relay.poll_interval_seconds` (int): Poll interval for fetching new submissions.
+It reads `reward_policy.validator_weights` and applies only those targets. The
+service defaults to the production autoresearch backend; use `--coordinator-url`
+only for an explicit test environment.
 
 ### Submission schedule (optional throttling)
 

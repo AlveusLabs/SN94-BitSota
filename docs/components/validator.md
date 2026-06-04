@@ -2,14 +2,16 @@
 
 Validators:
 
-- Poll the relay for submissions
-- Re-evaluate candidates on a deterministic task suite
-- Vote to finalize SOTA events and set on-chain weights
+- Request signed replay jobs from the autoresearch backend
+- Re-evaluate assigned submissions in the Docker/CUDA public replay sandbox
+- Post observed metrics back to the backend
+- Run a separate backend weight setter that applies backend `validator_weights`
 
 ## Entrypoints
 
-- `python neurons/validator_node.py` runs the main validator node
-  - Optional: `--accept-test` enables UID0-only relay test-submission evaluation for logging (no weights)
-- `python3 -m validator.local_validator` runs a relay-focused local validator used for testing
+- `python -m validator.research_validator_runner` runs the replay validator
+- `python -m validator.backend_weight_setter` runs backend-directed chain weights
 
-See [Validation](../validation.md) for setup and tuning, and [Configuration Reference](../configuration.md) for `validator_config.yaml`.
+The legacy relay validator and local winner weight-setting path have been
+removed. See [Validation](../validation.md), [Public Autoresearch Validator
+Runner](../public-validator-runner.md), and [Architecture Overview](../architecture.md).

@@ -111,21 +111,26 @@ If the console entrypoint is not on `PATH`, the fallback is:
 python -m neurons.research_agent_miner ...
 ```
 
-## Direct Independent Agent Path
+## Codex-Only Testnet Path
 
-If you want to skip `bitsota-research-agent` entirely, you can drive the coordinator manually with an agent.
+If you want Codex to work directly against a task repo, use the Codex-only
+public guide instead of the retired wrapper path.
 
-Use the direct testnet prompt in [autoresearch-testnet-direct-prompt.md](/home/mekaneeky/repos/SN94-BitSota/docs/guides/autoresearch-testnet-direct-prompt.md) when you want the direct independent-agent path, or the more general [autoresearch-agent-master-prompt.md](/home/mekaneeky/repos/SN94-BitSota/docs/guides/autoresearch-agent-master-prompt.md) when you want the launcher-oriented prompt. In either case, point the agent at the SN94 checkout only:
+Use the direct testnet prompt in
+[autoresearch-testnet-direct-prompt.md](/home/mekaneeky/repos/SN94-BitSota/docs/guides/autoresearch-testnet-direct-prompt.md)
+or the production prompt in
+[autoresearch-agent-master-prompt.md](/home/mekaneeky/repos/SN94-BitSota/docs/guides/autoresearch-agent-master-prompt.md).
+Point Codex at the SN94 checkout only:
 
 - `/home/mekaneeky/repos/SN94-BitSota`
 
-The public helpers the agent should use are:
+The public helpers available for manual signed calls are:
 
 - `/home/mekaneeky/repos/SN94-BitSota/scripts/research_signed_request.py`
 - `/home/mekaneeky/repos/SN94-BitSota/scripts/claim_merkle_rewards.py`
 - `bitsota-research-agent submit-workspace`
 
-Tested direct Codex launch shape:
+Direct Codex launch shape:
 
 ```bash
 cat >/tmp/direct-autoresearch-prompt.txt <<'EOF'
@@ -138,27 +143,11 @@ codex exec --dangerously-bypass-approvals-and-sandbox \
   - < /tmp/direct-autoresearch-prompt.txt
 ```
 
-Untested direct launch shapes using the same prompt:
-
-Claude Code:
-
-```bash
-claude code --dangerously-skip-permissions \
-  -C /home/mekaneeky/repos \
-  < /tmp/direct-autoresearch-prompt.txt
-```
-
-Hermes:
-
-```bash
-hermes -C /home/mekaneeky/repos \
-  < /tmp/direct-autoresearch-prompt.txt
-```
-
 Historical note:
 
 - A direct Distil run reached `pending_verification` on `2026-04-08`, but that old Distil slug is no longer the default seeded catalog on `testing`.
-- For the current codebase, validate against one of the live Qwen task slugs returned by `bitsota-research-agent list-tasks`.
+- For the current codebase, validate against one of the live Qwen task slugs
+  returned by the coordinator.
 
 What this path does not replace:
 
@@ -166,97 +155,15 @@ What this path does not replace:
 - peer consensus for `peer_evaluation`
 - Merkle publication and claim timing
 
-## Agent-Managed E2E
+## Retired Wrapper Path
 
-List live tasks first:
-
-```bash
-cd /home/mekaneeky/repos/SN94-BitSota
-bitsota-research-agent list-tasks \
-  --coordinator-url https://chvp2wytst.eu-central-1.awsapprunner.com
-```
-
-The placeholders available to `--agent-command` are:
-
-- `{workspace_dir_quoted}`
-- `{repo_dir_quoted}`
-- `{intro_path_quoted}`
-- `{submission_path_quoted}`
-- `{submission_result_path_quoted}`
-
-Use the master agent prompt in [autoresearch-agent-master-prompt.md](/home/mekaneeky/repos/SN94-BitSota/docs/guides/autoresearch-agent-master-prompt.md). That prompt is written to be agent-agnostic and tells the model to handle live task discovery, signed claims, benchmark replay, `submission.json`, and signed coordinator submission.
-
-Run one direct claim -> run -> submit pass with an external agent:
-
-Codex:
-
-```bash
-cd /home/mekaneeky/repos/SN94-BitSota
-bitsota-research-agent mine-once \
-  --coordinator-url https://chvp2wytst.eu-central-1.awsapprunner.com \
-  --participation-style direct \
-  --task-slug qwen3-06b-binary-frontier \
-  --agent-command "bash -lc 'cat {intro_path_quoted} /home/mekaneeky/repos/SN94-BitSota/docs/guides/autoresearch-agent-master-prompt.md | codex exec --skip-git-repo-check --full-auto -C {repo_dir_quoted} --add-dir {workspace_dir_quoted} -o {submission_result_path_quoted} -'" \
-  --agent-mode gui_managed \
-  --hotkey-mnemonic '<test mnemonic>'
-```
-
-Claude Code:
-
-```bash
-cd /home/mekaneeky/repos/SN94-BitSota
-bitsota-research-agent mine-once \
-  --coordinator-url https://chvp2wytst.eu-central-1.awsapprunner.com \
-  --participation-style direct \
-  --task-slug qwen3-06b-binary-frontier \
-  --agent-command "bash -lc 'cat {intro_path_quoted} /home/mekaneeky/repos/SN94-BitSota/docs/guides/autoresearch-agent-master-prompt.md | claude code --dangerously-skip-permissions -C {repo_dir_quoted} > {submission_result_path_quoted}'" \
-  --agent-mode gui_managed \
-  --hotkey-mnemonic '<test mnemonic>'
-```
-
-Hermes:
-
-```bash
-cd /home/mekaneeky/repos/SN94-BitSota
-bitsota-research-agent mine-once \
-  --coordinator-url https://chvp2wytst.eu-central-1.awsapprunner.com \
-  --participation-style direct \
-  --task-slug qwen3-06b-binary-frontier \
-  --agent-command "bash -lc 'cat {intro_path_quoted} /home/mekaneeky/repos/SN94-BitSota/docs/guides/autoresearch-agent-master-prompt.md | hermes -C {repo_dir_quoted} > {submission_result_path_quoted}'" \
-  --agent-mode gui_managed \
-  --hotkey-mnemonic '<test mnemonic>'
-```
-
-Notes:
-
-- The command shapes above reflect the current launcher contract, but always pick a slug returned by `list-tasks`.
-- The Claude Code and Hermes command shapes are untested examples that use the same master prompt.
-- Pick the launch flags your local Claude or Hermes install expects if they differ from these examples.
-
-Alternative model-driven mode without an external agent command:
-
-```bash
-cd /home/mekaneeky/repos/SN94-BitSota
-bitsota-research-agent mine-once \
-  --coordinator-url https://chvp2wytst.eu-central-1.awsapprunner.com \
-  --participation-style direct \
-  --task-slug qwen3-06b-binary-frontier \
-  --llm-base-url http://127.0.0.1:11434/v1 \
-  --llm-model prism-ml/Bonsai-8B-gguf \
-  --hotkey-mnemonic '<test mnemonic>'
-```
-
-Expected workspace artifacts:
-
-- `INTRO_GUI.md`
-- `submission.json`
-- `agent.stdout.txt`
-- `agent.stderr.txt`
-- repo checkout with a valid patch over the task base ref
+The local wrapper launcher is no longer part of public miner onboarding. Public
+docs should direct miners to [Mining Without an Agent](../mining.md) or
+[Codex-Only Mining](../codex-only-mining.md).
 
 ## GUI E2E
 
-Set GUI config for shared testnet plus the external agent command.
+Set GUI config for shared testnet plus the selected manual or Codex workflow.
 
 If you are using the current guided setup flow, configure the same values through `Research Setup` and wallet setup instead of hand-editing JSON.
 
@@ -386,22 +293,11 @@ curl -X POST https://chvp2wytst.eu-central-1.awsapprunner.com/api/v1/planner/run
   -H 'X-Admin-Token: <admin-token>'
 ```
 
-### Mine planner-created work items directly
+### Planner-created work items
 
-Use `--participation-style pool` so the miner claims a shared work item instead of a direct task claim.
-
-Codex:
-
-```bash
-cd /home/mekaneeky/repos/SN94-BitSota
-bitsota-research-agent mine-once \
-  --coordinator-url https://chvp2wytst.eu-central-1.awsapprunner.com \
-  --participation-style pool \
-  --task-slug qwen3-06b-ternary-frontier \
-  --agent-command "bash -lc 'cat {intro_path_quoted} /home/mekaneeky/repos/SN94-BitSota/docs/guides/autoresearch-agent-master-prompt.md | codex exec --skip-git-repo-check --full-auto -C {repo_dir_quoted} --add-dir {workspace_dir_quoted} -o {submission_result_path_quoted} -'" \
-  --agent-mode gui_managed \
-  --hotkey-mnemonic "<test mnemonic>"
-```
+Planner-created work items are an operator/testnet surface, not a current public
+miner onboarding path. Public miners should start from the live competition
+catalog and use manual mining or Codex-only mining.
 
 What to verify in planner mode:
 
@@ -537,19 +433,8 @@ Use:
 
 The coordinator will reject `/verify` for those tasks.
 
-If you want peer evaluation with an external agent command directly, use the same `--agent-command` pattern as `mine-once`, but switch the subcommand:
-
-Codex:
-
-```bash
-cd /home/mekaneeky/repos/SN94-BitSota
-bitsota-research-agent peer-evaluate-once \
-  --coordinator-url https://chvp2wytst.eu-central-1.awsapprunner.com \
-  --task-slug <peer_evaluation_task_slug> \
-  --agent-command "bash -lc 'cat {intro_path_quoted} /home/mekaneeky/repos/SN94-BitSota/docs/guides/autoresearch-agent-master-prompt.md | codex exec --skip-git-repo-check --full-auto -C {repo_dir_quoted} --add-dir {workspace_dir_quoted} -o {submission_result_path_quoted} -'" \
-  --agent-mode gui_managed \
-  --hotkey-mnemonic "<test mnemonic>"
-```
+Peer-evaluation task onboarding should be documented per live competition before
+it is exposed as a public miner path.
 
 ## Reward And Claim Step
 

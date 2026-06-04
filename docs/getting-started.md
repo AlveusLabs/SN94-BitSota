@@ -1,14 +1,13 @@
 # Getting Started
 
-This repo contains multiple services and roles. Pick the path that matches what you want to do.
+This repo contains the public client layer for the current BitSota/SN94
+autoresearch setup. Pick the path that matches what you want to do.
 
-## Default ports
+## Current Production Endpoint
 
-- Relay: `http://127.0.0.1:8002`
-- Sidecar: `http://127.0.0.1:8123`
-- Pool API: `http://127.0.0.1:8434`
-- Pool monitor: `http://127.0.0.1:9000`
-- Docs website: `http://127.0.0.1:9001`
+```text
+https://autoresearch.bitsota.com
+```
 
 ## I want to run the docs website
 
@@ -22,14 +21,27 @@ mkdocs serve -a 127.0.0.1:9001
 
 Open `http://127.0.0.1:9001`.
 
-## I want to run a local end-to-end loop
+## I want to understand the current architecture
 
-Follow [Local Testing](local-testing.md).
+Start with [Architecture Overview](architecture.md).
 
-## I want to run just the relay
+## I want to see current competitions
 
-See [Relay](components/relay.md).
+Open [Current Competitions](current-competitions.md).
 
-## I want to run just the Pool
+## I want to mine without an agent
 
-See [Pool](components/pool.md).
+Follow [Mining Without an Agent](mining.md).
+
+## I want to mine with Codex
+
+Follow [Codex-Only Mining](codex-only-mining.md).
+
+## I want to post a problem
+
+Read [Problem Posting Requirements](problem-posting.md).
+
+## I want to run a validator
+
+Read [Validator Guide](validation.md) and
+[Public Autoresearch Validator Runner](public-validator-runner.md).
