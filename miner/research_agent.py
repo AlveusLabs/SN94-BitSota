@@ -39,6 +39,21 @@ def _coerce_claimed_metrics(value: Any) -> dict[str, Any]:
     return {}
 
 
+def _coerce_bool(value: Any) -> bool:
+    if isinstance(value, bool):
+        return value
+    return str(value or "").strip().lower() in {"1", "true", "yes", "artifact"}
+
+
+def _task_requires_submission_artifact(task: dict[str, Any]) -> bool:
+    if "requires_submission_artifact" in task:
+        return _coerce_bool(task.get("requires_submission_artifact"))
+    if str(task.get("submission_surface") or "").strip().lower() == "artifact":
+        return True
+    required_fields = {str(row) for row in list(task.get("required_submission_fields") or [])}
+    return "artifact_uri" in required_fields
+
+
 def _strip_code_fences(text: str) -> str:
     raw = str(text or "").strip()
     if raw.startswith("```"):
@@ -89,6 +104,7 @@ def build_agent_intro_markdown(
 ) -> str:
     normalized_mode = _normalized_submission_mode(mode)
     intro_name = "INTRO.md" if normalized_mode == "autonomous" else "INTRO_GUI.md"
+    artifact_required = _task_requires_submission_artifact(task)
     lines = [
         f"# {intro_name}",
         "",
@@ -122,12 +138,21 @@ def build_agent_intro_markdown(
         [
             "## Workspace Contract",
             "",
-            "- Edit the checked-out repository files directly.",
-            "- The submitted patch is built only from the task `allowed_patch_paths`.",
+            f"- Submission surface: `{'artifact' if artifact_required else 'patch'}`.",
+            (
+                "- Artifact-first task: write `artifact_uri`, `artifact_sha256`, and "
+                "`artifact_size_bytes` in the sidecar. Repo edits are optional recipe metadata."
+                if artifact_required
+                else "- Patch-first task: edit the checked-out repository files directly so "
+                "the launcher can submit a non-empty diff."
+            ),
+            "- Any submitted patch is built only from the task `allowed_patch_paths`.",
             f"- Write a JSON sidecar to `{submission_file.name}` in the workspace root.",
             "- Required sidecar fields: `summary`, `claimed_metrics`.",
-            "- Optional sidecar fields: `base_ref`, `proposed_idea`, `implemented_submission_id`, `artifact_uri`, `artifact_sha256`, `artifact_size_bytes`, `execution_log`, `notes`.",
-            "- Do not put the patch in the sidecar. The launcher derives the patch from `git diff` in the repo checkout.",
+            "- Optional sidecar fields: `base_ref`, `proposed_idea`, `implemented_submission_id`, "
+            "`artifact_uri`, `artifact_sha256`, `artifact_size_bytes`, `execution_log`, `notes`.",
+            "- Do not put the patch in the sidecar. When this is a patch-first task, "
+            "the launcher derives the patch from `git diff` in the repo checkout.",
             "",
         ]
     )
@@ -157,7 +182,11 @@ def build_agent_intro_markdown(
                 "## Submission Authority",
                 "",
                 "Do not submit directly to the coordinator. The launcher owns signing and submission for this run.",
-                "Your job is to edit the repo and write `submission.json` only.",
+                (
+                    "Your job is to produce the artifact metadata and write `submission.json`; repo edits are optional."
+                    if artifact_required
+                    else "Your job is to edit the repo and write `submission.json` only."
+                ),
                 "",
             ]
         )
@@ -317,9 +346,12 @@ def compute_repo_patch(
     *,
     allowed_patch_paths: Iterable[str],
     max_patch_bytes: int = DEFAULT_MAX_SUBMISSION_PATCH_BYTES,
+    allow_empty: bool = False,
 ) -> str:
     allowed_patterns = _normalize_allowed_patch_paths(allowed_patch_paths)
     if not allowed_patterns:
+        if allow_empty:
+            return ""
         raise RuntimeError("task allowed_patch_paths are required to build a submission patch")
 
     changed_paths = _changed_repo_paths(repo_dir)
@@ -330,6 +362,8 @@ def compute_repo_patch(
         and not _is_generated_python_cache_path(path)
     ]
     if not selected_paths:
+        if allow_empty:
+            return ""
         raise RuntimeError("repo checkout has no patch to submit within allowed_patch_paths")
 
     subprocess.run(
@@ -350,6 +384,8 @@ def compute_repo_patch(
         raise RuntimeError(f"git diff failed with exit={result.returncode}: {result.stderr}")
     patch = str(result.stdout or "")
     if not patch.strip():
+        if allow_empty:
+            return ""
         raise RuntimeError("repo checkout has no patch to submit")
     if not patch.endswith("\n"):
         patch += "\n"
@@ -431,12 +467,21 @@ def submit_claimed_workspace(
     idea_candidates: list[dict[str, Any]] | None = None,
     allowed_patch_paths: Iterable[str] | None = None,
     max_patch_bytes: int = DEFAULT_MAX_SUBMISSION_PATCH_BYTES,
+    requires_submission_artifact: bool = False,
+    submission_surface: str | None = None,
 ) -> dict[str, Any]:
     payload = load_submission_sidecar(
         submission_file=Path(submission_file),
         metric_name="",
     )
     pinned_base_ref = resolve_repo_head_commit(Path(repo_dir))
+    artifact_required = (
+        _coerce_bool(requires_submission_artifact)
+        or str(submission_surface or "").strip().lower() == "artifact"
+    )
+    artifact_uri = str(payload.get("artifact_uri") or "").strip()
+    if artifact_required and not artifact_uri:
+        raise RuntimeError("artifact-first task requires submission.json field: artifact_uri")
     resolved_allowed_paths = _normalize_allowed_patch_paths(allowed_patch_paths)
     if not resolved_allowed_paths:
         resolved_allowed_paths = _allowed_patch_paths_for_claim(coordinator, claim_id)
@@ -444,6 +489,7 @@ def submit_claimed_workspace(
         Path(repo_dir),
         allowed_patch_paths=resolved_allowed_paths,
         max_patch_bytes=_coerce_max_patch_bytes(max_patch_bytes),
+        allow_empty=artifact_required,
     )
     summary = str(payload.get("summary") or "").strip()
     claimed_metrics = _coerce_claimed_metrics(payload.get("claimed_metrics"))
@@ -471,11 +517,7 @@ def submit_claimed_workspace(
                 else None
             ),
             implemented_submission_id=implemented_submission_id,
-            artifact_uri=(
-                str(payload.get("artifact_uri")).strip()
-                if payload.get("artifact_uri") is not None
-                else None
-            ),
+            artifact_uri=(artifact_uri if artifact_uri else None),
             artifact_sha256=(
                 str(payload.get("artifact_sha256")).strip()
                 if payload.get("artifact_sha256") is not None
@@ -1065,6 +1107,8 @@ class ResearchAgentMiner:
                 idea_candidates=idea_candidates,
                 allowed_patch_paths=task.get("allowed_patch_paths") or [],
                 max_patch_bytes=_coerce_max_patch_bytes(task.get("max_patch_bytes")),
+                requires_submission_artifact=_task_requires_submission_artifact(task),
+                submission_surface=str(task.get("submission_surface") or ""),
             )
         except Exception as exc:
             self._cancel_claim_after_failure(claim_id=str(claim.get("id") or ""), reason=str(exc))

@@ -1,10 +1,17 @@
 # Desktop GUI
 
-The GUI:
+The current public mining path is CLI-first while the autoresearch GUI is being
+restored. Use [Mining Without an Agent](../mining.md) or
+[Codex-Only Mining](../codex-only-mining.md) for production mining today.
 
-- Spawns a local sidecar and miner process when you click Start Mining
-- Reads logs and candidate state from the sidecar
-- Submits solutions to the relay
+When the GUI comes back into the live path, it should sit on top of the same
+backend contracts documented here:
+
+- list live tasks from the autoresearch coordinator;
+- show task onboarding and allowed patch paths;
+- launch local scripts and expose the same task metadata shown in the CLI docs;
+- submit signed claims and workspace submissions;
+- show validator status, reward snapshot status, and Pool claim packages.
 
 For the autoresearch + Pool claim path, the GUI also owns the miner-facing recipient coldkey declaration. That declared payout address is separate from the connected hotkey:
 
@@ -30,11 +37,11 @@ Local/dev runs support endpoint overrides via JSON. The GUI reads (first match):
 
 Common keys:
 
-- `relay_endpoint`
+- `coordinator_endpoint`
 - `update_manifest_url`
 - `pool_endpoint`
 - `test_mode` and `test_invite_code`
-- `problem_config_path`
+- workspace or task-selection defaults
 
 For end-to-end local runs, start with [Local Testing](../local-testing.md).
 
