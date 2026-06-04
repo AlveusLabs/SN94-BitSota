@@ -2,82 +2,12 @@ from __future__ import annotations
 
 import multiprocessing as mp
 import queue as queue_module
-import random
-import re
-import time
 from typing import Any, Dict, Optional
 
 from PySide6.QtCore import QObject, QRunnable, Signal, Slot
 
-from miner.island_mining import run_direct_mining_worker
+from miner.local_benchmark import run_local_benchmark_worker
 from miner.island_model import MigrationCoordinator, set_blas_thread_env
-
-
-class MiningStatsAccumulator:
-    def __init__(
-        self,
-        *,
-        tasks_completed: int = 0,
-        successful_submissions: int = 0,
-        best_score: Optional[float] = None,
-    ):
-        self.tasks_completed = int(tasks_completed)
-        self.successful_submissions = int(successful_submissions)
-        self.best_score = best_score
-
-        number = r"([-+]?(?:\\d+\\.?\\d*|\\d*\\.?\\d+)(?:[eE][-+]?\\d+)?)"
-        self._re_score_verified = re.compile(
-            rf"\\bScore:\\s*{number}\\s*\\(verified\\)", re.IGNORECASE
-        )
-        self._re_verified_score = re.compile(
-            rf"\\bverified_score\\b[^0-9\\-\\+]*{number}", re.IGNORECASE
-        )
-
-    def _maybe_update_best_verified(self, verified_score: float) -> bool:
-        try:
-            verified_score_f = float(verified_score)
-        except Exception:
-            return False
-        if self.best_score is None or verified_score_f > float(self.best_score):
-            self.best_score = verified_score_f
-            return True
-        return False
-
-    def process_log_line(self, msg: str) -> Optional[Dict[str, object]]:
-        """Return updated stats dict (or None if unchanged)."""
-
-        changed = False
-
-        msg = str(msg or "")
-        lowered = msg.lower()
-
-        if (
-            "Solution submitted to relay" in msg
-            or ("SOTA submission #" in msg and "successful" in lowered)
-            or ("submission" in lowered and "successful" in lowered)
-        ):
-            self.successful_submissions += 1
-            changed = True
-
-        if msg.startswith("[regularized-evo]") or msg.startswith("Gen ") or "generation" in lowered:
-            self.tasks_completed += 1
-            changed = True
-
-        m = self._re_score_verified.search(msg)
-        if m and self._maybe_update_best_verified(m.group(1)):
-            changed = True
-
-        m = self._re_verified_score.search(msg)
-        if m and self._maybe_update_best_verified(m.group(1)):
-            changed = True
-
-        if not changed:
-            return None
-        return {
-            "tasks_completed": int(self.tasks_completed),
-            "successful_submissions": int(self.successful_submissions),
-            "best_score": self.best_score,
-        }
 
 
 class MultiProcessDirectMiningTask(QRunnable):
@@ -87,6 +17,7 @@ class MultiProcessDirectMiningTask(QRunnable):
         finished = Signal()
         stopping = Signal()
         stats_updated = Signal(dict)
+        best_candidate = Signal(dict)
 
     def __init__(
         self,
@@ -107,25 +38,14 @@ class MultiProcessDirectMiningTask(QRunnable):
         self.workers = max(1, int(workers))
         self.seed = seed
         self.migration_generations = max(0, int(migration_generations))
-        try:
-            self._regularized_log_every = max(
-                1, int(self.worker_config.get("checkpoint_generations", 1) or 1)
-            )
-        except Exception:
-            self._regularized_log_every = 1
-        self._re_regularized_iter = re.compile(r"\\biter=(\\d+)\\b", re.IGNORECASE)
 
         self._stop_requested = False
         self._stop_event: Optional[mp.synchronize.Event] = None
 
-        self._stats = MiningStatsAccumulator(
-            tasks_completed=initial_tasks,
-            successful_submissions=initial_submissions,
-            best_score=initial_best_score,
-        )
         self.tasks_completed = int(initial_tasks)
         self.successful_submissions = int(initial_submissions)
         self.best_score = initial_best_score
+        self._last_generation_by_worker: Dict[int, int] = {}
 
     def stop(self):
         self._stop_requested = True
@@ -163,7 +83,7 @@ class MultiProcessDirectMiningTask(QRunnable):
             cfg["migration_generations"] = self.migration_generations
 
             proc = ctx.Process(
-                target=run_direct_mining_worker,
+                target=run_local_benchmark_worker,
                 args=(cfg, worker_id, out_queue, in_q, stop_event),
                 name=f"gui-miner-worker-{worker_id}",
             )
@@ -196,40 +116,106 @@ class MultiProcessDirectMiningTask(QRunnable):
 
                 msg_type = msg.get("type")
 
+                if msg_type == "init":
+                    worker_id = int(msg.get("worker_id", -1))
+                    generation = msg.get("generation")
+                    try:
+                        generation_i = int(generation) if generation is not None else None
+                    except Exception:
+                        generation_i = None
+                    if generation_i is not None and generation_i >= 0:
+                        self._last_generation_by_worker[worker_id] = generation_i
+
+                    best_verified = msg.get("best_verified_score")
+                    if best_verified is not None:
+                        try:
+                            best_verified_f = float(best_verified)
+                        except Exception:
+                            best_verified_f = None
+                        if best_verified_f is not None and (
+                            self.best_score is None or best_verified_f > float(self.best_score)
+                        ):
+                            self.best_score = best_verified_f
+
+                    self.signals.stats_updated.emit(
+                        {
+                            "tasks_completed": int(self.tasks_completed),
+                            "successful_submissions": int(self.successful_submissions),
+                            "best_score": self.best_score,
+                        }
+                    )
+                    continue
+
+                if msg_type == "stats":
+                    worker_id = int(msg.get("worker_id", -1))
+                    generation = msg.get("generation")
+                    try:
+                        generation_i = int(generation) if generation is not None else None
+                    except Exception:
+                        generation_i = None
+
+                    if generation_i is not None and generation_i >= 0:
+                        if worker_id in self._last_generation_by_worker:
+                            prev = int(self._last_generation_by_worker.get(worker_id, 0))
+                            if generation_i > prev:
+                                self.tasks_completed += int(generation_i - prev)
+                        self._last_generation_by_worker[worker_id] = generation_i
+
+                    best_verified = msg.get("best_verified_score")
+                    if best_verified is not None:
+                        try:
+                            best_verified_f = float(best_verified)
+                        except Exception:
+                            best_verified_f = None
+                        if best_verified_f is not None and (
+                            self.best_score is None or best_verified_f > float(self.best_score)
+                        ):
+                            self.best_score = best_verified_f
+
+                    log_line = msg.get("log")
+                    if log_line:
+                        self.signals.log.emit(f"[w{worker_id}] {str(log_line)}")
+
+                    self.signals.stats_updated.emit(
+                        {
+                            "tasks_completed": int(self.tasks_completed),
+                            "successful_submissions": int(self.successful_submissions),
+                            "best_score": self.best_score,
+                        }
+                    )
+                    continue
+
+                if msg_type == "best_verified":
+                    worker_id = int(msg.get("worker_id", -1))
+                    verified = msg.get("verified_score")
+                    try:
+                        verified_f = float(verified) if verified is not None else None
+                    except Exception:
+                        verified_f = None
+
+                    if verified_f is not None and (
+                        self.best_score is None or verified_f > float(self.best_score)
+                    ):
+                        self.best_score = verified_f
+
+                    log_line = msg.get("log")
+                    if log_line:
+                        self.signals.log.emit(f"[w{worker_id}] {str(log_line)}")
+
+                    self.signals.stats_updated.emit(
+                        {
+                            "tasks_completed": int(self.tasks_completed),
+                            "successful_submissions": int(self.successful_submissions),
+                            "best_score": self.best_score,
+                        }
+                    )
+                    self.signals.best_candidate.emit(dict(msg))
+                    continue
+
                 if msg_type == "log":
                     worker_id = int(msg.get("worker_id", -1))
                     line = str(msg.get("message") or "")
-                    updated = self._stats.process_log_line(line)
-                    if updated is not None:
-                        self.tasks_completed = int(updated.get("tasks_completed", self.tasks_completed))
-                        self.successful_submissions = int(
-                            updated.get("successful_submissions", self.successful_submissions)
-                        )
-                        best = updated.get("best_score")
-                        if best is not None:
-                            try:
-                                self.best_score = float(best)
-                            except Exception:
-                                pass
-                        self.signals.stats_updated.emit(updated)
-
-                    suppress_log = False
-                    if line.startswith("[regularized-evo]") and self._regularized_log_every > 1:
-                        m = self._re_regularized_iter.search(line)
-                        if m:
-                            try:
-                                iteration = int(m.group(1))
-                            except Exception:
-                                iteration = None
-                            if (
-                                iteration is not None
-                                and iteration != 1
-                                and (iteration % self._regularized_log_every) != 0
-                            ):
-                                suppress_log = True
-
-                    if not suppress_log:
-                        self.signals.log.emit(f"[w{worker_id}] {line}")
+                    self.signals.log.emit(f"[w{worker_id}] {line}")
                     continue
 
                 if msg_type == "migration_request":

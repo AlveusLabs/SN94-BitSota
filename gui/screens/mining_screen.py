@@ -23,56 +23,9 @@ from gui.screens.pool_mining_screen import PoolMiningScreen
 from gui.resource_path import resource_path
 import requests
 import time
+import uuid
 
-
-_CPP_DEFAULT_ENGINE_PARAMS_BY_TASK = {
-    # Mirrors cpp/automl_zero/run_baseline.sh memory sizes and per-phase op budgets.
-    "cifar10_binary": {
-        "scalar_count": 5,
-        "vector_count": 9,
-        "matrix_count": 2,
-        "phase_max_sizes": {"setup": 7, "predict": 11, "learn": 23},
-    },
-    # Mirrors cpp/automl_zero/run_demo.sh memory sizes and fixed phase sizes.
-    "scalar_linear": {
-        "scalar_count": 4,
-        "vector_count": 3,
-        "matrix_count": 1,
-        "phase_max_sizes": {"setup": 10, "predict": 2, "learn": 8},
-    },
-}
-
-
-def _apply_cpp_defaults_to_engine_params(
-    task_type: str,
-    engine_params: Optional[dict],
-    *,
-    explicit_engine_params: Optional[dict] = None,
-) -> Optional[dict]:
-    """
-    Apply C++-aligned defaults for memory sizes + phase op limits.
-
-    Values from `explicit_engine_params` (typically problem_config.engine_params)
-    are treated as user overrides and are not overwritten.
-    """
-
-    base: dict = dict(engine_params) if isinstance(engine_params, dict) else {}
-    explicit: dict = dict(explicit_engine_params) if isinstance(explicit_engine_params, dict) else {}
-    defaults = _CPP_DEFAULT_ENGINE_PARAMS_BY_TASK.get(str(task_type), {})
-    if not defaults:
-        return base or None
-
-    for key in ("scalar_count", "vector_count", "matrix_count"):
-        if key in explicit:
-            continue
-        if key in defaults:
-            base[key] = int(defaults[key])
-
-    default_phase_sizes = defaults.get("phase_max_sizes")
-    if isinstance(default_phase_sizes, dict) and "phase_max_sizes" not in explicit:
-        base["phase_max_sizes"] = dict(default_phase_sizes)
-
-    return base or None
+from core.engine_defaults import apply_cpp_defaults_to_engine_params
 
 
 class GUILogHandler(logging.Handler):
@@ -252,16 +205,48 @@ class DirectMiningTask(QRunnable):
             self.signals.finished.emit()
 
 
+class RelaySubmissionTask(QRunnable):
+    class Signals(QObject):
+        log = Signal(str)
+        error = Signal(str)
+        result = Signal(dict)
+
+    def __init__(self, client, *, solution_data: dict, prevalidated: dict):
+        super().__init__()
+        self.client = client
+        self.solution_data = dict(solution_data or {})
+        self.prevalidated = dict(prevalidated or {})
+        self.signals = self.Signals()
+        self.setAutoDelete(True)
+
+    @Slot()
+    def run(self):
+        try:
+            if not self.client or not hasattr(self.client, "submit_solution"):
+                self.signals.error.emit("Direct client not available for submission")
+                return
+            result = self.client.submit_solution(self.solution_data, prevalidated=self.prevalidated)
+            self.signals.result.emit(dict(result or {}))
+        except Exception as e:
+            self.signals.error.emit(f"Submission error: {e}")
+
+
 class MiningScreen(QWidget):
     def __init__(self, main_window=None, parent=None):
         super().__init__(parent)
         self.main_window = main_window
         self.is_mining = False
-        self.mining_task: Optional[DirectMiningTask] = None
+        self.mining_task: Optional[object] = None
         self.thread_pool = QThreadPool()
         self.tasks_completed = 0
         self.successful_submissions = 0
         self.best_score = None
+        self._global_sota_value: Optional[float] = None
+        self._submission_in_flight = False
+        self._pending_sota_candidate: Optional[dict] = None
+        self._inflight_sota_verified_score: Optional[float] = None
+        self._last_submission_feedback: Optional[str] = None
+        self._next_submission_time = 0.0
         self.setup_ui()
         self._load_mining_stats()
 
@@ -458,7 +443,7 @@ class MiningScreen(QWidget):
         # problem_config explicitly overrides them.
         try:
             client = self.main_window.client
-            client.engine_params = _apply_cpp_defaults_to_engine_params(
+            client.engine_params = apply_cpp_defaults_to_engine_params(
                 task_type,
                 getattr(client, "engine_params", None),
                 explicit_engine_params=explicit_engine_params,
@@ -476,98 +461,87 @@ class MiningScreen(QWidget):
             except Exception:
                 workers = 1
 
-        from gui.stop_flag import StopFlag
-        stop_flag = StopFlag()
+        from gui.multiprocess_miner_task import MultiProcessDirectMiningTask
 
-        if workers > 1:
-            from gui.multiprocess_miner_task import MultiProcessDirectMiningTask
+        miner_task_count = getattr(cfg, "miner_task_count", None)
+        validator_task_count = getattr(cfg, "validator_task_count", None)
+        validate_every = getattr(cfg, "miner_validate_every_n_generations", 1000)
+        engine_type = "baseline"
+        checkpoint_generations = 10
+        engine_params = None
+        env_overrides = None
 
-            miner_task_count = getattr(cfg, "miner_task_count", None)
-            validator_task_count = getattr(cfg, "validator_task_count", None)
-            validate_every = getattr(cfg, "miner_validate_every_n_generations", 1000)
-            engine_type = "baseline"
-            checkpoint_generations = 10
-            engine_params = None
-            env_overrides = None
-
-            if problem_cfg is not None:
-                miner_task_count = (
-                    problem_cfg.miner_task_count
-                    if problem_cfg.miner_task_count is not None
-                    else miner_task_count
-                )
-                validator_task_count = (
-                    problem_cfg.validator_task_count
-                    if problem_cfg.validator_task_count is not None
-                    else validator_task_count
-                )
-                validate_every = (
-                    problem_cfg.miner_validate_every_n_generations
-                    if problem_cfg.miner_validate_every_n_generations is not None
-                    else validate_every
-                )
-                if getattr(problem_cfg, "engine_type", None):
-                    engine_type = str(problem_cfg.engine_type)
-                if getattr(problem_cfg, "checkpoint_generations", None):
-                    checkpoint_generations = int(problem_cfg.checkpoint_generations)
-                engine_params = getattr(problem_cfg, "engine_params", None)
-                env_overrides = getattr(problem_cfg, "env", None)
-
-            engine_params = _apply_cpp_defaults_to_engine_params(
-                task_type,
-                engine_params if isinstance(engine_params, dict) else None,
-                explicit_engine_params=explicit_engine_params,
+        if problem_cfg is not None:
+            miner_task_count = (
+                problem_cfg.miner_task_count
+                if problem_cfg.miner_task_count is not None
+                else miner_task_count
             )
+            validator_task_count = (
+                problem_cfg.validator_task_count
+                if problem_cfg.validator_task_count is not None
+                else validator_task_count
+            )
+            validate_every = (
+                problem_cfg.miner_validate_every_n_generations
+                if problem_cfg.miner_validate_every_n_generations is not None
+                else validate_every
+            )
+            if getattr(problem_cfg, "engine_type", None):
+                engine_type = str(problem_cfg.engine_type)
+            if getattr(problem_cfg, "checkpoint_generations", None):
+                checkpoint_generations = int(problem_cfg.checkpoint_generations)
+            engine_params = getattr(problem_cfg, "engine_params", None)
+            env_overrides = getattr(problem_cfg, "env", None)
 
-            worker_config = {
-                "wallet_name": getattr(self.main_window.wallet, "name", None),
-                "wallet_hotkey": getattr(self.main_window.wallet, "hotkey_str", None),
-                "wallet_path": getattr(self.main_window.wallet, "path", None),
-                "relay_endpoint": self.main_window._get_relay_endpoint_from_config(),
-                "miner_task_count": miner_task_count,
-                "validator_task_count": validator_task_count,
-                "validate_every_n_generations": validate_every,
-                "engine_params": engine_params,
-                "env_overrides": env_overrides if isinstance(env_overrides, dict) else None,
-                "task_type": task_type,
-                "engine_type": engine_type,
-                "checkpoint_generations": int(checkpoint_generations),
-                "verbose": True,
-            }
-            seed = getattr(cfg, "miner_seed", None)
-            migration_generations = getattr(cfg, "miner_migration_generations", 0)
-            self.mining_task = MultiProcessDirectMiningTask(
-                worker_config=worker_config,
-                workers=workers,
-                seed=seed,
-                migration_generations=migration_generations,
-                initial_tasks=self.tasks_completed,
-                initial_submissions=self.successful_submissions,
-                initial_best_score=self.best_score,
-            )
-        else:
-            engine_type = "baseline"
-            checkpoint_generations = 10
-            if problem_cfg is not None:
-                if getattr(problem_cfg, "engine_type", None):
-                    engine_type = str(problem_cfg.engine_type)
-                if getattr(problem_cfg, "checkpoint_generations", None):
-                    checkpoint_generations = int(problem_cfg.checkpoint_generations)
-            self.mining_task = DirectMiningTask(
-                client=self.main_window.client,
-                task_type=task_type,
-                stop_flag=stop_flag,
-                engine_type=engine_type,
-                checkpoint_generations=checkpoint_generations,
-                initial_tasks=self.tasks_completed,
-                initial_submissions=self.successful_submissions,
-                initial_best_score=self.best_score,
-            )
+        engine_params = apply_cpp_defaults_to_engine_params(
+            task_type,
+            engine_params if isinstance(engine_params, dict) else None,
+            explicit_engine_params=explicit_engine_params,
+        )
+
+        seed = getattr(cfg, "miner_seed", None)
+        migration_generations = getattr(cfg, "miner_migration_generations", 0)
+
+        sota_threshold = None
+        try:
+            sota_threshold = self.main_window.get_current_sota()
+        except Exception:
+            sota_threshold = None
+
+        worker_config = {
+            "public_address": getattr(self.main_window.wallet.hotkey, "ss58_address", None),
+            "miner_task_count": miner_task_count,
+            "validator_task_count": validator_task_count,
+            "validate_every_n_generations": validate_every,
+            "engine_params": engine_params,
+            "env_overrides": env_overrides if isinstance(env_overrides, dict) else None,
+            "task_type": task_type,
+            "engine_type": engine_type,
+            "checkpoint_generations": int(checkpoint_generations),
+            "sota_threshold": sota_threshold,
+            # Keep the engine itself quiet; the worker emits sparse stats + best events.
+            "engine_verbose": False,
+        }
+
+        self.mining_task = MultiProcessDirectMiningTask(
+            worker_config=worker_config,
+            workers=workers,
+            seed=seed,
+            migration_generations=migration_generations,
+            initial_tasks=self.tasks_completed,
+            initial_submissions=self.successful_submissions,
+            initial_best_score=self.best_score,
+        )
 
         self.mining_task.signals.log.connect(self._append_log)
         self.mining_task.signals.error.connect(self._handle_mining_error)
         self.mining_task.signals.finished.connect(self._on_mining_finished)
         self.mining_task.signals.stats_updated.connect(self._update_stats)
+        try:
+            self.mining_task.signals.best_candidate.connect(self._on_best_candidate)
+        except Exception:
+            pass
 
         self.thread_pool.start(self.mining_task)
         self._append_log(f"Starting mining for task: {task_type}")
@@ -708,8 +682,224 @@ class MiningScreen(QWidget):
             self.best_score_label.setText("-")
 
         self._save_mining_stats()
+        try:
+            self._maybe_submit_pending_candidate()
+        except Exception:
+            pass
+
+    def _maybe_submit_pending_candidate(self):
+        if self._submission_in_flight:
+            return
+        if not self._pending_sota_candidate:
+            return
+        if time.time() < float(self._next_submission_time or 0.0):
+            return
+        if not self.main_window or not getattr(self.main_window, "client", None):
+            return
+
+        candidate = dict(self._pending_sota_candidate)
+        try:
+            verified_score = float(candidate.get("verified_score"))
+        except Exception:
+            self._pending_sota_candidate = None
+            self._last_submission_feedback = None
+            return
+
+        sota_threshold = self._global_sota_value
+        if sota_threshold is None:
+            try:
+                raw = candidate.get("sota_threshold")
+                sota_threshold = float(raw) if raw is not None else None
+            except Exception:
+                sota_threshold = None
+        if sota_threshold is None or verified_score < float(sota_threshold):
+            # No longer a breaker (or we can't evaluate), drop it.
+            self._pending_sota_candidate = None
+            self._last_submission_feedback = None
+            return
+
+        algorithm_dsl = candidate.get("algorithm_dsl")
+        if not algorithm_dsl:
+            self._pending_sota_candidate = None
+            self._last_submission_feedback = None
+            return
+
+        task_type = str(candidate.get("task_type") or "cifar10_binary")
+        engine_type = str(candidate.get("engine_type") or "baseline")
+        try:
+            input_dim = int(candidate.get("input_dim") or 0)
+        except Exception:
+            input_dim = 0
+
+        mining_score = candidate.get("mining_score")
+        try:
+            mining_score_f = float(mining_score) if mining_score is not None else 0.0
+        except Exception:
+            mining_score_f = 0.0
+
+        solution_data = {
+            "task_id": f"gui-sota-{uuid.uuid4()}",
+            "task_type": task_type,
+            "algorithm_dsl": str(algorithm_dsl),
+            "eval_score": float(mining_score_f),
+            "input_dim": int(input_dim),
+            "metadata": {
+                "generation": int(candidate.get("generation", -1)),
+                "engine_type": engine_type,
+                "source": "gui_offline_runner",
+                "log_all_task_scores": True,
+            },
+        }
+
+        prevalidated = {
+            "verified_score": float(verified_score),
+            "sota_threshold": float(sota_threshold),
+        }
+
+        attempt_msg = (
+            f"Attempting SOTA submission: verified_score={float(verified_score):.4f} "
+            f"sota_threshold={float(sota_threshold):.4f}"
+        )
+        if self._last_submission_feedback != attempt_msg:
+            self._last_submission_feedback = attempt_msg
+            self._append_log(attempt_msg)
+
+        self._submission_in_flight = True
+        self._inflight_sota_verified_score = float(verified_score)
+        self._next_submission_time = 0.0
+
+        submit_task = RelaySubmissionTask(
+            self.main_window.client,
+            solution_data=solution_data,
+            prevalidated=prevalidated,
+        )
+        submit_task.signals.result.connect(self._on_submission_result)
+        submit_task.signals.error.connect(self._on_submission_error)
+        self.thread_pool.start(submit_task)
+
+    def _on_best_candidate(self, candidate: dict):
+        try:
+            verified_score = candidate.get("verified_score")
+            verified_score_f = float(verified_score) if verified_score is not None else None
+        except Exception:
+            verified_score_f = None
+        if verified_score_f is None:
+            return
+
+        sota_threshold = self._global_sota_value
+        if sota_threshold is None:
+            try:
+                raw = candidate.get("sota_threshold")
+                sota_threshold = float(raw) if raw is not None else None
+            except Exception:
+                sota_threshold = None
+        if sota_threshold is None:
+            return
+
+        if float(verified_score_f) < float(sota_threshold):
+            return
+
+        algo = candidate.get("algorithm_dsl")
+        if not algo:
+            return
+
+        existing = self._pending_sota_candidate
+        if existing is None:
+            self._pending_sota_candidate = {
+                **dict(candidate),
+                "verified_score": float(verified_score_f),
+                "sota_threshold": float(sota_threshold),
+            }
+        else:
+            try:
+                prev = float(existing.get("verified_score", -float("inf")))
+            except Exception:
+                prev = -float("inf")
+            if float(verified_score_f) > float(prev):
+                self._pending_sota_candidate = {
+                    **dict(candidate),
+                    "verified_score": float(verified_score_f),
+                    "sota_threshold": float(sota_threshold),
+                }
+                self._last_submission_feedback = None
+
+        self._maybe_submit_pending_candidate()
+
+    def _on_submission_error(self, error_msg: str):
+        self._submission_in_flight = False
+        self._inflight_sota_verified_score = None
+        self._next_submission_time = time.time() + 5.0
+        self._append_log(f"ERROR: {error_msg}")
+
+    def _on_submission_result(self, result: dict):
+        self._submission_in_flight = False
+        inflight_score = self._inflight_sota_verified_score
+        self._inflight_sota_verified_score = None
+        status = (result or {}).get("status")
+        if status == "submitted":
+            self.successful_submissions += 1
+            if self.mining_task is not None and hasattr(self.mining_task, "successful_submissions"):
+                try:
+                    self.mining_task.successful_submissions = int(self.successful_submissions)
+                except Exception:
+                    pass
+            verified = result.get("verified_score")
+            if verified is not None:
+                try:
+                    self.best_score = max(float(self.best_score or -float("inf")), float(verified))
+                except Exception:
+                    pass
+            self._append_log(f"Solution submitted to relay: {result}")
+            self._next_submission_time = 0.0
+
+            if self._pending_sota_candidate is not None and inflight_score is not None:
+                try:
+                    pending_score = float(self._pending_sota_candidate.get("verified_score", -float("inf")))
+                except Exception:
+                    pending_score = -float("inf")
+                if pending_score <= float(inflight_score):
+                    self._pending_sota_candidate = None
+        else:
+            reason = (result or {}).get("reason")
+            if status == "not_submitted" and reason == "submission_cooldown":
+                cooldown = result.get("cooldown_remaining_seconds")
+                try:
+                    cooldown_f = float(cooldown) if cooldown is not None else 5.0
+                except Exception:
+                    cooldown_f = 5.0
+                self._next_submission_time = time.time() + max(0.5, cooldown_f)
+                msg = f"Submission cooldown ({cooldown_f:.1f}s); will retry."
+                if self._last_submission_feedback != msg:
+                    self._last_submission_feedback = msg
+                    self._append_log(msg)
+            elif status == "not_submitted" and reason in {"below_sota_threshold", "below_local_best"}:
+                self._pending_sota_candidate = None
+                self._next_submission_time = 0.0
+                self._append_log(f"Submission skipped ({reason}): {result}")
+            else:
+                self._next_submission_time = time.time() + 5.0
+                self._append_log(f"Submission result: {result}")
+
+        # Keep persisted GUI stats consistent with the mining runner.
+        if self.mining_task is not None and hasattr(self.mining_task, "tasks_completed"):
+            try:
+                self.tasks_completed = int(self.mining_task.tasks_completed)
+            except Exception:
+                pass
+
+        self._update_stats(
+            {
+                "tasks_completed": int(self.tasks_completed),
+                "successful_submissions": int(self.successful_submissions),
+                "best_score": self.best_score,
+            }
+        )
 
     def _on_mining_finished(self):
+        self._submission_in_flight = False
+        self._pending_sota_candidate = None
+        self._inflight_sota_verified_score = None
+        self._next_submission_time = 0.0
         if self.mining_task:
             final_stats = {
                 "tasks_completed": self.mining_task.tasks_completed,
@@ -899,9 +1089,12 @@ class MiningScreen(QWidget):
         try:
             sota = self.main_window.get_current_sota()
             if sota is not None:
+                self._global_sota_value = float(sota)
                 self.global_sota_label.setText(f"{sota:.4f}")
             else:
+                self._global_sota_value = None
                 self.global_sota_label.setText("-")
         except Exception as e:
             print(f"Error fetching SOTA: {e}")
+            self._global_sota_value = None
             self.global_sota_label.setText("-")
