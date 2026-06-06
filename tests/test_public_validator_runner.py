@@ -11,7 +11,7 @@ from substrateinterface import Keypair
 
 from validator import public_replay as public_replay_module
 from validator import replay_sandbox as replay_sandbox_module
-from validator.public_replay import PublicReplayEngine, ReplayResult
+from validator.public_replay import PublicReplayEngine, ReplayResult, load_numeric_metrics_from_result_file
 from validator.replay_sandbox import (
     DockerSandboxConfig,
     SandboxCommandResult,
@@ -67,6 +67,13 @@ def _compile_python_cache(repo_dir: Path, relative_path: str) -> Path:
     if not candidates:
         raise AssertionError(f"expected pycache artifact for {relative_path}")
     return candidates[-1]
+
+
+def test_result_file_metric_name_value_does_not_emit_metric_value_key(tmp_path: Path) -> None:
+    result_path = tmp_path / "result.json"
+    result_path.write_text('{"metric_name": "score", "metric_value": 2.5}', encoding="utf-8")
+
+    assert load_numeric_metrics_from_result_file(result_path) == {"score": 2.5}
 
 
 def test_validator_client_posts_signed_verification() -> None:

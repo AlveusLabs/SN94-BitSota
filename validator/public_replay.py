@@ -168,7 +168,7 @@ def load_numeric_metrics_from_result_file(result_path: Path) -> dict[str, float]
             if math.isfinite(parsed):
                 values[str(payload["metric_name"])] = parsed
         for key, value in payload.items():
-            if key in {"metrics", "metric_name"}:
+            if key in {"metrics", "metric_name", "metric_value"}:
                 continue
             try:
                 parsed = float(value)
