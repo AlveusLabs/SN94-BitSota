@@ -12,12 +12,34 @@ from miner.research_auth import sign_hotkey_request
 DEFAULT_RESEARCH_COORDINATOR_URL = "https://autoresearch.bitsota.com"
 DEFAULT_VALIDATOR_JOB_CLAIM_PATH = "/api/v1/validator/jobs/claim"
 DEFAULT_VALIDATOR_WORKLIST_PATH = "/api/v1/validator/submissions/scan"
+RESULT_REPLAY_LOG_RETRY_CHARS = 8192
 
 
 class PublicValidatorApiError(RuntimeError):
     def __init__(self, message: str, *, status_code: int | None = None) -> None:
         super().__init__(message)
         self.status_code = status_code
+
+
+def _append_note(notes: str, extra: str) -> str:
+    base = str(notes or "").strip()
+    suffix = str(extra or "").strip()
+    if not suffix:
+        return base
+    if not base:
+        return suffix
+    return f"{base} | {suffix}"
+
+
+def _compact_replay_log(replay_log: str, *, limit: int) -> str:
+    text = str(replay_log or "")
+    max_chars = max(256, int(limit))
+    marker = "\n[validator note: replay log compacted before retrying result submission]\n"
+    if len(text) <= max_chars:
+        return f"{text}{marker}"
+    head_chars = max_chars // 2
+    tail_chars = max_chars - head_chars - len(marker)
+    return f"{text[:head_chars]}{marker}{text[-max(0, tail_chars):]}"
 
 
 @dataclass(frozen=True, slots=True)
@@ -228,15 +250,58 @@ class AutoresearchValidatorClient:
             body["notes"] = str(notes)
         if replay_log is not None:
             body["replay_log"] = str(replay_log)
-        return dict(
+        path = f"/api/v1/validator/jobs/{job_id}/result"
+        try:
+            return dict(self._request("POST", path, body=body, sign=True).json() or {})
+        except requests.exceptions.RequestException as exc:
+            completed = self._completed_job_result(job_id=job_id, submission_id=submission_id)
+            if completed is not None:
+                return completed
+            fallback_body = dict(body)
+            fallback_body["notes"] = _append_note(
+                str(notes or ""),
+                f"validator result submit retry after connection failure: {type(exc).__name__}",
+            )
+            if replay_log is not None:
+                fallback_body["replay_log"] = _compact_replay_log(
+                    replay_log,
+                    limit=RESULT_REPLAY_LOG_RETRY_CHARS,
+                )
+            try:
+                return dict(self._request("POST", path, body=fallback_body, sign=True).json() or {})
+            except requests.exceptions.RequestException:
+                completed = self._completed_job_result(job_id=job_id, submission_id=submission_id)
+                if completed is not None:
+                    return completed
+                raise
+            except PublicValidatorApiError:
+                completed = self._completed_job_result(job_id=job_id, submission_id=submission_id)
+                if completed is not None:
+                    return completed
+                raise
+
+    def list_verifications(self, *, submission_id: str) -> list[dict[str, Any]]:
+        return list(
             self._request(
-                "POST",
-                f"/api/v1/validator/jobs/{job_id}/result",
-                body=body,
-                sign=True,
+                "GET",
+                "/api/v1/verifications",
+                params={"submission_id": str(submission_id)},
             ).json()
-            or {}
+            or []
         )
+
+    def _completed_job_result(self, *, job_id: str, submission_id: str) -> dict[str, Any] | None:
+        try:
+            rows = self.list_verifications(submission_id=submission_id)
+        except Exception:
+            return None
+        for row in rows:
+            if str(row.get("id") or "") != str(job_id):
+                continue
+            status = str(row.get("status") or "").strip().lower()
+            if status in {"accepted", "rejected", "error"}:
+                return dict(row)
+        return None
 
     def _resolve_task_id(self, *, task_id: str | None, task_slug: str | None) -> str | None:
         wanted_id = str(task_id or "").strip()

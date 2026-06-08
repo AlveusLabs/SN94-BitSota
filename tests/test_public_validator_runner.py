@@ -7,6 +7,7 @@ import py_compile
 import subprocess
 from types import SimpleNamespace
 
+import requests
 from substrateinterface import Keypair
 
 from validator import public_replay as public_replay_module
@@ -379,6 +380,102 @@ def test_validator_client_posts_signed_job_result() -> None:
     assert request["headers"]["X-Hotkey"] == keypair.ss58_address
     assert request["headers"]["X-Signature"]
     assert request["headers"]["Content-Type"] == "application/json"
+
+
+def test_validator_client_retries_job_result_with_compact_log_after_connection_drop() -> None:
+    keypair = Keypair.create_from_mnemonic(Keypair.generate_mnemonic())
+    wallet = SimpleNamespace(hotkey=keypair)
+
+    class _FlakyResultSession:
+        def __init__(self) -> None:
+            self.requests: list[dict] = []
+
+        def request(self, **kwargs):
+            self.requests.append(kwargs)
+            if len(self.requests) == 1:
+                raise requests.exceptions.ConnectionError("remote disconnected")
+            if kwargs["method"] == "GET":
+                return _Response([])
+            return _Response({"id": "job-1", "status": "accepted"})
+
+    session = _FlakyResultSession()
+    client = AutoresearchValidatorClient(
+        base_url="http://127.0.0.1:8000",
+        wallet=wallet,
+        session=session,  # type: ignore[arg-type]
+    )
+    full_log = "x" * 32_000
+
+    result = client.submit_verification(
+        job_id="job-1",
+        submission_id="submission-1",
+        status="accepted",
+        observed_metrics={"score": 2.5},
+        notes="ok",
+        replay_log=full_log,
+    )
+
+    assert result["status"] == "accepted"
+    assert len(session.requests) == 3
+    assert session.requests[1]["method"] == "GET"
+    retry = session.requests[2]
+    assert retry["method"] == "POST"
+    assert retry["url"] == "http://127.0.0.1:8000/api/v1/validator/jobs/job-1/result"
+    assert retry["json"]["observed_metrics"] == {"score": 2.5}
+    assert retry["json"]["notes"].startswith("ok | validator result submit retry")
+    assert "compacted before retrying" in retry["json"]["replay_log"]
+    assert len(retry["json"]["replay_log"]) < len(full_log)
+    assert retry["headers"]["X-Hotkey"] == keypair.ss58_address
+    assert retry["headers"]["X-Signature"]
+
+
+def test_validator_client_reconciles_completed_job_after_connection_drop() -> None:
+    keypair = Keypair.create_from_mnemonic(Keypair.generate_mnemonic())
+    wallet = SimpleNamespace(hotkey=keypair)
+
+    class _CommittedResultSession:
+        def __init__(self) -> None:
+            self.requests: list[dict] = []
+
+        def request(self, **kwargs):
+            self.requests.append(kwargs)
+            if len(self.requests) == 1:
+                raise requests.exceptions.ConnectionError("remote disconnected")
+            assert kwargs["method"] == "GET"
+            return _Response(
+                [
+                    {
+                        "id": "job-1",
+                        "submission_id": "submission-1",
+                        "status": "accepted",
+                        "observed_metrics": {"score": 2.5},
+                    }
+                ]
+            )
+
+    session = _CommittedResultSession()
+    client = AutoresearchValidatorClient(
+        base_url="http://127.0.0.1:8000",
+        wallet=wallet,
+        session=session,  # type: ignore[arg-type]
+    )
+
+    result = client.submit_verification(
+        job_id="job-1",
+        submission_id="submission-1",
+        status="accepted",
+        observed_metrics={"score": 2.5},
+        notes="ok",
+        replay_log="score=2.5",
+    )
+
+    assert result["status"] == "accepted"
+    assert result["observed_metrics"] == {"score": 2.5}
+    assert len(session.requests) == 2
+    assert session.requests[0]["method"] == "POST"
+    assert session.requests[1]["method"] == "GET"
+    assert session.requests[1]["url"] == "http://127.0.0.1:8000/api/v1/verifications"
+    assert session.requests[1]["params"] == {"submission_id": "submission-1"}
 
 
 def test_public_replay_engine_accepts_local_patch(tmp_path: Path, monkeypatch) -> None:
