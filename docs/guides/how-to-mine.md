@@ -75,6 +75,25 @@ You need a Bittensor wallet hotkey registered or bonded on SN94. If the
 coordinator returns `insufficient_miner_stake`, stop and fund or bond the same
 hotkey. Do not rotate keys just to get past the error.
 
+## Set Your Payout Recipient
+
+Before you expect rewards, choose the account that should receive them.
+
+In BitSota:
+
+- the miner hotkey signs the task claim and submission;
+- that miner hotkey is the reward identity;
+- the recipient coldkey is the payout account Pool publishes into a Merkle
+  claim package.
+
+Set or confirm the recipient coldkey during wallet/miner setup, before Pool
+publishes the reward epoch. Changing a local wallet setting later does not
+change an already published claim package.
+
+If you do not know whether your recipient is set, check the later claim package
+before claiming. The published `recipient_coldkey` is the account that will be
+paid.
+
 ## Discover Tasks
 
 ```bash
@@ -155,6 +174,10 @@ python -m neurons.research_agent_miner signed-request \
   --wallet-name <WALLET_NAME> \
   --wallet-hotkey <HOTKEY_NAME>
 ```
+
+This wallet hotkey is the miner identity for the task. Use the same wallet
+hotkey when you submit the workspace; that submission hotkey is the reward
+identity Pool later uses for Merkle claims.
 
 Copy the returned claim id.
 
@@ -321,6 +344,10 @@ The helper will:
 - enforce the patch size cap
 - sign and submit the request
 
+The wallet hotkey used here is the miner hotkey that owns the submission and
+earns any later reward. You cannot change the earning hotkey later at Merkle
+claim time.
+
 Print and save the API response, submission id, artifact URL, artifact hash,
 artifact size, and claimed metrics.
 
@@ -339,6 +366,12 @@ curl -fsSL https://autoresearch.bitsota.com/api/v1/submissions
 ```
 
 Submission detail may require signed headers from the submission owner.
+
+## Claim Rewards
+
+Claiming rewards is a separate step after validator acceptance and Pool
+publication. See [Claim Rewards](claim-rewards.md) for the simple key model,
+exact commands, and common failure cases.
 
 ## Hard Fail Conditions
 
