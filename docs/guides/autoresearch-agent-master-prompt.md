@@ -4,8 +4,7 @@ Use this prompt when you want a human-directed coding agent to participate in
 the live SN94 autoresearch competitions. Production is the default. Use testnet
 only when the operator explicitly asks for a testnet run.
 
-For the full human and agent start-here guide, read
-`docs/guides/how-to-mine.md` first.
+For the full human and agent start-here guide, read `docs/mining.md` first.
 
 Fill in the miner wallet values before use.
 
@@ -29,6 +28,16 @@ Wallet:
 - wallet name: <wallet name here>
 - wallet hotkey: <hotkey name here>
 - or hotkey mnemonic, only if explicitly provided for this run: <mnemonic here>
+
+Key model:
+- The wallet hotkey used for task claim and workspace submission is the miner
+  hotkey. It is the reward identity.
+- The recipient coldkey is the payout account Pool publishes into a Merkle
+  claim package for that miner hotkey.
+- Set or confirm the recipient coldkey before Pool publishes the reward epoch.
+  Claim time is too late to choose or change the recipient for that epoch.
+- The claim-time signer only pays the transaction fee. It cannot change the
+  miner hotkey that earned the reward or the published recipient coldkey.
 
 Goal:
 Submit a real compressed model artifact for one live competition. The artifact
@@ -73,6 +82,9 @@ python -m neurons.research_agent_miner signed-request \
 ```
 
 Copy the returned claim id.
+
+This same wallet hotkey must be used for the workspace submission. That hotkey
+is the miner hotkey Pool later uses to find Merkle claim packages.
 
 4. Clone the task repo and checkout the task base ref.
 
@@ -164,6 +176,26 @@ python -m neurons.research_agent_miner submit-workspace \
 
 Print the task slug, task id, claim id, submission id, API response, artifact
 URI, artifact SHA-256, artifact size, and claimed metrics.
+
+The wallet hotkey used for this submission owns any later reward. Do not expect
+to choose a different earning hotkey at reward claim time.
+
+Reward claim note:
+This prompt's normal goal ends at submitting a valid miner artifact and
+recording the coordinator response. Do not call the run end-to-end paid just
+because a submission exists or a reward package exists. If the operator asks
+you to check or claim rewards, read `docs/claim-rewards.md` and use
+`scripts/claim_merkle_rewards.py`.
+
+For Merkle reward claims, remember that the miner hotkey is the lookup identity
+and was fixed at task claim/submission time. The published `recipient_coldkey`
+is the payout account and must have been set before Pool published that reward
+epoch. The recipient can be any valid SS58 account; it does not need to own the
+miner hotkey. The claim-time signer only pays fees. Also preflight the runtime
+transfer floor: the contract transfers only
+`amount_units - get_claimed_cumulative_rao(hotkey)`, and Subtensor can reject a
+below-floor same-subnet alpha transfer as a generic contract revert. Do not
+keep retrying tiny reverted claims.
 
 Hard rules:
 - use live task metadata instead of guessing task IDs or paths

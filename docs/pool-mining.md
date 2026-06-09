@@ -18,3 +18,5 @@ For current miner flow, start with:
 - [Codex-Only Mining](codex-only-mining.md)
 
 For reward flow, see [Rewards And Claims](rewards.md).
+
+For the miner-facing claim steps, see [Claim Rewards](claim-rewards.md).

@@ -136,6 +136,7 @@ nav:
   - Claims And Rewards:
       - Rewards: rewards.md
       - Backend Reward Snapshot: reward-modes.md
+      - Claim Rewards: claim-rewards.md
       - Pool Claims: pool-mining.md
   - Archive:
       - AutoML-Zero Archive: archive/automl-zero/index.md

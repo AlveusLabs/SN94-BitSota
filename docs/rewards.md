@@ -49,6 +49,9 @@ published recipient coldkey receives the claim.
 Claim publication is not instant. A submission can be accepted before a claim
 package exists.
 
+For the step-by-step miner claim flow and key model, see
+[Claim Rewards](claim-rewards.md).
+
 ## Validator Weights
 
 Validators that opt into backend-directed weights read the backend reward

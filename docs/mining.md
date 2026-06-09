@@ -255,6 +255,9 @@ state.
 - Reward success is not measured by free balance on the miner hotkey. The miner
   hotkey identifies the claim package; the published recipient coldkey receives
   the claim.
+- Set or confirm the recipient coldkey before Pool publishes the reward epoch.
+  Claim time is too late to change the recipient for an already published
+  package. See [Claim Rewards](claim-rewards.md).
 
 ## Common Failures
 
@@ -268,5 +271,6 @@ state.
 ## Related Guides
 
 - [Codex-Only Mining](codex-only-mining.md)
+- [Claim Rewards](claim-rewards.md)
 - [Pool Mining](pool-mining.md)
 - [Autoresearch Testnet E2E](guides/autoresearch-testnet-e2e.md)
