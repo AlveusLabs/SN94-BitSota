@@ -57,7 +57,9 @@ You need:
 
 - This repo installed with `pip install -e .`.
 - The miner hotkey address that earned the reward.
-- A local wallet key with enough free balance to pay the transaction fee.
+- A local wallet key with enough free TAO to pay the transaction fee and the
+  small contract storage deposit reserve. Keep `0.05` to `0.10 TAO` free before
+  claiming so normal fee movement does not break the claim.
 - A claim package published by Pool.
 
 You do not need:
@@ -131,7 +133,8 @@ python scripts/claim_merkle_rewards.py claim \
 ```
 
 The wallet key in `--wallet-name` and `--wallet-hotkey` pays the transaction
-fee. It does not decide where the reward goes.
+fee and temporarily covers a small contract storage deposit reserve. It does
+not decide where the reward goes.
 
 The reward destination is still the published `recipient_coldkey`.
 
@@ -171,9 +174,16 @@ Wrong recipient:
 - The claim pays the published `recipient_coldkey`.
 - Your local wallet setting does not change an already published epoch.
 
-Not enough fee balance:
+Not enough fee or storage-deposit balance:
 
-- The signer needs enough free balance to pay transaction fees.
+- The signer needs enough free balance to pay transaction fees and the contract
+  storage deposit reserve.
+- `StorageDepositNotEnoughFunds` means the signer has too little free TAO for
+  the storage deposit reserve, even if it has enough for the normal transaction
+  fee.
+- Update to the latest claim helper. Older helpers asked the chain to reserve
+  `1 TAO` for storage even though live claims only need a tiny fraction of that.
+- Keep `0.05` to `0.10 TAO` free on the signer before retrying.
 - The recipient can be different from the signer.
 
 ## Small Claim Warning

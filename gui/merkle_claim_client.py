@@ -14,7 +14,9 @@ from substrateinterface.contracts import ContractInstance
 
 
 _CLAIM_GAS_LIMIT = {"ref_time": 50_000_000_000, "proof_size": 2_000_000}
-_CLAIM_STORAGE_DEPOSIT_LIMIT = 1_000_000_000
+# Mainnet dry-runs currently charge hundreds of RAO for claim storage. Keep a
+# bounded margin without forcing the signer to reserve 1 TAO before execution.
+_CLAIM_STORAGE_DEPOSIT_LIMIT = 1_000_000
 _BUNDLED_METADATA_PATH = Path(__file__).resolve().parent / "assets" / "merklepool.json"
 
 
@@ -379,7 +381,6 @@ class MerkleClaimClient:
             )
         substrate = SubstrateInterface(url=self.onchain_ws_url)
         try:
-            substrate.runtime_config.update_type_registry_types({"Balance": "u64"})
             try:
                 contract = ContractInstance.create_from_address(
                     contract_address=self.contract_address,
@@ -415,6 +416,14 @@ class MerkleClaimClient:
             )
             if not getattr(receipt, "is_success", False):
                 message = str(getattr(receipt, "error_message", "") or "claim_single failed")
+                if "StorageDepositNotEnoughFunds" in message:
+                    message = (
+                        f"{message}\n"
+                        "The signer has enough balance for the transaction fee only, but not enough "
+                        "free balance for the contract storage deposit reserve. Add more free TAO to "
+                        "the signer wallet, then retry. Keeping 0.05 to 0.10 TAO free usually covers "
+                        "fee movement plus the small claim storage reserve."
+                    )
                 raise RuntimeError(message)
             self.mark_locally_claimed(claim)
             extrinsic_hash = ""

@@ -156,8 +156,9 @@ def test_submit_claim_uses_explicit_gas_limit(monkeypatch) -> None:
     assert calls["url"] == "ws://127.0.0.1:9944"
     assert calls["method"] == "claim_single"
     assert calls["kwargs"]["gas_limit"] == {"ref_time": 50_000_000_000, "proof_size": 2_000_000}
-    assert calls["kwargs"]["storage_deposit_limit"] == 1_000_000_000
+    assert calls["kwargs"]["storage_deposit_limit"] == 1_000_000
     assert calls["kwargs"]["wait_for_inclusion"] is True
+    assert "runtime_types" not in calls
     assert calls["closed"] is True
 
 
@@ -217,10 +218,13 @@ def test_submit_claim_falls_back_to_cargo_contract_for_v5_metadata(monkeypatch) 
     assert result["extrinsic_hash"] == "0xfeed"
     assert "--message" in calls["command"]
     assert "claim_single" in calls["command"]
+    storage_flag_index = calls["command"].index("--storage-deposit-limit")
+    assert calls["command"][storage_flag_index + 1] == "1000000"
     assert "--skip-dry-run" in calls["command"]
     assert "-y" in calls["command"]
     assert "ws://127.0.0.1:9944" in calls["command"]
     assert "example mnemonic" in calls["command"]
+    assert "runtime_types" not in calls
 
 
 def test_list_claim_packages_filters_locally_claimed_keys(monkeypatch, tmp_path: Path) -> None:
