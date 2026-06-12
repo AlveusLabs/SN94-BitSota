@@ -44,6 +44,7 @@ plugins:
             Autoresearch: Autoresearch
             Architecture Overview: 架构概览
             Current Competitions: 当前竞赛
+            Miner Tips: 矿工提示
             Problem Posting: 发布问题
             Problem Posting Requirements: 发布问题要求
             Future Roadmap: 未来路线图
@@ -113,6 +114,7 @@ nav:
   - Autoresearch:
       - Architecture Overview: architecture.md
       - Current Competitions: current-competitions.md
+      - Miner Tips: miner-tips.md
       - Mining Without an Agent: mining.md
       - Codex-Only Mining: codex-only-mining.md
       - Problem Posting Requirements: problem-posting.md
