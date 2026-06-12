@@ -37,6 +37,20 @@ Run these in order if you are starting from scratch:
 The same files are also served by the docs site, starting with
 [`00_start_here_agent_brief.ipynb`](notebooks/miner-tips/00_start_here_agent_brief.ipynb).
 
+## Files And Prompts
+
+Each method has a short public code file as well as the notebook. Give the
+specific file URL to your agent so it knows which implementation pattern to
+start from.
+
+| Method | Public file | Prompt |
+| --- | --- | --- |
+| Public/dev PPL and packaging | [public_ppl_and_packaging.py](https://github.com/AlveusLabs/SN94-BitSota/blob/codex/public-docs-hosting-20260604/docs/examples/miner-tips/public_ppl_and_packaging.py) | "Use `https://github.com/AlveusLabs/SN94-BitSota/blob/codex/public-docs-hosting-20260604/docs/examples/miner-tips/public_ppl_and_packaging.py` to build a public/dev Qwen-token PPL check and deterministic artifact packaging step for my binary or ternary submission." |
+| Rowmix plus q4 rescue | [rowmix_q4_rescue_baseline.py](https://github.com/AlveusLabs/SN94-BitSota/blob/codex/public-docs-hosting-20260604/docs/examples/miner-tips/rowmix_q4_rescue_baseline.py) | "Use `https://github.com/AlveusLabs/SN94-BitSota/blob/codex/public-docs-hosting-20260604/docs/examples/miner-tips/rowmix_q4_rescue_baseline.py` to prototype row sensitivity, binary/ternary rows, and a small q4 rescue budget. Test on a small public model or a few layers first, then scale only if public/dev PPL improves." |
+| Layerwise distillation | [layerwise_distillation_toy.py](https://github.com/AlveusLabs/SN94-BitSota/blob/codex/public-docs-hosting-20260604/docs/examples/miner-tips/layerwise_distillation_toy.py) | "Use `https://github.com/AlveusLabs/SN94-BitSota/blob/codex/public-docs-hosting-20260604/docs/examples/miner-tips/layerwise_distillation_toy.py` to adapt a layer-by-layer teacher/student matching loop for a binary or ternary Qwen artifact. Keep evaluation public/dev-only." |
+| Net2Net widening before quantization | [net2net_widen_then_quantize.py](https://github.com/AlveusLabs/SN94-BitSota/blob/codex/public-docs-hosting-20260604/docs/examples/miner-tips/net2net_widen_then_quantize.py) | "Use `https://github.com/AlveusLabs/SN94-BitSota/blob/codex/public-docs-hosting-20260604/docs/examples/miner-tips/net2net_widen_then_quantize.py` to prototype function-preserving widening, then add binary or ternary quantization and public/dev PPL checks." |
+| Diagnostics and frontier checks | [diagnostics_frontier.py](https://github.com/AlveusLabs/SN94-BitSota/blob/codex/public-docs-hosting-20260604/docs/examples/miner-tips/diagnostics_frontier.py) | "Use `https://github.com/AlveusLabs/SN94-BitSota/blob/codex/public-docs-hosting-20260604/docs/examples/miner-tips/diagnostics_frontier.py` to compare artifact size, public/dev PPL, and loadability. Reject proxy-only wins and broken artifacts." |
+
 ## Practical Recipe
 
 For a first serious submission, do not start every idea directly on the full
