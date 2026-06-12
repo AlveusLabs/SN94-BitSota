@@ -75,9 +75,14 @@ def zip_directory_deterministic(source_dir: str | Path, zip_path: str | Path) ->
             continue
         files.append(path)
 
+    fixed_time = (2026, 1, 1, 0, 0, 0)
     with zipfile.ZipFile(zip_path, "w", compression=zipfile.ZIP_DEFLATED) as zf:
         for path in sorted(files):
-            zf.write(path, path.relative_to(source_dir).as_posix())
+            relpath = path.relative_to(source_dir).as_posix()
+            info = zipfile.ZipInfo(relpath, date_time=fixed_time)
+            info.compress_type = zipfile.ZIP_DEFLATED
+            info.external_attr = 0o644 << 16
+            zf.writestr(info, path.read_bytes())
 
     return {
         "zip_path": str(zip_path),
