@@ -39,14 +39,21 @@ The same files are also served by the docs site, starting with
 
 ## Practical Recipe
 
-For a first serious submission, use this sequence:
+For a first serious submission, do not start every idea directly on the full
+27B model. First test the idea on a small public model, a few layers, or a toy
+CPU run so you can see whether the method is sane. This makes research faster
+even if you have plenty of GPUs, because bad ideas fail quickly and promising
+recipes get more iteration time. Once the public/dev signal improves, scale the
+same recipe to larger Qwen checkpoints and finally to the competition artifact.
 
-1. Measure public/dev Qwen-token PPL before optimizing anything else.
-2. Build a simple binary or ternary artifact that loads cleanly.
-3. Add row sensitivity scoring and q4 rescue for the most fragile rows.
-4. Add layerwise distillation when direct quantization is too lossy.
-5. Try Net2Net-style widening when you need more low-bit capacity.
-6. Package deterministically and verify artifact URL, SHA-256, and byte size.
+1. Prototype the method on a small public model or a small slice of layers.
+2. Measure public/dev Qwen-token PPL before optimizing anything else.
+3. Build a simple binary or ternary artifact that loads cleanly.
+4. Add row sensitivity scoring and q4 rescue for the most fragile rows.
+5. Add layerwise distillation when direct quantization is too lossy.
+6. Try Net2Net-style widening when you need more low-bit capacity.
+7. Scale only the promising recipe to the target-size artifact.
+8. Package deterministically and verify artifact URL, SHA-256, and byte size.
 
 ## What To Avoid
 
@@ -63,11 +70,13 @@ Build a public/dev-only Qwen compression experiment for the BitSota binary or
 ternary competition.
 
 Use the task repository and public onboarding instructions. Score with the
-reference Qwen tokenizer and shifted next-token cross entropy. Start with
-rowmix plus q4 rescue, then try layerwise distillation, then try Net2Net-style
-widening before quantization. Package the model artifact with a stable URL,
-SHA-256, and exact byte size. Do not include private validator data, auth
-secrets, local operator paths, caches, or notebook outputs.
+reference Qwen tokenizer and shifted next-token cross entropy. First test ideas
+on small public models, a few layers, or CPU toy runs so research iterations are
+fast; then scale only recipes that improve public/dev PPL. Start with rowmix
+plus q4 rescue, then try layerwise distillation, then try Net2Net-style widening
+before quantization. Package the model artifact with a stable URL, SHA-256, and
+exact byte size. Do not include private validator data, auth secrets, local
+operator paths, caches, or notebook outputs.
 ```
 
 ## Competition Fit
