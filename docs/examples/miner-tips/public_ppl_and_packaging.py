@@ -10,32 +10,39 @@ from __future__ import annotations
 import hashlib
 import math
 from pathlib import Path
+import tempfile
 import zipfile
 
-try:
-    import torch
-    import torch.nn.functional as F
-except ImportError:  # Keep importable on machines without torch.
-    torch = None
-    F = None
+import numpy as np
 
 
 def shifted_cross_entropy_from_logits(logits, labels, ignore_index: int = -100):
-    """Compute next-token cross entropy from model logits.
+    """Compute next-token cross entropy from logits with NumPy.
 
     logits: [batch, sequence, vocab]
     labels: [batch, sequence]
     """
-    if torch is None:
-        raise RuntimeError("Install torch to compute cross entropy.")
+    logits = np.asarray(logits, dtype=np.float64)
+    labels = np.asarray(labels, dtype=np.int64)
 
-    shift_logits = logits[:, :-1, :].contiguous()
-    shift_labels = labels[:, 1:].contiguous()
-    return F.cross_entropy(
-        shift_logits.view(-1, shift_logits.size(-1)),
-        shift_labels.view(-1),
-        ignore_index=ignore_index,
+    shift_logits = logits[:, :-1, :]
+    shift_labels = labels[:, 1:]
+    flat_logits = shift_logits.reshape(-1, shift_logits.shape[-1])
+    flat_labels = shift_labels.reshape(-1)
+
+    keep = flat_labels != ignore_index
+    flat_logits = flat_logits[keep]
+    flat_labels = flat_labels[keep]
+    if flat_labels.size == 0:
+        raise ValueError("No scored tokens after applying ignore_index.")
+
+    # Stable log-softmax: logsumexp(logits) - logit_of_true_label.
+    max_logits = np.max(flat_logits, axis=1, keepdims=True)
+    logsumexp = max_logits[:, 0] + np.log(
+        np.sum(np.exp(flat_logits - max_logits), axis=1)
     )
+    nll = logsumexp - flat_logits[np.arange(flat_labels.size), flat_labels]
+    return float(np.mean(nll))
 
 
 def perplexity_from_loss(loss) -> float:
@@ -80,18 +87,23 @@ def zip_directory_deterministic(source_dir: str | Path, zip_path: str | Path) ->
 
 
 def toy_check() -> None:
-    if torch is None:
-        print("Install torch to run the toy PPL check.")
-        return
-
-    labels = torch.tensor([[0, 1, 2, 3], [1, 2, 3, 4]])
-    logits = torch.zeros((2, 4, 5))
-    for batch in range(labels.size(0)):
-        for pos in range(labels.size(1) - 1):
+    labels = np.array([[0, 1, 2, 3], [1, 2, 3, 4]], dtype=np.int64)
+    logits = np.zeros((2, 4, 5), dtype=np.float64)
+    for batch in range(labels.shape[0]):
+        for pos in range(labels.shape[1] - 1):
             logits[batch, pos, labels[batch, pos + 1]] = 5.0
 
     loss = shifted_cross_entropy_from_logits(logits, labels)
-    print({"loss": float(loss), "ppl": perplexity_from_loss(loss)})
+    print("toy score:", {"loss": loss, "ppl": perplexity_from_loss(loss)})
+
+    # Packaging smoke test on a tiny temporary model directory.
+    with tempfile.TemporaryDirectory() as tmp:
+        model_dir = Path(tmp) / "toy_model"
+        model_dir.mkdir()
+        (model_dir / "config.json").write_text('{"model_type":"toy"}\n')
+        (model_dir / "weights.bin").write_bytes(b"toy weights")
+        artifact = Path(tmp) / "toy_model.zip"
+        print("toy package:", zip_directory_deterministic(model_dir, artifact))
 
 
 if __name__ == "__main__":

@@ -41,7 +41,8 @@ The same files are also served by the docs site, starting with
 
 Each method has a short public code file as well as the notebook. Give the
 specific file URL to your agent so it knows which implementation pattern to
-start from.
+start from. These files are self-contained examples; run them directly with
+`python` first, then adapt the parts that pass local checks.
 
 | Method | Public file | Prompt |
 | --- | --- | --- |
