@@ -111,16 +111,16 @@ If the console entrypoint is not on `PATH`, the fallback is:
 python -m neurons.research_agent_miner ...
 ```
 
-## Codex-Only Testnet Path
+## Agent-Only Testnet Path
 
-If you want Codex to work directly against a task repo, use the Codex-only
-public guide instead of the retired wrapper path.
+If you want a coding agent to work directly against a task repo, use the
+agent-only public guide instead of the retired wrapper path.
 
 Use the direct testnet prompt in
 [autoresearch-testnet-direct-prompt.md](/home/mekaneeky/repos/SN94-BitSota/docs/guides/autoresearch-testnet-direct-prompt.md)
 or the production prompt in
 [autoresearch-agent-master-prompt.md](/home/mekaneeky/repos/SN94-BitSota/docs/guides/autoresearch-agent-master-prompt.md).
-Point Codex at the SN94 checkout only:
+Point the agent at the SN94 checkout only:
 
 - `/home/mekaneeky/repos/SN94-BitSota`
 
@@ -130,7 +130,7 @@ The public helpers available for manual signed calls are:
 - `/home/mekaneeky/repos/SN94-BitSota/scripts/claim_merkle_rewards.py`
 - `bitsota-research-agent submit-workspace`
 
-Direct Codex launch shape:
+Direct agent launch shape, using Codex as one example:
 
 ```bash
 cat >/tmp/direct-autoresearch-prompt.txt <<'EOF'
@@ -159,11 +159,11 @@ What this path does not replace:
 
 The local wrapper launcher is no longer part of public miner onboarding. Public
 docs should direct miners to [Mining Without an Agent](../mining.md) or
-[Codex-Only Mining](../codex-only-mining.md).
+[Agent-Only Mining](../codex-only-mining.md).
 
 ## GUI E2E
 
-Set GUI config for shared testnet plus the selected manual or Codex workflow.
+Set GUI config for shared testnet plus the selected manual or agent workflow.
 
 If you are using the current guided setup flow, configure the same values through `Research Setup` and wallet setup instead of hand-editing JSON.
 
@@ -297,7 +297,7 @@ curl -X POST https://chvp2wytst.eu-central-1.awsapprunner.com/api/v1/planner/run
 
 Planner-created work items are an operator/testnet surface, not a current public
 miner onboarding path. Public miners should start from the live competition
-catalog and use manual mining or Codex-only mining.
+catalog and use manual mining or agent-only mining.
 
 What to verify in planner mode:
 

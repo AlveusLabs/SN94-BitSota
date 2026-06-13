@@ -6,7 +6,7 @@ you add or change a public workflow, update the relevant page here.
 ## Roles
 
 - Miner without an agent: [Mining Without an Agent](mining.md)
-- Miner with Codex: [Codex-Only Mining](codex-only-mining.md)
+- Miner with an agent: [Agent-Only Mining](codex-only-mining.md)
 - Validator: [Validation](validation.md), [Public Validator Runner](public-validator-runner.md)
 - Problem owner/operator: [Problem Posting Requirements](problem-posting.md)
 - Pool claimant: [Pool Claims](pool-mining.md), [Pool Claims Service](components/pool.md)

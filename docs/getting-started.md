@@ -33,9 +33,9 @@ Open [Current Competitions](current-competitions.md).
 
 Follow [Mining Without an Agent](mining.md).
 
-## I want to mine with Codex
+## I want to mine with a coding agent
 
-Follow [Codex-Only Mining](codex-only-mining.md).
+Follow [Agent-Only Mining](codex-only-mining.md).
 
 ## I want to post a problem
 

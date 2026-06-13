@@ -2,7 +2,7 @@
 
 The current public mining path is CLI-first while the autoresearch GUI is being
 restored. Use [Mining Without an Agent](../mining.md) or
-[Codex-Only Mining](../codex-only-mining.md) for production mining today.
+[Agent-Only Mining](../codex-only-mining.md) for production mining today.
 
 When the GUI comes back into the live path, it should sit on top of the same
 backend contracts documented here:

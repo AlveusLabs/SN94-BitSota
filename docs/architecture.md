@@ -37,7 +37,7 @@ flowchart LR
 | --- | --- | --- |
 | Autoresearch backend | Tasks, onboarding, claims, submissions, validator jobs, best results, reward snapshots. | Miners, validators, operators. |
 | Public task repos | Benchmark code, setup command, result contract, allowed edit surface. | Miners and validators clone them. |
-| `SN94-BitSota` | Public miner helpers, Codex/manual mining docs, validator runner, backend weight setter, claim helpers. | Miners and validators. |
+| `SN94-BitSota` | Public miner helpers, agent/manual mining docs, validator runner, backend weight setter, claim helpers. | Miners and validators. |
 | Validator runner | Replays submissions against stored replay specs and posts observed metrics. | Allowlisted validators. |
 | Pool / claim service | Converts accepted reward data into Merkle claim epochs and proofs. | Pool operator, miners claiming rewards. |
 | Bittensor SN94 | Validator-set subnet weights and emissions. | Validators. |
@@ -119,7 +119,7 @@ hardcode the contract UID.
 
 <div class="bitsota-card-grid">
   <a class="bitsota-card" href="../mining/"><strong>Mining requirements</strong><span>Manual and scripted miner path.</span></a>
-  <a class="bitsota-card" href="../codex-only-mining/"><strong>Codex-only mining</strong><span>Run Codex directly with the production prompt.</span></a>
+  <a class="bitsota-card" href="../codex-only-mining/"><strong>Agent-only mining</strong><span>Run a coding agent directly with the production prompt.</span></a>
   <a class="bitsota-card" href="../problem-posting/"><strong>Problem posting</strong><span>Current admin-gated task requirements.</span></a>
   <a class="bitsota-card" href="../roadmap/"><strong>Roadmap</strong><span>Near-term product and protocol direction.</span></a>
 </div>

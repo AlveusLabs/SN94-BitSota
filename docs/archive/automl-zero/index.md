@@ -10,7 +10,7 @@ Current docs:
 
 - [Architecture Overview](../../architecture.md)
 - [Mining Without an Agent](../../mining.md)
-- [Codex-Only Mining](../../codex-only-mining.md)
+- [Agent-Only Mining](../../codex-only-mining.md)
 - [Problem Posting Requirements](../../problem-posting.md)
 - [Future Roadmap](../../roadmap.md)
 

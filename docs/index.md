@@ -22,7 +22,7 @@ The old AutoML-Zero relay/SOTA docs are preserved in
 - [Architecture Overview](architecture.md)
 - [Current Competitions](current-competitions.md)
 - [Mining Without an Agent](mining.md)
-- [Codex-Only Mining](codex-only-mining.md)
+- [Agent-Only Mining](codex-only-mining.md)
 - [Problem Posting Requirements](problem-posting.md)
 - [Future Roadmap](roadmap.md)
 
@@ -31,7 +31,7 @@ The old AutoML-Zero relay/SOTA docs are preserved in
 ```mermaid
 flowchart TB
   Owner[Problem owner] --> Backend[Autoresearch backend]
-  Miner[Miner or Codex] --> Backend
+  Miner[Miner or agent] --> Backend
   Validator[Validator runner] --> Backend
   Backend --> Pool[Pool claims]
   Pool --> Contract[Merkle contract]

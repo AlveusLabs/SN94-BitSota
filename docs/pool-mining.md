@@ -15,7 +15,7 @@ and claim serving:
 For current miner flow, start with:
 
 - [Mining Without an Agent](mining.md)
-- [Codex-Only Mining](codex-only-mining.md)
+- [Agent-Only Mining](codex-only-mining.md)
 
 For reward flow, see [Rewards And Claims](rewards.md).
 

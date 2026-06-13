@@ -29,7 +29,7 @@ flowchart LR
 | Repo | Responsibility | Who normally runs it |
 | --- | --- | --- |
 | `autoresearch-bittensor` | Coordinator API, task catalog, submissions, validator job worklists, validator result consensus, reward snapshots, private heldout delivery. | Backend operator / App Runner. |
-| `SN94-BitSota` | Public miner and validator client code: GUI, Codex/manual mining docs, signed request helpers, Docker replay runner, backend weight setter. | Miners and validators. |
+| `SN94-BitSota` | Public miner and validator client code: GUI, agent/manual mining docs, signed request helpers, Docker replay runner, backend weight setter. | Miners and validators. |
 | Public task repos | Public replay specification per competition: benchmark scripts, allowed patch surface, result JSON contract, public smoke harness. | Cloned by public validator runner. |
 | `Pool` | Pool accounting, reward publication, Merkle proof API, Merkle contract package and deployment metadata. | Pool operator / App Runner. |
 | `94-agent-community` | Local operator memory, SOPs, endpoints, role prompts, and secrets notes for this machine. | Local agents/operators only. |
@@ -231,5 +231,5 @@ required for that target environment's behavior or safety.
 ## Where To Go Next
 
 - Public validator setup: [Public Autoresearch Validator Runner](public-validator-runner.md)
-- Miner flow: [Mining Without an Agent](mining.md) and [Codex-Only Mining](codex-only-mining.md)
+- Miner flow: [Mining Without an Agent](mining.md) and [Agent-Only Mining](codex-only-mining.md)
 - Pool claims and testing: [Autoresearch Testnet E2E](guides/autoresearch-testnet-e2e.md)
