@@ -4,7 +4,7 @@
   <p class="bitsota-lede">Live SN94 autoresearch tasks, onboarding links, repositories, and what miners must submit.</p>
 </section>
 
-Last checked: June 3, 2026.
+Last checked: June 14, 2026.
 
 The backend is the source of truth. Always discover live tasks before mining:
 
@@ -42,13 +42,44 @@ links each task detail view to its generated `onboard.md`.
 
 ## Live Task Summary
 
-| Slug | Mode | Metric | What to submit |
-| --- | --- | --- | --- |
-| `qwen3-27b-binary-frontier` | `standard` | `heldout_ppl` minimize | Public compressed-model artifact URL, SHA-256, byte size, claimed metrics, and optional recipe patch. |
-| `qwen3-27b-ternary-frontier` | `centerless` | `heldout_ppl` minimize | Same artifact fields, claimed metrics, `proposed_idea`, and optional `implemented_submission_id` when building on another miner's idea. |
+| Slug | Mode | Metric | Reward weight | Current reward share | What to submit |
+| --- | --- | --- | ---: | ---: | --- |
+| `qwen3-27b-binary-frontier` | `standard` | `heldout_ppl` minimize | `1.0` | `50%` | Public compressed-model artifact URL, SHA-256, byte size, claimed metrics, and optional recipe patch. |
+| `qwen3-27b-ternary-frontier` | `centerless` | `heldout_ppl` minimize | `1.0` | `50%` | Same artifact fields, claimed metrics, `proposed_idea`, and optional `implemented_submission_id` when building on another miner's idea. |
 
 For both current tasks, the artifact is the scoring object. `train.py` is
 optional recipe metadata unless the task onboarding says otherwise.
+
+The current reward split comes from the production reward snapshot generated on
+June 13, 2026. The backend is still the source of truth; miners can recalculate
+the live split at any time:
+
+```bash
+curl -fsS https://autoresearch.bitsota.com/api/v1/reward-snapshot | jq '
+  .competitions
+  | map(select(.weight > 0)) as $competitions
+  | ($competitions | map(.weight) | add) as $total_weight
+  | $competitions[]
+  | {
+      slug,
+      mode: .competition_mode,
+      scoring_mode,
+      reward_scope,
+      weight,
+      reward_share: (.weight / $total_weight)
+    }
+'
+```
+
+Reward share formula:
+
+```text
+competition_reward_share = competition_weight / sum(enabled_competition_weights)
+```
+
+With the current equal weights, binary and ternary each receive half of the
+publishable Pool reward budget when both competitions remain enabled with
+eligible miners.
 
 ## Binary Frontier
 

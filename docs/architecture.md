@@ -108,8 +108,8 @@ GET https://autoresearch.bitsota.com/api/v1/reward-snapshot
 The current intended split is:
 
 ```text
-90% UID 0
-10% contract hotkey 5F7MJ2fAyxBG7ci4xP7kQPJanoMdNurk1QBP1AQuFT2Jmzg2
+95% UID 0
+5% contract hotkey 5F7MJ2fAyxBG7ci4xP7kQPJanoMdNurk1QBP1AQuFT2Jmzg2
 ```
 
 Validators must resolve hotkeys dynamically through the metagraph. Do not
