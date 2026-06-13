@@ -118,7 +118,7 @@ class ReplaySpec:
 class ReplayResult:
     submission_id: str
     status: str
-    observed_metrics: dict[str, float]
+    observed_metrics: dict[str, Any]
     notes: str
     replay_log: str
 
@@ -179,11 +179,91 @@ def load_numeric_metrics_from_result_file(result_path: Path) -> dict[str, float]
     return values
 
 
+def load_observed_metrics_from_result_file(result_path: Path) -> dict[str, Any]:
+    try:
+        payload = json.loads(result_path.read_text(encoding="utf-8"))
+    except FileNotFoundError as exc:
+        raise ValueError(f"result file not found: {result_path}") from exc
+    except json.JSONDecodeError as exc:
+        raise ValueError(f"result file is not valid JSON: {result_path}") from exc
+
+    observed: dict[str, Any] = load_numeric_metrics_from_result_file(result_path)
+    if not isinstance(payload, dict):
+        return observed
+
+    runtime = payload.get("runtime")
+    if isinstance(runtime, dict):
+        tokenizer_id = str(runtime.get("tokenizer_id") or "").strip()
+        if tokenizer_id:
+            observed["tokenizer_id"] = tokenizer_id
+        for key in ("device", "dtype"):
+            value = str(runtime.get(key) or "").strip()
+            if value:
+                observed[f"runtime_{key}"] = value
+
+    dataset_handle = payload.get("dataset_handle")
+    if isinstance(dataset_handle, dict):
+        for key in (
+            "dataset",
+            "dataset_mix",
+            "split",
+            "document_sha256",
+            "rotation_key_hash",
+            "sync_slot",
+            "sync_number_hash",
+        ):
+            value = dataset_handle.get(key)
+            if value is None:
+                continue
+            text = str(value).strip()
+            if text:
+                observed[f"heldout_{key}"] = text
+        try:
+            document_count = int(dataset_handle.get("document_count"))
+        except (TypeError, ValueError):
+            document_count = None
+        if document_count is not None:
+            observed["heldout_document_count"] = float(document_count)
+    return observed
+
+
 def load_metric_from_result_file(result_path: Path, metric_name: str) -> float:
     values = load_numeric_metrics_from_result_file(result_path)
     if metric_name in values:
         return values[metric_name]
     raise ValueError(f"result file missing metric '{metric_name}': {result_path}")
+
+
+def _validate_result_contract_observations(
+    *,
+    observed_metrics: dict[str, Any],
+    benchmark_env: dict[str, Any],
+) -> str | None:
+    expected_tokenizer_id = str(benchmark_env.get("AUTORESEARCH_EVAL_TOKENIZER_ID") or "").strip()
+    if expected_tokenizer_id:
+        observed_tokenizer_id = str(observed_metrics.get("tokenizer_id") or "").strip()
+        if observed_tokenizer_id != expected_tokenizer_id:
+            return (
+                "result file tokenizer_id does not match validator contract: "
+                f"expected {expected_tokenizer_id}, got {observed_tokenizer_id or 'missing'}"
+            )
+
+    expected_document_count = str(benchmark_env.get("AUTORESEARCH_HELDOUT_DOCUMENT_COUNT") or "").strip()
+    if expected_document_count and "heldout_document_count" in observed_metrics:
+        try:
+            observed_document_count = int(float(observed_metrics["heldout_document_count"]))
+        except (TypeError, ValueError):
+            return "result file heldout document count is not numeric"
+        try:
+            expected_count = int(expected_document_count)
+        except ValueError:
+            expected_count = None
+        if expected_count is not None and observed_document_count != expected_count:
+            return (
+                "result file heldout document count does not match validator contract: "
+                f"expected {expected_count}, got {observed_document_count}"
+            )
+    return None
 
 
 def _seed_from_text(value: str) -> int:
@@ -678,19 +758,25 @@ class PublicReplayEngine:
 
         metric = None
         secondary_metric = None
-        result_file_metrics: dict[str, float] = {}
+        result_file_metrics: dict[str, Any] = {}
         if spec.result_path:
             result_path = result_file_path or repo_dir / spec.result_path
             try:
-                result_file_metrics = load_numeric_metrics_from_result_file(result_path)
+                result_file_metrics = load_observed_metrics_from_result_file(result_path)
+                contract_error = _validate_result_contract_observations(
+                    observed_metrics=result_file_metrics,
+                    benchmark_env=benchmark_env,
+                )
+                if contract_error is not None:
+                    raise ValueError(contract_error)
                 if spec.metric_name not in result_file_metrics:
                     raise ValueError(f"result file missing metric '{spec.metric_name}': {result_path}")
-                metric = result_file_metrics[spec.metric_name]
+                metric = float(result_file_metrics[spec.metric_name])
                 if spec.secondary_metric_name:
                     if spec.secondary_metric_name not in result_file_metrics:
                         raise ValueError(f"result file missing metric '{spec.secondary_metric_name}': {result_path}")
-                    secondary_metric = result_file_metrics[spec.secondary_metric_name]
-            except ValueError as exc:
+                    secondary_metric = float(result_file_metrics[spec.secondary_metric_name])
+            except (TypeError, ValueError) as exc:
                 return self._result(
                     job,
                     status="error",

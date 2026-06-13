@@ -570,6 +570,169 @@ def test_public_replay_engine_uses_docker_sandbox_without_host_replay(
     assert calls[0]["config"].gpus == "all"
 
 
+def test_public_replay_engine_records_result_contract_metadata(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    repo_dir = tmp_path / "repo"
+    repo_dir.mkdir()
+    _init_git_repo(repo_dir)
+    (repo_dir / "benchmark.py").write_text("print('score=4.0')\n", encoding="utf-8")
+    subprocess.run(["git", "add", "."], cwd=repo_dir, check=True, capture_output=True)
+    subprocess.run(["git", "commit", "-m", "initial"], cwd=repo_dir, check=True, capture_output=True)
+
+    job = ReplayJob(
+        job_id="job-contract",
+        submission={
+            "id": "submission-contract",
+            "task_id": "task-1",
+            "base_ref": "HEAD",
+            "patch": (
+                "diff --git a/benchmark.py b/benchmark.py\n"
+                "--- a/benchmark.py\n"
+                "+++ b/benchmark.py\n"
+                "@@ -1 +1,2 @@\n"
+                " print('score=4.0')\n"
+                "+# replay metadata patch\n"
+            ),
+        },
+        submission_id="submission-contract",
+        task={
+            "id": "task-1",
+            "repository": str(repo_dir),
+            "base_ref": "HEAD",
+            "benchmark_command": "python3 benchmark.py",
+            "result_path": "result.json",
+            "allowed_patch_paths": ["benchmark.py"],
+            "metric_name": "score",
+            "time_budget_seconds": 60,
+            "validator_benchmark_env": {
+                "AUTORESEARCH_EVAL_TOKENIZER_ID": "validator/tokenizer",
+                "AUTORESEARCH_HELDOUT_DOCUMENT_COUNT": "8",
+            },
+        },
+        replay_spec={},
+        detail={"metric_name": "score"},
+        source="test",
+    )
+
+    def fake_sandbox(**kwargs):
+        result_path = kwargs["work_dir"] / "sandbox-results" / "result.json"
+        result_path.parent.mkdir(parents=True, exist_ok=True)
+        result_path.write_text(
+            json.dumps(
+                {
+                    "metric_name": "score",
+                    "metric_value": 4.0,
+                    "runtime": {
+                        "tokenizer_id": "validator/tokenizer",
+                        "device": "cuda:0",
+                        "dtype": "fp16",
+                    },
+                    "dataset_handle": {
+                        "dataset": "validator-hidden",
+                        "split": "heldout",
+                        "document_count": 8,
+                        "rotation_key_hash": "abc123",
+                        "document_sha256": "def456",
+                    },
+                }
+            ),
+            encoding="utf-8",
+        )
+        return SandboxedReplayResult(
+            setup_result=None,
+            benchmark_result=SandboxCommandResult(returncode=0, stdout="score=4.0\n", stderr=""),
+            result_path=result_path,
+            image=kwargs["config"].image,
+        )
+
+    monkeypatch.setattr(public_replay_module, "run_replay_in_docker_sandbox", fake_sandbox)
+    engine = PublicReplayEngine(
+        workspace_root=tmp_path / "workspaces",
+        replay_sandbox_mode="docker",
+        docker_sandbox_config=DockerSandboxConfig(image="bitsota-test:local", gpus="all"),
+    )
+
+    result = engine.run(job)
+
+    assert result.status == "accepted"
+    assert result.observed_metrics["score"] == 4.0
+    assert result.observed_metrics["tokenizer_id"] == "validator/tokenizer"
+    assert result.observed_metrics["runtime_device"] == "cuda:0"
+    assert result.observed_metrics["heldout_dataset"] == "validator-hidden"
+    assert result.observed_metrics["heldout_document_count"] == 8.0
+    assert result.observed_metrics["heldout_rotation_key_hash"] == "abc123"
+
+
+def test_public_replay_engine_errors_without_expected_tokenizer_contract(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    repo_dir = tmp_path / "repo"
+    repo_dir.mkdir()
+    _init_git_repo(repo_dir)
+    (repo_dir / "benchmark.py").write_text("print('score=4.0')\n", encoding="utf-8")
+    subprocess.run(["git", "add", "."], cwd=repo_dir, check=True, capture_output=True)
+    subprocess.run(["git", "commit", "-m", "initial"], cwd=repo_dir, check=True, capture_output=True)
+
+    job = ReplayJob(
+        job_id="job-missing-tokenizer",
+        submission={
+            "id": "submission-missing-tokenizer",
+            "task_id": "task-1",
+            "base_ref": "HEAD",
+            "patch": (
+                "diff --git a/benchmark.py b/benchmark.py\n"
+                "--- a/benchmark.py\n"
+                "+++ b/benchmark.py\n"
+                "@@ -1 +1,2 @@\n"
+                " print('score=4.0')\n"
+                "+# replay metadata patch\n"
+            ),
+        },
+        submission_id="submission-missing-tokenizer",
+        task={
+            "id": "task-1",
+            "repository": str(repo_dir),
+            "base_ref": "HEAD",
+            "benchmark_command": "python3 benchmark.py",
+            "result_path": "result.json",
+            "allowed_patch_paths": ["benchmark.py"],
+            "metric_name": "score",
+            "time_budget_seconds": 60,
+            "validator_benchmark_env": {"AUTORESEARCH_EVAL_TOKENIZER_ID": "validator/tokenizer"},
+        },
+        replay_spec={},
+        detail={"metric_name": "score"},
+        source="test",
+    )
+
+    def fake_sandbox(**kwargs):
+        result_path = kwargs["work_dir"] / "sandbox-results" / "result.json"
+        result_path.parent.mkdir(parents=True, exist_ok=True)
+        result_path.write_text('{"metric_name": "score", "metric_value": 4.0}', encoding="utf-8")
+        return SandboxedReplayResult(
+            setup_result=None,
+            benchmark_result=SandboxCommandResult(returncode=0, stdout="score=4.0\n", stderr=""),
+            result_path=result_path,
+            image=kwargs["config"].image,
+        )
+
+    monkeypatch.setattr(public_replay_module, "run_replay_in_docker_sandbox", fake_sandbox)
+    engine = PublicReplayEngine(
+        workspace_root=tmp_path / "workspaces",
+        replay_sandbox_mode="docker",
+        docker_sandbox_config=DockerSandboxConfig(image="bitsota-test:local", gpus="all"),
+    )
+
+    result = engine.run(job)
+
+    assert result.status == "error"
+    assert result.observed_metrics == {}
+    assert "tokenizer_id does not match validator contract" in result.notes
+
+
 def test_public_replay_engine_prefetches_backend_heldout_for_docker(
     tmp_path: Path,
     monkeypatch,
