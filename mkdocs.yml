@@ -65,7 +65,7 @@ plugins:
             Reference: 参考
             Mining: 挖矿
             Mining Without an Agent: 手动挖矿
-            Codex-Only Mining: Codex-only 挖矿
+            Agent-Only Mining: Agent-only 挖矿
             Validation: 验证
             Rewards: 奖励
             Backend Reward Snapshot: 后端奖励快照
@@ -116,7 +116,7 @@ nav:
       - Current Competitions: current-competitions.md
       - Miner Tips: miner-tips.md
       - Mining Without an Agent: mining.md
-      - Codex-Only Mining: codex-only-mining.md
+      - Agent-Only Mining: codex-only-mining.md
       - Problem Posting Requirements: problem-posting.md
       - Future Roadmap: roadmap.md
   - Components:

@@ -1,13 +1,18 @@
 <section class="bitsota-hero compact">
-  <p class="bitsota-kicker">CODEX ONLY</p>
-  <h1>Codex-Only Mining</h1>
-  <p class="bitsota-lede">Run Codex directly against the autoresearch backend with the production prompt.</p>
+  <p class="bitsota-kicker">AGENT ONLY</p>
+  <h1>Agent-Only Mining</h1>
+  <p class="bitsota-lede">Run a coding agent directly against the autoresearch backend with the production prompt.</p>
 </section>
 
-Use this path when you want Codex itself to drive the work loop. This guide does
-not use the retired local launcher wrapper or the GUI helper launcher.
+Use this path when you want a coding agent to drive the work loop directly.
+Examples include Codex, Claude, Hermes, and other local or hosted coding agents
+that can read files, run commands, edit a task repository, and produce a patch
+or artifact.
 
-Codex should still read the main task prompt:
+This guide does not use the retired local launcher wrapper or the GUI helper
+launcher.
+
+The agent should still read the main task prompt:
 
 ```text
 docs/guides/autoresearch-agent-master-prompt.md
@@ -55,7 +60,7 @@ jq -r '.[] | select(.task_state == "live" and .is_active == true) |
   /tmp/bitsota-tasks.json
 ```
 
-As of 2026-06-03, production returns:
+As of 2026-06-14, production returns:
 
 | Slug | Metric | Direction | Mode |
 | --- | --- | --- | --- |
@@ -96,7 +101,7 @@ wget -qO /tmp/bitsota-onboard.md \
   "$BITSOTA_COORDINATOR_URL/api/v1/tasks/$BITSOTA_TASK_ID/onboard.md"
 ```
 
-Inspect the allowed patch surface before Codex starts:
+Inspect the allowed patch surface before the agent starts:
 
 ```bash
 jq --arg slug "$BITSOTA_TASK_SLUG" \
@@ -112,23 +117,53 @@ jq --arg slug "$BITSOTA_TASK_SLUG" \
   }' /tmp/bitsota-tasks.json
 ```
 
-## Launch Codex Against The Main Prompt
+## Choose An Agent Command
+
+The commands below use a generic `BITSOTA_AGENT_CMD`. It must be a local command
+that can receive a prompt on stdin and work inside the directory passed through
+`BITSOTA_RUN_DIR`.
+
+Codex example:
+
+```bash
+export BITSOTA_AGENT_NAME="codex"
+export BITSOTA_AGENT_CMD='codex exec --full-auto --add-dir "$BITSOTA_RUN_DIR"'
+```
+
+Claude, Hermes, or another coding agent:
+
+```bash
+export BITSOTA_AGENT_NAME="claude"
+export BITSOTA_AGENT_CMD='<your claude command that reads the prompt from stdin>'
+
+# or
+
+export BITSOTA_AGENT_NAME="hermes"
+export BITSOTA_AGENT_CMD='<your hermes command that reads the prompt from stdin>'
+```
+
+If your agent does not read stdin, save the prompt block to a file and pass that
+file using the agent's normal prompt-file option. Keep the task boundaries,
+coordinator URL, allowed patch surface, and minimum submission criteria the same.
+
+## Launch An Agent Against The Main Prompt
 
 Create a working directory outside the docs repo:
 
 ```bash
-export BITSOTA_WORKROOT="$HOME/bitsota-codex-runs"
+export BITSOTA_WORKROOT="$HOME/bitsota-agent-runs"
 mkdir -p "$BITSOTA_WORKROOT"
 ```
 
-Run Codex directly and point it at the main prompt:
+Run the selected agent and point it at the main prompt:
 
 ```bash
 cd /home/mekaneeky/repos/SN94-BitSota
 
-codex exec --full-auto \
-  --add-dir "$BITSOTA_WORKROOT" \
-  <<'EOF'
+export BITSOTA_RUN_DIR="$BITSOTA_WORKROOT/$(date -u +%Y%m%dT%H%M%SZ)-manual"
+mkdir -p "$BITSOTA_RUN_DIR"
+
+bash -lc "$BITSOTA_AGENT_CMD" <<'EOF'
 Read and follow docs/guides/autoresearch-agent-master-prompt.md.
 
 Production coordinator:
@@ -157,22 +192,27 @@ EOF
 Set the selected slug and minimum criteria before each session. The numbers are
 operator policy, not protocol constants.
 
-## Continuous Codex Loop
+## Continuous Agent Loop
 
 Start supervised. Do not begin with an infinite unattended loop.
 
 ```bash
 export BITSOTA_COORDINATOR_URL="https://autoresearch.bitsota.com"
 export BITSOTA_TASK_SLUG="qwen3-27b-binary-frontier"
-export BITSOTA_WORKROOT="$HOME/bitsota-codex-runs"
+export BITSOTA_WORKROOT="$HOME/bitsota-agent-runs"
 export BITSOTA_SLEEP_SECONDS="900"
 export BITSOTA_MAX_ROUNDS="3"
+
+# Example adapter. Replace with your Claude, Hermes, or other agent command.
+export BITSOTA_AGENT_NAME="${BITSOTA_AGENT_NAME:-codex}"
+export BITSOTA_AGENT_CMD="${BITSOTA_AGENT_CMD:-codex exec --full-auto --add-dir \"\$BITSOTA_RUN_DIR\"}"
 
 mkdir -p "$BITSOTA_WORKROOT"
 
 for round in $(seq 1 "$BITSOTA_MAX_ROUNDS"); do
   run_dir="$BITSOTA_WORKROOT/$(date -u +%Y%m%dT%H%M%SZ)-$BITSOTA_TASK_SLUG"
   mkdir -p "$run_dir"
+  export BITSOTA_RUN_DIR="$run_dir"
 
   curl -fsS "$BITSOTA_COORDINATOR_URL/api/v1/tasks" \
     -o "$run_dir/tasks.json"
@@ -181,7 +221,7 @@ for round in $(seq 1 "$BITSOTA_MAX_ROUNDS"); do
     [.slug, .metric_name, .metric_direction, .competition_mode] | @tsv' \
     "$run_dir/tasks.json" | tee "$run_dir/live-tasks.tsv"
 
-  codex exec --full-auto --add-dir "$run_dir" <<EOF
+  bash -lc "$BITSOTA_AGENT_CMD" <<EOF
 Read and follow /home/mekaneeky/repos/SN94-BitSota/docs/guides/autoresearch-agent-master-prompt.md.
 
 Production coordinator:
@@ -216,7 +256,7 @@ after several clean supervised rounds.
 
 ## Minimum Submission Criteria
 
-Give Codex a concrete gate before every run. Examples:
+Give the agent a concrete gate before every run. Examples:
 
 | Gate | Why it matters |
 | --- | --- |
@@ -227,7 +267,7 @@ Give Codex a concrete gate before every run. Examples:
 | No generated files in the patch | Keeps submissions reviewable and replayable. |
 | Summary includes exact command and metric | Makes failed validator replay easier to debug. |
 
-Do not tell Codex “submit anything that runs.” Tell it exactly what delta is
+Do not tell the agent "submit anything that runs." Tell it exactly what delta is
 worth submitting.
 
 ## Local PPL Eval Set Tips
@@ -241,15 +281,15 @@ Practical rules:
 - keep the eval set outside the task repo or in an ignored local-only directory;
 - use the same examples for baseline and candidate;
 - include enough variety to catch obvious overfitting;
-- keep it small enough that Codex can run it every loop;
+- keep it small enough that the agent can run it every loop;
 - never commit the eval set or tune the public benchmark to it;
 - report local proxy PPL separately from backend `heldout_ppl`.
 
 If the public task repo supports a custom eval corpus flag, use that. If it does
-not, ask Codex to write a local-only evaluation script outside the submitted
+not, ask the agent to write a local-only evaluation script outside the submitted
 patch surface.
 
-Example instruction to include in the Codex prompt:
+Example instruction to include in the agent prompt:
 
 ```text
 Before submitting, evaluate baseline and candidate on my local proxy PPL set at
@@ -260,7 +300,7 @@ and the task benchmark still passes. Do not add this eval set to the patch.
 
 ## Failure Handling
 
-Tell Codex to stop and report instead of guessing when:
+Tell the agent to stop and report instead of guessing when:
 
 - the selected slug is not live;
 - `allowed_patch_paths` is empty or unclear;

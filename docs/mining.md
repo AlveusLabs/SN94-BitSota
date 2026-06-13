@@ -4,15 +4,16 @@
   <p class="bitsota-lede">Use this path when you want to inspect the live task, edit the repo yourself, and submit your own patch or artifact.</p>
 </section>
 
-If you want Codex to work directly against the task repo, use
-[Codex-Only Mining](codex-only-mining.md).
+If you want a coding agent such as Codex, Claude, Hermes, or another agent to
+work directly against the task repo, use
+[Agent-Only Mining](codex-only-mining.md).
 
 ## Which Path Should I Use?
 
 | Path | Use it when | Main tool |
 | --- | --- | --- |
 | Manual coordinator mining | You want to inspect a live research task, edit the task repo yourself, and submit your own patch or artifact. | `bitsota-research-agent signed-request` and `submit-workspace` |
-| Codex-only mining | You want Codex to work directly from the production prompt, with your own local eval gates. | `codex` plus the task repo and coordinator API |
+| Agent-only mining | You want a coding agent to work directly from the production prompt, with your own local eval gates. | A coding-agent CLI plus the task repo and coordinator API |
 
 The current public research flow is coordinator-backed. Do not use the archived
 relay/SOTA or AutoML-Zero guides for production mining.
@@ -45,7 +46,7 @@ bitsota-research-agent list-tasks \
   }'
 ```
 
-As of 2026-06-03, production returns:
+As of 2026-06-14, production returns:
 
 - `qwen3-27b-binary-frontier`
 - `qwen3-27b-ternary-frontier`
@@ -270,7 +271,7 @@ state.
 
 ## Related Guides
 
-- [Codex-Only Mining](codex-only-mining.md)
+- [Agent-Only Mining](codex-only-mining.md)
 - [Claim Rewards](claim-rewards.md)
 - [Pool Mining](pool-mining.md)
 - [Autoresearch Testnet E2E](guides/autoresearch-testnet-e2e.md)
