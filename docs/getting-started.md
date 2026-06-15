@@ -46,7 +46,7 @@ Do this every time before mining. The backend is the source of truth.
 
 | Path | Use it when | Guide |
 | --- | --- | --- |
-| Agent mining | You want Codex, Claude, Hermes, or another coding agent to work from the task prompt and submit through the client. | [Agent Mining](codex-only-mining.md) |
+| Agent mining | You want to use the prompt pack with a coding agent and submit only after the review gate passes. | [Agent Mining](agent-mining.md) |
 | Manual mining | You want to clone the task repo, make the change yourself, and submit your workspace. | [Manual Mining](mining.md) |
 
 For the current Qwen compression tasks, the submitted artifact is what

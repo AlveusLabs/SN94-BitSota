@@ -102,7 +102,7 @@ Relevant CLI support already exists:
 - coordinator, claim service, and websocket reachable
 - Python environment with `bitsota-research-agent` installed from this repo
 - GUI environment if testing the GUI path
-- `codex`, `claude`, or `hermes` installed if using an external agent
+- a coding-agent command that can read a prompt if using Agent Mining
 - Merkle metadata file available at the configured path
 
 If the console entrypoint is not on `PATH`, the fallback is:
@@ -111,10 +111,11 @@ If the console entrypoint is not on `PATH`, the fallback is:
 python3 -m neurons.research_agent_miner ...
 ```
 
-## Agent-Only Testnet Path
+## Agent Mining Testnet Path
 
-If you want a coding agent to work directly against a task repo, use the
-agent-only public guide instead of the retired wrapper path.
+If you want a prompt-driven coding agent to work against a task repo, use the
+public [Agent Mining](../agent-mining.md) prompt pack instead of the retired
+wrapper path.
 
 Use the direct testnet prompt in
 [autoresearch-testnet-direct-prompt.md](/home/mekaneeky/repos/SN94-BitSota/docs/guides/autoresearch-testnet-direct-prompt.md)
@@ -130,17 +131,10 @@ The public helpers available for manual signed calls are:
 - `/home/mekaneeky/repos/SN94-BitSota/scripts/claim_merkle_rewards.py`
 - `bitsota-research-agent submit-workspace`
 
-Direct agent launch shape, using Codex as one example:
+Direct prompt-pack launch shape:
 
 ```bash
-cat >/tmp/direct-autoresearch-prompt.txt <<'EOF'
-<paste the contents of docs/guides/autoresearch-agent-master-prompt.md here>
-EOF
-
-codex exec --dangerously-bypass-approvals-and-sandbox \
-  -C /home/mekaneeky/repos \
-  --add-dir /home/mekaneeky/repos/SN94-BitSota \
-  - < /tmp/direct-autoresearch-prompt.txt
+<your-coding-agent-command-that-reads-stdin> < /tmp/direct-autoresearch-prompt.txt
 ```
 
 Historical note:
@@ -159,7 +153,7 @@ What this path does not replace:
 
 The local wrapper launcher is no longer part of public miner onboarding. Public
 docs should direct miners to [Manual Mining](../mining.md) or
-[Agent Mining](../codex-only-mining.md).
+[Agent Mining](../agent-mining.md).
 
 ## GUI E2E
 
@@ -186,25 +180,7 @@ Example JSON for a manual source/dev run:
   "onchain_metadata_path": "/home/mekaneeky/repos/Pool/new_merkle/app/assets/merklepool.json",
   "research_coordinator_endpoint": "https://chvp2wytst.eu-central-1.awsapprunner.com",
   "research_agent_mode": "gui_managed",
-  "research_agent_command": "bash -lc 'cat {intro_path_quoted} /home/mekaneeky/repos/SN94-BitSota/docs/guides/autoresearch-agent-master-prompt.md | codex exec --skip-git-repo-check --full-auto -C {repo_dir_quoted} --add-dir {workspace_dir_quoted} -o {submission_result_path_quoted} -'"
-}
-```
-
-Claude Code example:
-
-```json
-{
-  "research_agent_mode": "gui_managed",
-  "research_agent_command": "bash -lc 'cat {intro_path_quoted} /home/mekaneeky/repos/SN94-BitSota/docs/guides/autoresearch-agent-master-prompt.md | claude code --dangerously-skip-permissions -C {repo_dir_quoted} > {submission_result_path_quoted}'"
-}
-```
-
-Hermes example:
-
-```json
-{
-  "research_agent_mode": "gui_managed",
-  "research_agent_command": "bash -lc 'cat {intro_path_quoted} /home/mekaneeky/repos/SN94-BitSota/docs/guides/autoresearch-agent-master-prompt.md | hermes -C {repo_dir_quoted} > {submission_result_path_quoted}'"
+  "research_agent_command": "<your command that reads the launcher prompt from stdin and writes to {submission_result_path_quoted}>"
 }
 ```
 

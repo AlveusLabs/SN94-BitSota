@@ -38,17 +38,15 @@ The production coordinator is the separate [`autoresearch-bittensor`](https://gi
 - generated file: `INTRO.md`
 - agent is allowed to submit directly if wallet access is available
 - helper command: `bitsota-research-agent submit-workspace`
-- useful for Codex CLI / Claude Code CLI / Hermes style self-initiated loops
+- useful for CLI prompt-pack executors and self-initiated loops
 
 ## Immediate Work
 
-1. Ship thin external-agent support in `bitsota-research-agent`.
+1. Ship thin prompt-pack support in `bitsota-research-agent`.
 2. Keep the older OpenAI-compatible planner only as fallback.
-3. Add GUI launch support for the same external-agent path.
-4. Add presets for:
-   - Codex CLI
-   - Claude Code CLI
-   - Hermes
+3. Add GUI launch support for the same prompt-pack path.
+4. Keep executor-specific presets optional and secondary to the shared prompt
+   contract.
 5. Keep the task contract markdown-first via coordinator `onboard.md`.
 
 ## Non-Goals

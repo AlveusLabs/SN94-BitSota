@@ -20,7 +20,7 @@ task's allowed surface, and submit a patch or artifact for validator replay.
 | --- | --- |
 | Install the client and list live tasks | [Getting Started](getting-started.md) |
 | See the current task snapshot | [Live Tasks](current-competitions.md) |
-| Mine with a coding agent | [Agent Mining](codex-only-mining.md) |
+| Mine with the prompt pack | [Agent Mining](agent-mining.md) |
 | Mine manually | [Manual Mining](mining.md) |
 | Improve compression submissions | [Improve Submissions](miner-tips.md) |
 | Claim published rewards | [Claim Rewards](claim-rewards.md) |
@@ -29,7 +29,7 @@ task's allowed surface, and submit a patch or artifact for validator replay.
 
 ```mermaid
 flowchart LR
-  Tasks[Backend live tasks] --> Miner[Miner or agent]
+  Tasks[Backend live tasks] --> Miner[Miner or prompt runner]
   Miner --> Submit[Patch or artifact submission]
   Submit --> Replay[Validator replay]
   Replay --> Rewards[Reward snapshot]

@@ -4,8 +4,8 @@
   <p class="bitsota-lede">Clone a live task, make a measured improvement, and submit the workspace with your miner hotkey.</p>
 </section>
 
-Use this path when you want to do the work yourself. If a coding agent will do
-the work loop, use [Agent Mining](codex-only-mining.md).
+Use this path when you want to do the work yourself. To use the prompt-pack
+workflow, use [Agent Mining](agent-mining.md).
 
 ## What Counts
 

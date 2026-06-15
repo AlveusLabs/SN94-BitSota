@@ -119,7 +119,7 @@ hardcode the contract UID.
 
 <div class="bitsota-card-grid">
   <a class="bitsota-card" href="../mining/"><strong>Mining requirements</strong><span>Manual and scripted miner path.</span></a>
-  <a class="bitsota-card" href="../codex-only-mining/"><strong>Agent-only mining</strong><span>Run a coding agent directly with the production prompt.</span></a>
+  <a class="bitsota-card" href="../agent-mining/"><strong>Agent Mining</strong><span>Use the prompt pack and submit-gate workflow.</span></a>
   <a class="bitsota-card" href="../problem-posting/"><strong>Problem posting</strong><span>Current admin-gated task requirements.</span></a>
   <a class="bitsota-card" href="../roadmap/"><strong>Roadmap</strong><span>Near-term product and protocol direction.</span></a>
 </div>

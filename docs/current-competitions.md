@@ -122,5 +122,5 @@ Required submission fields:
 - files outside `allowed_patch_paths`;
 - a public/dev PPL estimate presented as a guaranteed validator score.
 
-Use [Manual Mining](mining.md) or [Agent Mining](codex-only-mining.md) for the
+Use [Manual Mining](mining.md) or [Agent Mining](agent-mining.md) for the
 actual submit workflow.

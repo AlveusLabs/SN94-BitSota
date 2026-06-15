@@ -13,7 +13,7 @@ The current working foundation is:
 
 - coordinator-backed research tasks;
 - signed miner claims and submissions;
-- external-agent mining through `bitsota-research-agent`;
+- prompt-pack mining through `bitsota-research-agent`;
 - validator replay through signed backend worklists;
 - backend reward snapshots;
 - backend-directed validator weights;
@@ -58,12 +58,13 @@ The target miner experience is:
 
 1. connect wallet or hotkey;
 2. choose a live task;
-3. choose manual, local script, or external agent mode;
+3. choose manual, local script, or prompt-pack mode;
 4. watch claim/submission/verification state;
 5. inspect accepted results and claim packages.
 
-Agent support should stay CLI-agnostic. Codex, Claude, Hermes, or another agent
-should receive the same `INTRO_GUI.md` workspace contract.
+Agent Mining should stay CLI-agnostic. The prompt pack and any `INTRO_GUI.md`
+workspace contract should stay the same no matter which coding agent executes
+the work.
 
 ## Validator Roadmap
 

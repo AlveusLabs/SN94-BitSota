@@ -231,5 +231,5 @@ required for that target environment's behavior or safety.
 ## Where To Go Next
 
 - Public validator setup: [Public Autoresearch Validator Runner](public-validator-runner.md)
-- Miner flow: [Manual Mining](mining.md) and [Agent Mining](codex-only-mining.md)
+- Miner flow: [Manual Mining](mining.md) and [Agent Mining](agent-mining.md)
 - Pool claims and testing: [Autoresearch Testnet E2E](guides/autoresearch-testnet-e2e.md)

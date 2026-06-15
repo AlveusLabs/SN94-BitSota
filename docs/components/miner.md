@@ -13,7 +13,7 @@ Miner tools in this repo:
 | Path | Use it when |
 | --- | --- |
 | [Manual Mining](../mining.md) | You edit and submit the task repo yourself. |
-| [Agent Mining](../codex-only-mining.md) | You run a coding agent directly against the task repo and submit only after local checks pass. |
+| [Agent Mining](../agent-mining.md) | You use the prompt pack, review the workspace, and submit only after the gate passes. |
 
 The legacy `neurons/miner.py` AutoML-Zero path is archived and is not the
 current production mining path.
