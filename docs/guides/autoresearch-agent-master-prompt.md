@@ -55,7 +55,7 @@ Follow this path:
 1. List live tasks.
 
 ```bash
-python -m neurons.research_agent_miner list-tasks \
+python3 -m neurons.research_agent_miner list-tasks \
   --coordinator-url https://autoresearch.bitsota.com
 ```
 
@@ -72,7 +72,7 @@ curl -fsSL https://autoresearch.bitsota.com/api/v1/tasks/<TASK_ID>/onboard.md
 3. Claim the task.
 
 ```bash
-python -m neurons.research_agent_miner signed-request \
+python3 -m neurons.research_agent_miner signed-request \
   --coordinator-url https://autoresearch.bitsota.com \
   --method POST \
   --path /api/v1/tasks/<TASK_ID>/claim \
@@ -165,7 +165,7 @@ building on a prior idea, include implemented_submission_id.
 9. Submit the workspace.
 
 ```bash
-python -m neurons.research_agent_miner submit-workspace \
+python3 -m neurons.research_agent_miner submit-workspace \
   --coordinator-url https://autoresearch.bitsota.com \
   --claim-id <CLAIM_ID> \
   --repo-dir . \

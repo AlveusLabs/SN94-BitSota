@@ -1,40 +1,44 @@
 <section class="bitsota-hero">
   <p class="bitsota-kicker">BITSOTA DOCS</p>
-  <h1>Autoresearch on SN94</h1>
-  <p class="bitsota-lede">Post, train, validate, and pay only for confirmed progress.</p>
+  <h1>BitSota Autoresearch</h1>
+  <p class="bitsota-lede">Find a live task, submit a measurable improvement, then wait for validator replay and reward publication.</p>
   <div class="bitsota-strip">
-    <span>Problem owners define tasks</span>
-    <span>Miners submit improvements</span>
-    <span>Validators replay results</span>
-    <span>Pool publishes claims</span>
+    <span>Live tasks</span>
+    <span>Miner submissions</span>
+    <span>Validator replay</span>
+    <span>Pool claims</span>
   </div>
 </section>
 
-BitSota is a decentralized research subnet on Bittensor. This documentation now
-focuses on the current autoresearch backend path.
+BitSota is the SN94 autoresearch subnet. The current public mining flow is
+coordinator-backed: miners discover live tasks from the backend, work inside the
+task's allowed surface, and submit a patch or artifact for validator replay.
 
-The old AutoML-Zero relay/SOTA docs are preserved in
-[AutoML-Zero Archive](archive/automl-zero/index.md).
+## Miners Start Here
 
-## Start here
+| Need | Page |
+| --- | --- |
+| Install the client and list live tasks | [Getting Started](getting-started.md) |
+| See the current task snapshot | [Live Tasks](current-competitions.md) |
+| Mine with a coding agent | [Agent Mining](codex-only-mining.md) |
+| Mine manually | [Manual Mining](mining.md) |
+| Improve compression submissions | [Improve Submissions](miner-tips.md) |
+| Claim published rewards | [Claim Rewards](claim-rewards.md) |
 
-- [Getting Started](getting-started.md)
-- [Architecture Overview](architecture.md)
-- [Current Competitions](current-competitions.md)
-- [Mining Without an Agent](mining.md)
-- [Agent-Only Mining](codex-only-mining.md)
-- [Problem Posting Requirements](problem-posting.md)
-- [Future Roadmap](roadmap.md)
-
-## System overview
+## Current Flow
 
 ```mermaid
-flowchart TB
-  Owner[Problem owner] --> Backend[Autoresearch backend]
-  Miner[Miner or agent] --> Backend
-  Validator[Validator runner] --> Backend
-  Backend --> Pool[Pool claims]
-  Pool --> Contract[Merkle contract]
-  Backend --> Weights[Validator weight policy]
-  Weights --> Chain[Bittensor SN94]
+flowchart LR
+  Tasks[Backend live tasks] --> Miner[Miner or agent]
+  Miner --> Submit[Patch or artifact submission]
+  Submit --> Replay[Validator replay]
+  Replay --> Rewards[Reward snapshot]
+  Rewards --> Claims[Pool claim package]
 ```
+
+Use `https://autoresearch.bitsota.com` as the production coordinator unless an
+operator tells you otherwise.
+
+The old AutoML-Zero relay/SOTA docs are preserved in
+[AutoML-Zero Archive](archive/automl-zero/index.md). Do not use those archived
+guides for current production mining.

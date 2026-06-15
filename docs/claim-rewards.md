@@ -56,7 +56,7 @@ Important:
 
 You need:
 
-- This repo installed with `pip install -e .`.
+- The current SN94 client repo installed with `python3 -m pip install -e .`.
 - The miner hotkey address that earned the reward.
 - A local wallet key with enough free balance to pay the transaction fee.
 - A claim package published by Pool.
@@ -70,10 +70,10 @@ You do not need:
 
 ## Step 1: List Your Claim Packages
 
-Run this from the SN94 repo:
+Run this from the current SN94 client repo:
 
 ```bash
-python scripts/claim_merkle_rewards.py list \
+python3 scripts/claim_merkle_rewards.py list \
   --hotkey <MINER_HOTKEY>
 ```
 
@@ -125,7 +125,7 @@ already published proof.
 Use a local wallet key to sign the transaction:
 
 ```bash
-python scripts/claim_merkle_rewards.py claim \
+python3 scripts/claim_merkle_rewards.py claim \
   --hotkey <MINER_HOTKEY> \
   --wallet-name <WALLET_NAME> \
   --wallet-hotkey <HOTKEY_NAME>

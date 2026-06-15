@@ -108,7 +108,7 @@ Relevant CLI support already exists:
 If the console entrypoint is not on `PATH`, the fallback is:
 
 ```bash
-python -m neurons.research_agent_miner ...
+python3 -m neurons.research_agent_miner ...
 ```
 
 ## Agent-Only Testnet Path
@@ -158,8 +158,8 @@ What this path does not replace:
 ## Retired Wrapper Path
 
 The local wrapper launcher is no longer part of public miner onboarding. Public
-docs should direct miners to [Mining Without an Agent](../mining.md) or
-[Agent-Only Mining](../codex-only-mining.md).
+docs should direct miners to [Manual Mining](../mining.md) or
+[Agent Mining](../codex-only-mining.md).
 
 ## GUI E2E
 

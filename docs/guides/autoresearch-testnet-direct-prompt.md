@@ -58,17 +58,17 @@ Use the local text file named `Wallet mine.txt` in the current workspace folder 
 
 For signed coordinator mutations, use the public helper from the SN94 checkout:
 
-- `python /home/mekaneeky/repos/SN94-BitSota/scripts/research_signed_request.py ...`
+- `python3 /home/mekaneeky/repos/SN94-BitSota/scripts/research_signed_request.py ...`
 - installed equivalent if available: `bitsota-research-agent signed-request ...`
 
 For workspace submission, prefer the higher-level helper:
 
 - `bitsota-research-agent submit-workspace ...`
-- fallback: `python -m neurons.research_agent_miner submit-workspace ...`
+- fallback: `python3 -m neurons.research_agent_miner submit-workspace ...`
 
 For Pool claim inspection and `claim_single`, use the public claim helper:
 
-- `python /home/mekaneeky/repos/SN94-BitSota/scripts/claim_merkle_rewards.py ...`
+- `python3 /home/mekaneeky/repos/SN94-BitSota/scripts/claim_merkle_rewards.py ...`
 - installed equivalent if available: `bitsota-claim-rewards ...`
 
 Do not construct `X-Hotkey`, `X-Timestamp`, or `X-Signature` yourself.
@@ -79,7 +79,8 @@ Use these values to validate live task metadata and reason about benchmark const
 
 Task-level expectations:
 
-- `time_budget_seconds`: `21600` for all 4 Qwen tasks
+- `time_budget_seconds`: read this from live task metadata; current public
+  frontier tasks report `1800`
 - max high precision fraction: `<= 0.05`
 - binary frontier quality floor: `0.76`
 - ternary frontier quality floor: `0.78`

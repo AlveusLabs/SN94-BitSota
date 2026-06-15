@@ -1,17 +1,19 @@
 <section class="bitsota-hero compact">
-  <p class="bitsota-kicker">LIVE COMPETITIONS</p>
-  <h1>Current Competitions</h1>
-  <p class="bitsota-lede">Live SN94 autoresearch tasks, onboarding links, repositories, and what miners must submit.</p>
+  <p class="bitsota-kicker">LIVE TASKS</p>
+  <h1>Live Tasks</h1>
+  <p class="bitsota-lede">Current SN94 autoresearch tasks and the fields miners must submit.</p>
 </section>
 
-Last checked: June 14, 2026.
+Last checked: June 15, 2026.
 
-The backend is the source of truth. Always discover live tasks before mining:
+Always query the backend before mining. This page is a readable snapshot, not
+the source of truth.
 
 ```bash
 export BITSOTA_COORDINATOR_URL="https://autoresearch.bitsota.com"
 
 curl -fsS "$BITSOTA_COORDINATOR_URL/api/v1/tasks" | jq '.[] | {
+  id,
   slug,
   title,
   task_state,
@@ -19,9 +21,12 @@ curl -fsS "$BITSOTA_COORDINATOR_URL/api/v1/tasks" | jq '.[] | {
   metric_name,
   metric_direction,
   competition_mode,
-  onboard_path,
   repository,
-  allowed_patch_paths
+  base_ref,
+  benchmark_command,
+  result_path,
+  allowed_patch_paths,
+  time_budget_seconds
 }'
 ```
 
@@ -31,84 +36,34 @@ Dashboard:
 https://autoresearch.bitsota.com/dashboard
 ```
 
-Dashboard JSON:
+## Current Snapshot
 
-```text
-https://autoresearch.bitsota.com/api/v1/dashboard
-```
-
-The dashboard currently renders these competitions from `/api/v1/dashboard` and
-links each task detail view to its generated `onboard.md`.
-
-## Live Task Summary
-
-| Slug | Mode | Metric | Reward weight | Current reward share | What to submit |
-| --- | --- | --- | ---: | ---: | --- |
-| `qwen3-27b-binary-frontier` | `standard` | `heldout_ppl` minimize | `1.0` | `50%` | Public compressed-model artifact URL, SHA-256, byte size, claimed metrics, and optional recipe patch. |
-| `qwen3-27b-ternary-frontier` | `centerless` | `heldout_ppl` minimize | `1.0` | `50%` | Same artifact fields, claimed metrics, `proposed_idea`, and optional `implemented_submission_id` when building on another miner's idea. |
+| Slug | Mode | Metric | Time budget | What validators score |
+| --- | --- | --- | ---: | --- |
+| `qwen3-27b-ternary-frontier` | `centerless` | `heldout_ppl` minimize | `1800` seconds | Public compressed-model artifact plus required centerless fields. |
+| `qwen3-27b-binary-frontier` | `standard` | `heldout_ppl` minimize | `1800` seconds | Public compressed-model artifact plus claimed metrics. |
 
 For both current tasks, the artifact is the scoring object. `train.py` is
-optional recipe metadata unless the task onboarding says otherwise.
+optional recipe metadata unless task onboarding says otherwise.
 
-The current reward split comes from the production reward snapshot generated on
-June 13, 2026. The backend is still the source of truth; miners can recalculate
-the live split at any time:
+Reward weights in the June 15, 2026 production snapshot are equal: binary
+weight `1.0`, ternary weight `1.0`. If both remain enabled with eligible miners,
+each task receives half of the publishable Pool reward budget.
+
+Check the live reward snapshot:
 
 ```bash
-curl -fsS https://autoresearch.bitsota.com/api/v1/reward-snapshot | jq '
-  .competitions
-  | map(select(.weight > 0)) as $competitions
-  | ($competitions | map(.weight) | add) as $total_weight
-  | $competitions[]
-  | {
-      slug,
-      mode: .competition_mode,
-      scoring_mode,
-      reward_scope,
-      weight,
-      reward_share: (.weight / $total_weight)
-    }
-'
+curl -fsS "$BITSOTA_COORDINATOR_URL/api/v1/reward-snapshot" | jq '
+  .generated_at as $generated_at |
+  .competitions[] | {
+    generated_at: $generated_at,
+    slug,
+    competition_mode,
+    scoring_mode,
+    reward_scope,
+    weight
+  }'
 ```
-
-Reward share formula:
-
-```text
-competition_reward_share = competition_weight / sum(enabled_competition_weights)
-```
-
-With the current equal weights, binary and ternary each receive half of the
-publishable Pool reward budget when both competitions remain enabled with
-eligible miners.
-
-## Binary Frontier
-
-| Field | Value |
-| --- | --- |
-| Task id | `c54218ce-9ffd-4389-b97d-2d952adb4a1a` |
-| Title | Qwen3.6 27B mostly-binary compression frontier |
-| Onboarding | [onboard.md](https://autoresearch.bitsota.com/api/v1/tasks/c54218ce-9ffd-4389-b97d-2d952adb4a1a/onboard.md) |
-| Dashboard detail | [dashboard/tasks/c54218ce-9ffd-4389-b97d-2d952adb4a1a](https://autoresearch.bitsota.com/dashboard/tasks/c54218ce-9ffd-4389-b97d-2d952adb4a1a) |
-| Repository | [autoresearch-task-qwen3-27b-binary-frontier](https://github.com/AlveusLabs/autoresearch-task-qwen3-27b-binary-frontier.git) |
-| Base ref | `production` |
-| Benchmark | `python3 competition_packs/qwen3_27b_binary_frontier/benchmark.py` |
-| Result path | `competition_packs/qwen3_27b_binary_frontier/last_run.json` |
-| Allowed recipe patch | `competition_packs/qwen3_27b_binary_frontier/train.py` |
-| Time budget | `21600` seconds |
-
-Submission requirements:
-
-- upload a compressed model artifact to a stable public HTTPS URL, usually a
-  Hugging Face file URL pinned to a commit or tag;
-- include `artifact_uri`;
-- include `artifact_sha256`, the SHA-256 of the exact downloadable bytes;
-- include `artifact_size_bytes`, the byte size of the exact downloadable bytes;
-- include `summary` and `claimed_metrics`;
-- include a small patch only if changing recipe metadata inside the allowed
-  `train.py` path.
-
-Do not submit model bytes, caches, `last_run.json`, or generated files in the
-patch.
 
 ## Ternary Frontier
 
@@ -123,31 +78,49 @@ patch.
 | Benchmark | `python3 competition_packs/qwen3_27b_ternary_frontier/benchmark.py` |
 | Result path | `competition_packs/qwen3_27b_ternary_frontier/last_run.json` |
 | Allowed recipe patch | `competition_packs/qwen3_27b_ternary_frontier/train.py` |
-| Time budget | `21600` seconds |
+| Time budget | `1800` seconds |
 
-Submission requirements:
+Required submission fields:
 
-- upload a compressed model artifact to a stable public HTTPS URL;
-- include `artifact_uri`;
-- include `artifact_sha256`;
-- include `artifact_size_bytes`;
-- include `summary` and `claimed_metrics`;
-- include `proposed_idea` for centerless mode;
-- include `implemented_submission_id` when the task requires building on a
-  prior idea-bearing submission;
-- include a small patch only if changing recipe metadata inside the allowed
-  `train.py` path.
+- `artifact_uri`
+- `artifact_sha256`
+- `artifact_size_bytes`
+- `summary`
+- `claimed_metrics`
+- `proposed_idea`
+- `implemented_submission_id` when onboarding says you are building on a prior
+  idea-bearing submission
 
-Do not treat this as a standard patch-only task. The artifact is what validators
-score.
+## Binary Frontier
 
-## Current Backend Gap
+| Field | Value |
+| --- | --- |
+| Task id | `c54218ce-9ffd-4389-b97d-2d952adb4a1a` |
+| Title | Qwen3.6 27B mostly-binary compression frontier |
+| Onboarding | [onboard.md](https://autoresearch.bitsota.com/api/v1/tasks/c54218ce-9ffd-4389-b97d-2d952adb4a1a/onboard.md) |
+| Dashboard detail | [dashboard/tasks/c54218ce-9ffd-4389-b97d-2d952adb4a1a](https://autoresearch.bitsota.com/dashboard/tasks/c54218ce-9ffd-4389-b97d-2d952adb4a1a) |
+| Repository | [autoresearch-task-qwen3-27b-binary-frontier](https://github.com/AlveusLabs/autoresearch-task-qwen3-27b-binary-frontier.git) |
+| Base ref | `production` |
+| Benchmark | `python3 competition_packs/qwen3_27b_binary_frontier/benchmark.py` |
+| Result path | `competition_packs/qwen3_27b_binary_frontier/last_run.json` |
+| Allowed recipe patch | `competition_packs/qwen3_27b_binary_frontier/train.py` |
+| Time budget | `1800` seconds |
 
-Production onboarding pages contain the competition-specific artifact guidance,
-but `/api/v1/tasks` does not yet expose `submission_surface`,
-`requires_submission_artifact`, or required field lists in the task JSON. Until
-that backend metadata is deployed, miners should use this page plus each
-competition's `onboard.md`.
+Required submission fields:
 
-The intended backend contract is documented under
-[Autoresearch Backend Routes](autoresearch-backend-routes.md).
+- `artifact_uri`
+- `artifact_sha256`
+- `artifact_size_bytes`
+- `summary`
+- `claimed_metrics`
+
+## Do Not Submit
+
+- model bytes in the patch;
+- caches, notebooks outputs, or local datasets;
+- generated `last_run.json`;
+- files outside `allowed_patch_paths`;
+- a public/dev PPL estimate presented as a guaranteed validator score.
+
+Use [Manual Mining](mining.md) or [Agent Mining](codex-only-mining.md) for the
+actual submit workflow.

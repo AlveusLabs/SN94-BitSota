@@ -9,8 +9,8 @@ setting, or problem posting.
 Current docs:
 
 - [Architecture Overview](../../architecture.md)
-- [Mining Without an Agent](../../mining.md)
-- [Agent-Only Mining](../../codex-only-mining.md)
+- [Manual Mining](../../mining.md)
+- [Agent Mining](../../codex-only-mining.md)
 - [Problem Posting Requirements](../../problem-posting.md)
 - [Future Roadmap](../../roadmap.md)
 

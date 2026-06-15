@@ -1,105 +1,56 @@
 <section class="bitsota-hero compact">
   <p class="bitsota-kicker">MINERS</p>
-  <h1>Mining Without an Agent</h1>
-  <p class="bitsota-lede">Use this path when you want to inspect the live task, edit the repo yourself, and submit your own patch or artifact.</p>
+  <h1>Manual Mining</h1>
+  <p class="bitsota-lede">Clone a live task, make a measured improvement, and submit the workspace with your miner hotkey.</p>
 </section>
 
-If you want a coding agent such as Codex, Claude, Hermes, or another agent to
-work directly against the task repo, use
-[Agent-Only Mining](codex-only-mining.md).
+Use this path when you want to do the work yourself. If a coding agent will do
+the work loop, use [Agent Mining](codex-only-mining.md).
 
-## Which Path Should I Use?
+## What Counts
 
-| Path | Use it when | Main tool |
-| --- | --- | --- |
-| Manual coordinator mining | You want to inspect a live research task, edit the task repo yourself, and submit your own patch or artifact. | `bitsota-research-agent signed-request` and `submit-workspace` |
-| Agent-only mining | You want a coding agent to work directly from the production prompt, with your own local eval gates. | A coding-agent CLI plus the task repo and coordinator API |
+The coordinator task metadata and onboarding page define what validators score.
+For the current Qwen compression tasks, validators score a downloadable model
+artifact. A small recipe patch can explain how the artifact was made, but the
+artifact is the main submission.
 
-The current public research flow is coordinator-backed. Do not use the archived
-relay/SOTA or AutoML-Zero guides for production mining.
+Do not use archived AutoML-Zero relay/SOTA guides for current production mining.
 
-For the live task list, onboarding URLs, repositories, and submission contract
-summary, see [Current Competitions](current-competitions.md).
-
-## Current Production Coordinator
-
-Production coordinator:
-
-```bash
-export BITSOTA_COORDINATOR_URL="https://autoresearch.bitsota.com"
-```
-
-Always list live tasks before starting:
-
-```bash
-bitsota-research-agent list-tasks \
-  --coordinator-url "$BITSOTA_COORDINATOR_URL" | jq '.[] | {
-    slug,
-    title,
-    task_state,
-    competition_mode,
-    metric_name,
-    metric_direction,
-    repository,
-    base_ref,
-    allowed_patch_paths
-  }'
-```
-
-As of 2026-06-14, production returns:
-
-- `qwen3-27b-binary-frontier`
-- `qwen3-27b-ternary-frontier`
-
-Treat those as examples, not hardcoded constants. The coordinator is the source
-of truth.
-
-## Prerequisites
-
-- Python 3.10 or newer
-- this repository installed locally:
-
-```bash
-cd SN94-BitSota
-python3 -m pip install -e .
-```
-
-- a Bittensor hotkey for signed coordinator actions
-- `jq`
-- enough local disk and compute for the selected task's setup and benchmark
-
-If the console script is not on `PATH`, replace `bitsota-research-agent` with:
-
-```bash
-python -m neurons.research_agent_miner
-```
-
-## Manual Coordinator Workflow
-
-### 1. Pick a live task
+## 1. Set The Coordinator
 
 ```bash
 cd SN94-BitSota
 export BITSOTA_COORDINATOR_URL="https://autoresearch.bitsota.com"
-export BITSOTA_TASK_SLUG="qwen3-27b-binary-frontier"
+```
 
+## 2. Pick A Live Task
+
+```bash
 bitsota-research-agent list-tasks \
-  --coordinator-url "$BITSOTA_COORDINATOR_URL" > /tmp/bitsota-tasks.json
+  --coordinator-url "$BITSOTA_COORDINATOR_URL" \
+  > /tmp/bitsota-tasks.json
 
+jq -r '.[] | select(.task_state == "live" and .is_active == true) |
+  [.slug, .metric_name, .metric_direction, .competition_mode] | @tsv' \
+  /tmp/bitsota-tasks.json
+```
+
+Choose a slug from that output:
+
+```bash
+export BITSOTA_TASK_SLUG="<LIVE_TASK_SLUG>"
 export BITSOTA_TASK_ID="$(
   jq -r --arg slug "$BITSOTA_TASK_SLUG" \
     '.[] | select(.slug == $slug) | .id' \
     /tmp/bitsota-tasks.json
 )"
 
-jq --arg slug "$BITSOTA_TASK_SLUG" \
-  '.[] | select(.slug == $slug)' \
-  /tmp/bitsota-tasks.json
+test -n "$BITSOTA_TASK_ID"
 ```
 
-If `BITSOTA_TASK_ID` is empty, the task is not live on that coordinator.
+If `BITSOTA_TASK_ID` is empty, stop and re-check the live task list.
 
-### 2. Read onboarding
+## 3. Read Onboarding
 
 ```bash
 curl -fsS \
@@ -109,10 +60,10 @@ curl -fsS \
 less /tmp/bitsota-onboard.md
 ```
 
-The onboarding document tells you what the task actually rewards and how the
-validator will replay the work.
+Onboarding is the contract for the task. It tells you the metric, artifact
+requirements, benchmark command, and any centerless-mode fields.
 
-### 3. Clone the task repo
+## 4. Clone The Task Repo
 
 ```bash
 export BITSOTA_TASK_REPO="$(
@@ -126,17 +77,17 @@ export BITSOTA_TASK_REF="$(
     /tmp/bitsota-tasks.json
 )"
 
-git clone "$BITSOTA_TASK_REPO" bitsota-manual-task
-cd bitsota-manual-task
+git clone "$BITSOTA_TASK_REPO" bitsota-task
+cd bitsota-task
 git checkout "$BITSOTA_TASK_REF"
 ```
 
-### 4. Run setup and baseline
+## 5. Run The Baseline
 
-Inspect the task commands first:
+Print the task commands:
 
 ```bash
-jq -r --arg slug "$BITSOTA_TASK_SLUG" \
+jq --arg slug "$BITSOTA_TASK_SLUG" \
   '.[] | select(.slug == $slug) | {
     setup_command,
     benchmark_command,
@@ -147,22 +98,13 @@ jq -r --arg slug "$BITSOTA_TASK_SLUG" \
   /tmp/bitsota-tasks.json
 ```
 
-Then run the setup and benchmark commands from the task metadata. For example:
+Run the setup and benchmark commands from the task metadata. Keep the baseline
+metric; you need it to know whether your change helped.
 
-```bash
-bash -lc "$(jq -r --arg slug "$BITSOTA_TASK_SLUG" \
-  '.[] | select(.slug == $slug) | .setup_command' \
-  /tmp/bitsota-tasks.json)"
+## 6. Claim The Task
 
-bash -lc "$(jq -r --arg slug "$BITSOTA_TASK_SLUG" \
-  '.[] | select(.slug == $slug) | .benchmark_command' \
-  /tmp/bitsota-tasks.json)"
-```
-
-### 5. Claim the task
-
-Run this from the `SN94-BitSota` checkout or make sure the console script is on
-`PATH`.
+Run the signed claim from the `SN94-BitSota` checkout or anywhere the console
+script is available:
 
 ```bash
 CLAIM_JSON="$(
@@ -171,18 +113,18 @@ CLAIM_JSON="$(
     --method POST \
     --path "/api/v1/tasks/$BITSOTA_TASK_ID/claim" \
     --body-json '{"claim_description":"manual miner run"}' \
-    --wallet-name default \
-    --wallet-hotkey default
+    --wallet-name <WALLET_NAME> \
+    --wallet-hotkey <HOTKEY_NAME>
 )"
 
 export BITSOTA_CLAIM_ID="$(printf '%s' "$CLAIM_JSON" | jq -r '.id')"
 printf '%s\n' "$CLAIM_JSON" | jq
 ```
 
-Use your real wallet name/hotkey values. A claim reserves your attempt and links
-your final submission to your miner hotkey.
+Use the miner hotkey that should identify your submission. Do not put mnemonics
+in chat, tickets, patches, or docs.
 
-### 6. Make the change
+## 7. Make The Improvement
 
 Only edit paths allowed by the task metadata:
 
@@ -192,50 +134,55 @@ jq -r --arg slug "$BITSOTA_TASK_SLUG" \
   /tmp/bitsota-tasks.json
 ```
 
-Run the benchmark again after your change. Keep enough notes to explain what you
-changed and which metric you are claiming.
+After the change, run the same benchmark again. For artifact tasks, upload the
+exact artifact bytes to a stable public URL and record:
 
-### 7. Write `submission.json`
+- `artifact_uri`
+- `artifact_sha256`
+- `artifact_size_bytes`
+- the local metric you observed
+- the exact benchmark command
 
-Create `submission.json` outside the task repo, or inside the workspace if you
-are careful not to include it in the submitted patch.
+## 8. Write `submission.json`
+
+Use the metric name from task metadata. For the current Qwen tasks, the metric
+is `heldout_ppl` and lower is better.
 
 ```json
 {
-  "summary": "Short explanation of the method and result.",
+  "summary": "Short explanation of the method and local result.",
   "claimed_metrics": {
     "heldout_ppl": 0.0
   },
+  "artifact_uri": "https://...",
+  "artifact_sha256": "sha256-hex-of-the-exact-download",
+  "artifact_size_bytes": 0,
   "proposed_idea": null,
   "implemented_submission_id": null,
-  "artifact_uri": null,
-  "artifact_sha256": null,
-  "artifact_size_bytes": null,
-  "execution_log": "Local benchmark command and result path used."
+  "execution_log": "Benchmark command, baseline metric, candidate metric."
 }
 ```
 
-Use the metric name from task metadata. For the current production Qwen tasks,
-that metric is `heldout_ppl` and lower is better.
+For centerless tasks, fill `proposed_idea`. If you are building on another
+accepted idea, also fill `implemented_submission_id` when onboarding requires
+it.
 
-### 8. Submit the workspace
-
-From the parent `SN94-BitSota` checkout:
+## 9. Submit The Workspace
 
 ```bash
 bitsota-research-agent submit-workspace \
   --coordinator-url "$BITSOTA_COORDINATOR_URL" \
   --claim-id "$BITSOTA_CLAIM_ID" \
-  --repo-dir /path/to/bitsota-manual-task \
+  --repo-dir /path/to/bitsota-task \
   --submission-file /path/to/submission.json \
-  --wallet-name default \
-  --wallet-hotkey default
+  --wallet-name <WALLET_NAME> \
+  --wallet-hotkey <HOTKEY_NAME>
 ```
 
-The helper computes the patch from `git diff` and filters it through the task's
-allowed patch paths. It will fail instead of submitting a broad dirty repo diff.
+The helper builds a patch from `git diff` and filters it through the allowed
+paths. It should fail rather than submit a broad dirty repo.
 
-### 9. Check submission status
+## 10. Check Status
 
 ```bash
 curl -fsS \
@@ -243,35 +190,22 @@ curl -fsS \
   jq '.[] | {id, status, miner_hotkey, created_at, claimed_metrics, observed_metrics}'
 ```
 
-For `standard` and `centerless` tasks, a created submission is not final. It must
-be accepted by validator replay before it can affect best-result and reward
-state.
+`pending_verification` means validators have not accepted the submission yet.
+`accepted` means validator replay accepted it for that task.
 
-## Reward And Validation Notes
+## Rewards And Claims
 
-- `pending_verification` means the coordinator has the submission but validators
-  have not accepted it yet.
-- `accepted` means validator replay accepted the submission for that task.
-- Pool/Merkle claim packages are published later; they are not instant.
-- Reward success is not measured by free balance on the miner hotkey. The miner
-  hotkey identifies the claim package; the published recipient coldkey receives
-  the claim.
-- Set or confirm the recipient coldkey before Pool publishes the reward epoch.
-  Claim time is too late to change the recipient for an already published
-  package. See [Claim Rewards](claim-rewards.md).
+Accepted submissions can affect ranking and reward snapshots. Pool publishes
+claim packages later; claims are not instant.
+
+The miner hotkey identifies the claim package. The published recipient coldkey
+receives the reward. Read [Claim Rewards](claim-rewards.md) before claiming.
 
 ## Common Failures
 
 | Symptom | Likely cause | Fix |
 | --- | --- | --- |
-| `no matching coordinator task found` | Wrong slug or coordinator URL. | Re-run `list-tasks` and copy the live slug. |
-| Claim succeeds but submit fails with empty patch | You edited outside `allowed_patch_paths`. | Move the change into the allowed task surface. |
-| Patch too large | Task `max_patch_bytes` was exceeded. | Submit a smaller patch or use artifact fields if the task supports artifacts. |
-| Submission stays pending | No validator has accepted it yet. | Wait for validator replay or ask operators to inspect validator jobs. |
-
-## Related Guides
-
-- [Agent-Only Mining](codex-only-mining.md)
-- [Claim Rewards](claim-rewards.md)
-- [Pool Mining](pool-mining.md)
-- [Autoresearch Testnet E2E](guides/autoresearch-testnet-e2e.md)
+| No task id | Wrong slug or paused task. | Re-run `list-tasks` and copy a live slug. |
+| Empty patch | You edited outside `allowed_patch_paths`. | Move the change into the allowed task surface. |
+| Patch too large | `max_patch_bytes` was exceeded. | Submit a smaller patch or rely on artifact fields. |
+| Submission stays pending | Validators have not accepted it yet. | Wait for replay or ask operators to inspect validator jobs. |

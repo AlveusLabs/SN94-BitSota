@@ -130,7 +130,7 @@ curl -X POST "$BITSOTA_COORDINATOR_URL/api/v1/tasks" \
     "ranking_mode": "scalar",
     "competition_mode": "standard",
     "min_peer_evaluations": 2,
-    "time_budget_seconds": 21600
+    "time_budget_seconds": 1800
   }'
 ```
 
