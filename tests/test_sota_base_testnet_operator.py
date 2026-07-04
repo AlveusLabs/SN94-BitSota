@@ -247,6 +247,11 @@ def test_operator_passes_aws_profile_to_blocker_gate_and_inventory(tmp_path: Pat
 
     assert "--aws-profile" in seen["blockers"]
     assert seen["blockers"][seen["blockers"].index("--aws-profile") + 1] == "moonrocklab-frankfurt"
+    assert "--gas-address" in seen["blockers"]
+    assert (
+        seen["blockers"][seen["blockers"].index("--gas-address") + 1]
+        == "test_wallet=0x00000000000000000000000000000000000000aa"
+    )
     assert "--aws-profile" in seen["inventory"]
     assert seen["inventory"][seen["inventory"].index("--aws-profile") + 1] == "moonrocklab-frankfurt"
     assert "--region" in seen["inventory"]

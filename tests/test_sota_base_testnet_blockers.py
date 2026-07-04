@@ -39,6 +39,10 @@ def _args(tmp_path: Path, **overrides):
         "skip_aws": False,
         "aws_profile": "",
         "skip_readiness_url": False,
+        "deployer_secret_id": "base-sota/test/base-sepolia/deployer",
+        "root_publisher_secret_id": "base-sota/test/base-sepolia/root-publisher",
+        "gas_address": [],
+        "skip_gas": False,
     }
     values.update(overrides)
     return argparse.Namespace(**values)
@@ -102,6 +106,8 @@ def test_blocker_report_green_when_external_and_artifact_checks_pass(tmp_path: P
     _write_artifacts(args)
     monkeypatch.setattr(module, "_aws_identity_payload", lambda timeout, profile="": {"Account": "123456789012", "Arn": "arn:aws:iam::123456789012:user/test"})
     monkeypatch.setattr(module, "_rpc_chain_id", lambda rpc_url, timeout: 84532)
+    monkeypatch.setattr(module, "_secret_tag", lambda secret_id, tag_key, profile="", timeout=0.1: "0x00000000000000000000000000000000000000aa")
+    monkeypatch.setattr(module, "_native_balance_wei", lambda rpc_url, address, timeout=0.1: 1)
     monkeypatch.setattr(module, "_resolve_host", lambda host, timeout: ["192.0.2.10"])
     monkeypatch.setattr(module, "_http_status", lambda url, timeout: (200, "ok"))
 
@@ -119,6 +125,7 @@ def test_blocker_report_marks_missing_infra_and_artifacts_red(tmp_path: Path, mo
     args = _args(tmp_path)
     monkeypatch.setattr(module, "_aws_identity_payload", lambda timeout, profile="": (_ for _ in ()).throw(RuntimeError("NoCredentials")))
     monkeypatch.setattr(module, "_rpc_chain_id", lambda rpc_url, timeout: 84532)
+    monkeypatch.setattr(module, "_secret_tag", lambda secret_id, tag_key, profile="", timeout=0.1: (_ for _ in ()).throw(RuntimeError("AccessDenied")))
     monkeypatch.setattr(module, "_resolve_host", lambda host, timeout: (_ for _ in ()).throw(socket.gaierror("missing dns")))
     monkeypatch.setattr(module, "_http_status", lambda url, timeout: (None, "missing dns"))
 
@@ -141,6 +148,8 @@ def test_blocker_report_rejects_base_mainnet_rpc(tmp_path: Path, monkeypatch) ->
     _write_artifacts(args)
     monkeypatch.setattr(module, "_aws_identity_payload", lambda timeout, profile="": {"Account": "123456789012", "Arn": "arn:aws:iam::123456789012:user/test"})
     monkeypatch.setattr(module, "_rpc_chain_id", lambda rpc_url, timeout: 8453)
+    monkeypatch.setattr(module, "_secret_tag", lambda secret_id, tag_key, profile="", timeout=0.1: "0x00000000000000000000000000000000000000aa")
+    monkeypatch.setattr(module, "_native_balance_wei", lambda rpc_url, address, timeout=0.1: 1)
     monkeypatch.setattr(module, "_resolve_host", lambda host, timeout: ["192.0.2.10"])
     monkeypatch.setattr(module, "_http_status", lambda url, timeout: (200, "ok"))
 
@@ -158,6 +167,8 @@ def test_blocker_report_rejects_readiness_artifact_that_is_not_ok(tmp_path: Path
     _write_artifacts(args, readiness_ok=False)
     monkeypatch.setattr(module, "_aws_identity_payload", lambda timeout, profile="": {"Account": "123456789012", "Arn": "arn:aws:iam::123456789012:user/test"})
     monkeypatch.setattr(module, "_rpc_chain_id", lambda rpc_url, timeout: 84532)
+    monkeypatch.setattr(module, "_secret_tag", lambda secret_id, tag_key, profile="", timeout=0.1: "0x00000000000000000000000000000000000000aa")
+    monkeypatch.setattr(module, "_native_balance_wei", lambda rpc_url, address, timeout=0.1: 1)
     monkeypatch.setattr(module, "_resolve_host", lambda host, timeout: ["192.0.2.10"])
     monkeypatch.setattr(module, "_http_status", lambda url, timeout: (200, "ok"))
 
@@ -180,6 +191,8 @@ def test_blocker_report_rejects_service_pack_that_is_not_deployment_ready(tmp_pa
     args.service_pack.write_text(json.dumps(service_pack) + "\n", encoding="utf-8")
     monkeypatch.setattr(module, "_aws_identity_payload", lambda timeout, profile="": {"Account": "123456789012", "Arn": "arn:aws:iam::123456789012:user/test"})
     monkeypatch.setattr(module, "_rpc_chain_id", lambda rpc_url, timeout: 84532)
+    monkeypatch.setattr(module, "_secret_tag", lambda secret_id, tag_key, profile="", timeout=0.1: "0x00000000000000000000000000000000000000aa")
+    monkeypatch.setattr(module, "_native_balance_wei", lambda rpc_url, address, timeout=0.1: 1)
     monkeypatch.setattr(module, "_resolve_host", lambda host, timeout: ["192.0.2.10"])
     monkeypatch.setattr(module, "_http_status", lambda url, timeout: (200, "ok"))
 
@@ -203,6 +216,8 @@ def test_blocker_report_marks_source_pack_yellow_when_branch_is_not_ready(tmp_pa
     args.apprunner_source_pack.write_text(json.dumps(source_pack) + "\n", encoding="utf-8")
     monkeypatch.setattr(module, "_aws_identity_payload", lambda timeout, profile="": {"Account": "123456789012", "Arn": "arn:aws:iam::123456789012:user/test"})
     monkeypatch.setattr(module, "_rpc_chain_id", lambda rpc_url, timeout: 84532)
+    monkeypatch.setattr(module, "_secret_tag", lambda secret_id, tag_key, profile="", timeout=0.1: "0x00000000000000000000000000000000000000aa")
+    monkeypatch.setattr(module, "_native_balance_wei", lambda rpc_url, address, timeout=0.1: 1)
     monkeypatch.setattr(module, "_resolve_host", lambda host, timeout: ["192.0.2.10"])
 
     report = module.run_blocker_report(args)
@@ -226,6 +241,8 @@ def test_blocker_report_passes_aws_profile_to_sts(tmp_path: Path, monkeypatch) -
 
     monkeypatch.setattr(module, "_aws_identity_payload", fake_identity)
     monkeypatch.setattr(module, "_rpc_chain_id", lambda rpc_url, timeout: 84532)
+    monkeypatch.setattr(module, "_secret_tag", lambda secret_id, tag_key, profile="", timeout=0.1: "0x00000000000000000000000000000000000000aa")
+    monkeypatch.setattr(module, "_native_balance_wei", lambda rpc_url, address, timeout=0.1: 1)
     monkeypatch.setattr(module, "_resolve_host", lambda host, timeout: ["192.0.2.10"])
 
     report = module.run_blocker_report(args)
@@ -234,6 +251,31 @@ def test_blocker_report_passes_aws_profile_to_sts(tmp_path: Path, monkeypatch) -
     assert report["status"] == "yellow"
     assert seen["profile"] == "moonrocklab-frankfurt"
     assert "moonrocklab-frankfurt" in aws_check["detail"]
+
+
+def test_blocker_report_marks_zero_gas_signers_and_wallet_red(tmp_path: Path, monkeypatch) -> None:
+    module = _load_module()
+    args = _args(
+        tmp_path,
+        skip_readiness_url=True,
+        gas_address=["test_wallet=0x00000000000000000000000000000000000000bb"],
+    )
+    _write_artifacts(args)
+    monkeypatch.setattr(module, "_aws_identity_payload", lambda timeout, profile="": {"Account": "123456789012", "Arn": "arn:aws:iam::123456789012:user/test"})
+    monkeypatch.setattr(module, "_rpc_chain_id", lambda rpc_url, timeout: 84532)
+    monkeypatch.setattr(module, "_secret_tag", lambda secret_id, tag_key, profile="", timeout=0.1: "0x00000000000000000000000000000000000000aa")
+    monkeypatch.setattr(module, "_native_balance_wei", lambda rpc_url, address, timeout=0.1: 0)
+    monkeypatch.setattr(module, "_resolve_host", lambda host, timeout: ["192.0.2.10"])
+
+    report = module.run_blocker_report(args)
+    checks = {check["name"]: check for check in report["checks"]}
+
+    assert report["ok"] is False
+    assert checks["gas_deployer"]["status"] == "red"
+    assert checks["gas_root_publisher"]["status"] == "red"
+    assert checks["gas_test_wallet"]["status"] == "red"
+    assert "Fund 0x00000000000000000000000000000000000000aa" in checks["gas_deployer"]["remediation"]
+    assert "Fund 0x00000000000000000000000000000000000000bb" in checks["gas_test_wallet"]["remediation"]
 
 
 def test_blocker_json_without_report_out_only_prints(tmp_path: Path, monkeypatch, capsys) -> None:

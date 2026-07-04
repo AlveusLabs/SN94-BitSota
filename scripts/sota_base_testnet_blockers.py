@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 import json
 from pathlib import Path
+import re
 import socket
 import subprocess
 import sys
@@ -22,6 +23,8 @@ BASE_MAINNET_CHAIN_ID = 8453
 DEFAULT_RPC_URL = "https://sepolia.base.org"
 DEFAULT_AWS_PROFILE = "moonrocklab-frankfurt"
 DEFAULT_READINESS_URL = "https://claims-test.bitsota.com/base-sota-testnet-readiness.json"
+DEFAULT_DEPLOYER_SECRET_ID = "base-sota/test/base-sepolia/deployer"
+DEFAULT_ROOT_PUBLISHER_SECRET_ID = "base-sota/test/base-sepolia/root-publisher"
 DEFAULT_SERVICE_HOSTS = {
     "claims_ui": "claims-test.bitsota.com",
     "claims_api": "claims-api-test.bitsota.com",
@@ -29,6 +32,7 @@ DEFAULT_SERVICE_HOSTS = {
     "attestation": "attestation-test.bitsota.com",
     "root_publisher": "root-publisher-test.bitsota.com",
 }
+EVM_ADDRESS_RE = re.compile(r"^0x[0-9a-fA-F]{40}$")
 
 
 @dataclass(frozen=True)
@@ -121,6 +125,28 @@ def _aws_identity_check(*, timeout: float, skip: bool, profile: str = "") -> Che
     return Check("aws_identity", "green", f"Authenticated to AWS account {account} as {arn}{suffix}.")
 
 
+def _run_aws(args: list[str], *, profile: str, timeout: float) -> dict[str, Any]:
+    cmd = ["aws", *args, "--output", "json"]
+    if profile:
+        cmd.extend(["--profile", profile])
+    result = subprocess.run(cmd, check=False, capture_output=True, text=True, timeout=timeout)
+    if result.returncode != 0:
+        stderr = result.stderr.strip() or result.stdout.strip() or f"exit code {result.returncode}"
+        raise RuntimeError(stderr)
+    payload = json.loads(result.stdout or "{}")
+    if not isinstance(payload, dict):
+        raise RuntimeError("aws returned non-object JSON")
+    return payload
+
+
+def _secret_tag(secret_id: str, tag_key: str, *, profile: str, timeout: float) -> str:
+    payload = _run_aws(["secretsmanager", "describe-secret", "--secret-id", secret_id], profile=profile, timeout=timeout)
+    for item in payload.get("Tags") or []:
+        if isinstance(item, dict) and str(item.get("Key") or "") == tag_key and item.get("Value"):
+            return str(item["Value"]).strip()
+    return ""
+
+
 def _resolve_host(host: str, *, timeout: float) -> list[str]:
     previous_timeout = socket.getdefaulttimeout()
     socket.setdefaulttimeout(timeout)
@@ -169,6 +195,86 @@ def _json_rpc(rpc_url: str, method: str, params: list[Any] | None = None, *, tim
     if payload.get("error"):
         raise RuntimeError(str(payload["error"]))
     return payload.get("result")
+
+
+def _native_balance_wei(rpc_url: str, address: str, *, timeout: float) -> int:
+    raw = _json_rpc(rpc_url, "eth_getBalance", [address, "latest"], timeout=timeout)
+    return int(str(raw), 16)
+
+
+def _is_evm_address(value: str) -> bool:
+    return bool(EVM_ADDRESS_RE.fullmatch(value))
+
+
+def _gas_address_check(label: str, address: str, *, rpc_url: str, timeout: float) -> Check:
+    if not address:
+        return Check(
+            f"gas_{label}",
+            "yellow",
+            f"No public address configured for {label}.",
+            "Record the public testnet address so gas readiness can be checked before deployment/browser smoke.",
+        )
+    if not _is_evm_address(address):
+        return Check(
+            f"gas_{label}",
+            "red",
+            f"{label} address is not a valid EVM address: {address!r}.",
+            "Use a 20-byte Base Sepolia EVM address.",
+        )
+    try:
+        balance_wei = _native_balance_wei(rpc_url, address, timeout=timeout)
+    except Exception as exc:
+        return Check(
+            f"gas_{label}",
+            "red",
+            f"Could not read Base Sepolia ETH balance for {label} {address}: {exc}",
+            "Fix the Base Sepolia RPC endpoint before deployment/browser smoke.",
+        )
+    if balance_wei <= 0:
+        return Check(
+            f"gas_{label}",
+            "red",
+            f"{label} {address} has 0 ETH on Base Sepolia.",
+            f"Fund {address} with Base Sepolia ETH before deployment/browser smoke.",
+        )
+    return Check(f"gas_{label}", "green", f"{label} {address} has {balance_wei / 10**18:.8f} ETH on Base Sepolia.")
+
+
+def _gas_secret_check(label: str, secret_id: str, *, rpc_url: str, profile: str, timeout: float) -> Check:
+    if not secret_id:
+        return Check(
+            f"gas_{label}",
+            "yellow",
+            f"No secret handle configured for {label}.",
+            "Pass the approved secret handle so its public sota-address tag can be checked without reading secret values.",
+        )
+    try:
+        address = _secret_tag(secret_id, "sota-address", profile=profile, timeout=timeout)
+    except FileNotFoundError:
+        return Check(
+            f"gas_{label}",
+            "red",
+            "aws CLI is not installed or not on PATH.",
+            "Install/configure AWS CLI before checking signer gas readiness.",
+        )
+    except Exception as exc:
+        return Check(
+            f"gas_{label}",
+            "red",
+            f"Could not read public sota-address tag from {secret_id!r}: {exc}",
+            "Add a public sota-address tag to the approved testnet secret handle or fix AWS access.",
+        )
+    if not address:
+        return Check(
+            f"gas_{label}",
+            "yellow",
+            f"{secret_id!r} has no public sota-address tag.",
+            "Add a public sota-address tag to the secret handle so the operator can verify gas without reading secret values.",
+        )
+    check = _gas_address_check(label, address, rpc_url=rpc_url, timeout=timeout)
+    if check.status != "green":
+        return Check(check.name, check.status, f"{check.detail} (from secret tag {secret_id!r}).", check.remediation)
+    return Check(check.name, check.status, f"{check.detail} (from secret tag {secret_id!r}).")
 
 
 def _rpc_chain_id(rpc_url: str, *, timeout: float) -> int:
@@ -454,6 +560,32 @@ def run_blocker_report(args: argparse.Namespace) -> dict[str, Any]:
     checks: list[Check] = []
     checks.append(_aws_identity_check(timeout=args.timeout, skip=args.skip_aws, profile=args.aws_profile))
     checks.append(_rpc_check(args.rpc_url, timeout=args.timeout))
+    if not args.skip_gas:
+        for label, secret_id in (
+            ("deployer", args.deployer_secret_id),
+            ("root_publisher", args.root_publisher_secret_id),
+        ):
+            checks.append(
+                _gas_secret_check(
+                    label,
+                    secret_id,
+                    rpc_url=args.rpc_url,
+                    profile=args.aws_profile,
+                    timeout=args.timeout,
+                )
+            )
+        for item in args.gas_address:
+            if "=" not in item:
+                raise SystemExit(f"--gas-address must be label=0xAddress, got {item!r}")
+            label, address = item.split("=", 1)
+            checks.append(
+                _gas_address_check(
+                    label.strip(),
+                    address.strip(),
+                    rpc_url=args.rpc_url,
+                    timeout=args.timeout,
+                )
+            )
     for name, host in hosts.items():
         checks.append(_dns_check(name, host, timeout=args.timeout))
     checks.append(_readiness_url_check(args.readiness_url, timeout=args.timeout, skip=args.skip_readiness_url))
@@ -523,6 +655,10 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--skip-aws", action="store_true", help="Skip AWS STS identity check.")
     parser.add_argument("--aws-profile", default=DEFAULT_AWS_PROFILE, help="Optional AWS CLI profile for the STS identity check.")
     parser.add_argument("--skip-readiness-url", action="store_true", help="Skip public readiness URL HTTP check.")
+    parser.add_argument("--deployer-secret-id", default=DEFAULT_DEPLOYER_SECRET_ID, help="Approved testnet deployer secret handle; only the public sota-address tag is read.")
+    parser.add_argument("--root-publisher-secret-id", default=DEFAULT_ROOT_PUBLISHER_SECRET_ID, help="Approved testnet root-publisher secret handle; only the public sota-address tag is read.")
+    parser.add_argument("--gas-address", action="append", default=[], help="Check a public Base Sepolia gas balance as label=0xAddress. Repeatable.")
+    parser.add_argument("--skip-gas", action="store_true", help="Skip signer/test-wallet gas balance checks.")
     parser.add_argument("--json", action="store_true", help="Print machine-readable JSON.")
     parser.add_argument("--report-out", type=Path)
     parser.add_argument("--allow-blocked", action="store_true", help="Exit 0 even when red checks remain.")

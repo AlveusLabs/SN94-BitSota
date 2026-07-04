@@ -140,11 +140,11 @@ Publish Base Sepolia instructions only after each gate has evidence:
 ## Base Sepolia Blocker Gate
 
 Before running deployment, ask the read-only blocker gate what still prevents a
-nontechnical browser-wallet test. It checks AWS identity, service DNS, Base
-Sepolia RPC chain ID, the generated deployment artifacts, the service
-deployment pack, the source-based App Runner pack, and the public readiness
-file. It does not deploy contracts, sign messages, broadcast transactions, or
-touch production Bittensor.
+nontechnical browser-wallet test. It checks AWS identity, signer/test-wallet
+gas, service DNS, Base Sepolia RPC chain ID, the generated deployment
+artifacts, the service deployment pack, the source-based App Runner pack, and
+the public readiness file. It does not deploy contracts, sign messages,
+broadcast transactions, read secret values, or touch production Bittensor.
 
 ```bash
 cd /home/mekaneeky/repos/SN94-BitSota-live-docs
@@ -163,6 +163,22 @@ means do not invite a nontechnical tester yet. The default host checks are:
 - `coordinator-test.bitsota.com`
 - `attestation-test.bitsota.com`
 - `root-publisher-test.bitsota.com`
+
+The default gas checks are:
+
+- `gas_deployer`: reads only the public `sota-address` tag from
+  `base-sota/test/base-sepolia/deployer`, then checks that address has Base
+  Sepolia ETH.
+- `gas_root_publisher`: reads only the public `sota-address` tag from
+  `base-sota/test/base-sepolia/root-publisher`, then checks that address has
+  Base Sepolia ETH.
+- `gas_test_wallet`: included by the end-to-end operator when a test wallet is
+  configured, so browser-wallet claim smoke cannot start with a wallet that has
+  no Base Sepolia gas.
+
+If any of these are red, fund the listed public address with Base Sepolia test
+ETH and rerun the blocker gate. Do not paste private keys into the blocker
+command; it only needs public addresses and approved secret-handle tags.
 
 Override a host only when the public testnet URL plan changes:
 

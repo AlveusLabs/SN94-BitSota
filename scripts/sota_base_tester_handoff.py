@@ -166,6 +166,21 @@ def _testnet_section(release: dict[str, Any]) -> dict[str, Any]:
     gates = list(release.get("gates") or [])
     blocked = list(release.get("blocked_gates") or [])
     testnet_gates = [gate for gate in gates if dict(gate).get("phase") == "base_sepolia"]
+    blocker_gate = next((dict(gate) for gate in testnet_gates if dict(gate).get("name") == "testnet_blockers"), {})
+    immediate_blockers: list[dict[str, str]] = []
+    if blocker_gate.get("path"):
+        blocker_report = _load_json(Path(str(blocker_gate.get("path"))))
+        for check in blocker_report.get("checks") or []:
+            if not isinstance(check, dict) or check.get("status") == "green":
+                continue
+            immediate_blockers.append(
+                {
+                    "name": str(check.get("name") or ""),
+                    "status": str(check.get("status") or "unknown"),
+                    "detail": str(check.get("detail") or ""),
+                    "remediation": str(check.get("remediation") or ""),
+                }
+            )
     return {
         "ready": bool(release.get("testnet_ok")),
         "status": "green" if release.get("testnet_ok") else "red",
@@ -187,6 +202,7 @@ def _testnet_section(release: dict[str, Any]) -> dict[str, Any]:
             for gate in blocked
             if dict(gate).get("phase") == "base_sepolia"
         ],
+        "immediate_blockers": immediate_blockers,
         "tester_message": (
             "Base Sepolia is ready for a nontechnical MetaMask tester."
             if release.get("testnet_ok")
@@ -321,6 +337,17 @@ def render_markdown(handoff: dict[str, Any]) -> str:
             for gate in blocked:
                 gate = dict(gate)
                 lines.append(f"- {gate.get('name')}: {gate.get('next_action')}")
+        immediate = testnet.get("immediate_blockers") or []
+        if immediate:
+            lines.append("")
+            lines.append("### Immediate Base Sepolia Blockers")
+            lines.append("")
+            for check in immediate:
+                check = dict(check)
+                detail = f"{check.get('name')}: {check.get('detail')}"
+                if check.get("remediation"):
+                    detail += f" Next: {check.get('remediation')}"
+                lines.append(f"- {detail}")
         lines.append("")
         lines.append("### Testnet Steps When Ready")
         lines.append("")
@@ -475,6 +502,13 @@ def render_html(handoff: dict[str, Any]) -> str:
             f"{dict(gate).get('name')}: {dict(gate).get('next_action')}"
             for gate in testnet.get("blocked_gates") or []
         ]
+        immediate_lines = []
+        for check in testnet.get("immediate_blockers") or []:
+            check = dict(check)
+            text = f"{check.get('name')}: {check.get('detail')}"
+            if check.get("remediation"):
+                text += f" Next: {check.get('remediation')}"
+            immediate_lines.append(text)
         blocks.extend(
             [
                 "<h2>Base Sepolia</h2>",
@@ -485,6 +519,8 @@ def render_html(handoff: dict[str, Any]) -> str:
         )
         if blocked_lines:
             blocks.extend(["<h3>Blocked Gates</h3>", f"<ul>{_html_list(blocked_lines)}</ul>"])
+        if immediate_lines:
+            blocks.extend(["<h3>Immediate Base Sepolia Blockers</h3>", f"<ul>{_html_list(immediate_lines)}</ul>"])
         blocks.extend(
             [
                 "<h3>Testnet Steps When Ready</h3>",

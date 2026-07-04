@@ -475,6 +475,8 @@ def _blockers_cmd(args: argparse.Namespace, paths: dict[str, Path]) -> list[str]
         ("root_publisher", args.root_publisher_url),
     ):
         cmd.extend(["--host", f"{name}={value}"])
+    if args.test_wallet_address:
+        cmd.extend(["--gas-address", f"test_wallet={args.test_wallet_address}"])
     return cmd
 
 

@@ -41,6 +41,7 @@ def _args(tmp_path: Path, *, environment: str = "both"):
 
 def _write_inputs(args: argparse.Namespace) -> None:
     claim_proof_report = args.local_report.parent / "local-claim-proof.json"
+    blocker_report = args.local_report.parent / "blockers.json"
     _write_json(
         args.state,
         {
@@ -115,7 +116,7 @@ def _write_inputs(args: argparse.Namespace) -> None:
                     "phase": "base_sepolia",
                     "status": "red",
                     "summary": {"green": 1, "yellow": 0, "red": 12},
-                    "path": "/tmp/blockers.json",
+                    "path": str(blocker_report),
                 },
             ],
             "blocked_gates": [
@@ -136,6 +137,27 @@ def _write_inputs(args: argparse.Namespace) -> None:
             "status": "green",
             "summary": {"green": 8, "yellow": 0, "red": 0},
             "reset_after": True,
+        },
+    )
+    _write_json(
+        blocker_report,
+        {
+            "schema": "sota-base-testnet-blockers/v1",
+            "ok": False,
+            "status": "red",
+            "checks": [
+                {
+                    "name": "gas_deployer",
+                    "status": "red",
+                    "detail": "deployer 0x00000000000000000000000000000000000000aa has 0 ETH on Base Sepolia.",
+                    "remediation": "Fund 0x00000000000000000000000000000000000000aa with Base Sepolia ETH before deployment/browser smoke.",
+                },
+                {
+                    "name": "base_sepolia_rpc",
+                    "status": "green",
+                    "detail": "RPC returned Base Sepolia chain id 84532.",
+                },
+            ],
         },
     )
 
@@ -164,6 +186,7 @@ def test_tester_handoff_contains_local_urls_and_warning(tmp_path: Path) -> None:
     assert handoff["local"]["emission_claim_amount"] == "2 SOTA"
     assert handoff["local"]["self_validation_status"] == "accepted"
     assert handoff["local"]["self_validation_summary"] == "3/3 accepted"
+    assert handoff["testnet"]["immediate_blockers"][0]["name"] == "gas_deployer"
     assert [item["name"] for item in handoff["local"]["peer_validators"]] == ["Bob", "Charlie", "Dave"]
     assert "Never paste a real seed phrase" in markdown
     assert "Local-only private key" in markdown
@@ -174,6 +197,9 @@ def test_tester_handoff_contains_local_urls_and_warning(tmp_path: Path) -> None:
     assert "Mined emission claim amount: 2 SOTA" in markdown
     assert "Peer validators: Bob" in markdown
     assert "Base Sepolia is not ready" in markdown
+    assert "Immediate Base Sepolia Blockers" in markdown
+    assert "gas_deployer" in markdown
+    assert "has 0 ETH on Base Sepolia" in markdown
     assert "<title>SOTA Base Tester Handoff</title>" in html
     assert "Local demo ready" in html
     assert "Aggregate status: red" not in html
@@ -185,6 +211,8 @@ def test_tester_handoff_contains_local_urls_and_warning(tmp_path: Path) -> None:
     assert "Self-validation" in html
     assert "Peer validators" in html
     assert "State-changing claim proof" in html
+    assert "Immediate Base Sepolia Blockers" in html
+    assert "gas_deployer" in html
     assert str(args.local_report.parent / "local-claim-proof.json") in html
     assert "archived pre-reset evidence" in html
 
