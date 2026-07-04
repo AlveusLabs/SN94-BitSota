@@ -1,6 +1,9 @@
 from __future__ import annotations
 
+import pytest
 from substrateinterface import Keypair
+
+pytest.importorskip("PySide6")
 
 from gui.screens.mining.pool_mining_screen import (
     _configured_research_pools,

@@ -130,6 +130,7 @@ def test_submit_claim_uses_explicit_gas_limit(monkeypatch) -> None:
 
     monkeypatch.setattr("gui.merkle_claim_client.SubstrateInterface", _Substrate)
     monkeypatch.setattr("gui.merkle_claim_client.ContractInstance.create_from_address", _fake_create_from_address)
+    monkeypatch.setattr("gui.merkle_claim_client.MerkleClaimClient._cargo_contract_available", lambda self: False)
 
     client = MerkleClaimClient(
         claim_endpoint="http://127.0.0.1:8844",

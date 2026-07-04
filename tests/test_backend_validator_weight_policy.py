@@ -7,6 +7,8 @@ from types import SimpleNamespace
 
 import pytest
 
+pytest.importorskip("torch")
+
 if "bittensor" not in sys.modules:
     sys.modules["bittensor"] = types.SimpleNamespace(
         utils=types.SimpleNamespace(

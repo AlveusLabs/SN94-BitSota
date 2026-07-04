@@ -3,6 +3,10 @@ from __future__ import annotations
 from pathlib import Path
 from types import SimpleNamespace
 
+import pytest
+
+pytest.importorskip("PySide6")
+
 from gui.pool_coldkey_sync import sync_declared_coldkey_to_pool_backend
 from gui.screens.mining.pool_mining_screen import PoolDetailScreen
 from gui.screens.mining_screen import MiningScreen
