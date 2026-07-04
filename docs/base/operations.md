@@ -126,6 +126,7 @@ Publish Base Sepolia instructions only after each gate has evidence:
 | Local demo | One-command local run passes and the reviewer evidence above is saved. |
 | Deployment manifest | One manifest names `base-sepolia`, chain ID, public RPC label, secret handles, source branches, commit SHAs, contract addresses, ABI bundle, service URLs, owners, and rollback owner. Use `docs/base/manifests/base-sepolia-deployment-manifest.template.json` until a deployed Base Sepolia manifest replaces it. |
 | Contracts | SOTA token, vault, root registry, lane registry, genesis distributor, and emission distributor are deployed to Base Sepolia with constructor args and source verification links. |
+| Funding | Deployer, root publisher, and the seeded test wallet have Base Sepolia ETH before deployment, root publication, or browser-wallet smoke. |
 | Roles and custody | Owner, publisher, releaser, pause guardian, and multisig or timelock records are written using public addresses and secret handles only. |
 | Claim/root artifacts | Test-only genesis and emission root artifacts are built from the Base Sepolia manifest and accepted autoresearch self-validation evidence, then finalized with emitted on-chain root IDs before indexer import. |
 | Indexer/API | Testnet API reads from the manifest, catches up contract events, ingests public claim artifacts, and serves eligibility, proof, claim status, root status, and unsigned claim calldata routes. |
@@ -217,6 +218,24 @@ invite a nontechnical tester to the Base Sepolia path yet. Yellow only appears
 for optional ECR repository discovery when the deployment plan might use source
 deploys instead of containers.
 
+## Base Sepolia Funding Gate
+
+Run the read-only funding gate before deployment or browser-wallet smoke. It
+reads only AWS identity, public `sota-address` tags on the approved signer
+secret handles, and Base Sepolia native balances. It never reads private keys,
+signs messages, broadcasts transactions, or touches Base mainnet.
+
+```bash
+cd /home/mekaneeky/repos/SN94-BitSota-live-docs
+python3 scripts/sota_base_testnet_funding.py \
+  --aws-profile moonrocklab-frankfurt \
+  --report-out /home/mekaneeky/repos/.sota-base-testnet/base-sota-testnet-funding.json \
+  --allow-blocked
+```
+
+Green means the deployer, root publisher, and seeded test wallet all have Base
+Sepolia ETH. Red means fund the listed public address and rerun this gate.
+
 ## Source App Runner Pack
 
 Use source-based App Runner first. It uses the existing App Runner GitHub
@@ -249,9 +268,9 @@ access role ARN is provided and `iam:PassRole` works for that role.
 ## Base Sepolia Operator Run
 
 Use the operator command when you want the whole public testnet path attempted
-in order. It generates the service pack, source App Runner pack, blocker report,
-AWS inventory, deployment manifest/env from a compact deployment or fresh deploy, seed
-claim/root artifacts from real autoresearch evidence, root-publish
+in order. It generates the service pack, source App Runner pack, funding
+report, blocker report, AWS inventory, deployment manifest/env from a compact
+deployment or fresh deploy, seed claim/root artifacts from real autoresearch evidence, root-publish
 requests/results, finalized claim artifacts, optional indexer import, browser
 smoke, and release status.
 

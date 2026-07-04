@@ -480,6 +480,31 @@ def _blockers_cmd(args: argparse.Namespace, paths: dict[str, Path]) -> list[str]
     return cmd
 
 
+def _funding_cmd(args: argparse.Namespace, paths: dict[str, Path]) -> list[str]:
+    cmd = [
+        sys.executable,
+        "scripts/sota_base_testnet_funding.py",
+        "--rpc-url",
+        args.rpc_url,
+        "--aws-profile",
+        args.aws_profile,
+        "--region",
+        args.aws_region,
+        "--deployer-secret-id",
+        args.private_key_secret_id,
+        "--root-publisher-secret-id",
+        args.root_publisher_private_key_secret_id,
+        "--local-state",
+        str(args.local_state),
+        "--report-out",
+        str(paths["funding"]),
+        "--allow-blocked",
+    ]
+    if args.test_wallet_address:
+        cmd.extend(["--test-wallet-address", args.test_wallet_address])
+    return cmd
+
+
 def _aws_inventory_cmd(args: argparse.Namespace, paths: dict[str, Path]) -> list[str]:
     cmd = [
         sys.executable,
@@ -690,6 +715,7 @@ def _paths(artifacts_dir: Path) -> dict[str, Path]:
         "apprunner_dir": artifacts_dir / "apprunner",
         "apprunner_source_dir": artifacts_dir / "apprunner-source",
         "apprunner_source_pack": artifacts_dir / "base-sota-testnet-apprunner-source-pack.json",
+        "funding": artifacts_dir / "base-sota-testnet-funding.json",
         "blockers": artifacts_dir / "base-sota-testnet-blockers.json",
         "aws_inventory": artifacts_dir / "base-sota-testnet-aws-inventory.json",
         "rehearsal_report": artifacts_dir / "base-sota-testnet-rehearsal.json",
@@ -886,6 +912,19 @@ def run_operator(args: argparse.Namespace) -> dict[str, Any]:
                 "report": str(paths["apprunner_source_pack"]),
                 "rendered_inputs": str(paths["apprunner_source_dir"]),
             },
+        )
+    )
+
+    funding = _run_command(_funding_cmd(args, paths), timeout=args.timeout)
+    steps.append(
+        _step_from_json_report(
+            "funding",
+            funding,
+            report_path=paths["funding"],
+            expected_schema="sota-base-testnet-funding/v1",
+            success_detail="Verified Base Sepolia funding targets have gas.",
+            failure_remediation="Fund deployer, root publisher, and test wallet with Base Sepolia ETH before deployment/browser smoke.",
+            artifacts={"report": str(paths["funding"])},
         )
     )
 

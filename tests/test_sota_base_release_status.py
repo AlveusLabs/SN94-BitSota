@@ -83,6 +83,7 @@ def test_release_status_full_requires_all_testnet_gates(tmp_path: Path) -> None:
     _write_report(args.testnet_artifacts_dir / "base-sota-testnet-operator-run.json", schema="sota-base-testnet-operator-run/v1", ok=False, status="red")
     _write_report(args.testnet_artifacts_dir / "base-sota-testnet-blockers.json", schema="sota-base-testnet-blockers/v1", ok=False, status="red")
     _write_report(args.testnet_artifacts_dir / "base-sota-testnet-aws-inventory.json", schema="sota-base-testnet-aws-inventory/v1", ok=False, status="red")
+    _write_report(args.testnet_artifacts_dir / "base-sota-testnet-funding.json", schema="sota-base-testnet-funding/v1", ok=False, status="red")
     _write_report(args.testnet_artifacts_dir / "base-sota-testnet-secret-handles.json", schema="sota-base-testnet-secret-bootstrap/v1", ok=False, status="red")
     _write_report(args.testnet_artifacts_dir / "base-sota-testnet-apprunner-source-pack.json", schema="sota-base-testnet-apprunner-source-pack/v1", ok=False, status="yellow")
     _write_report(args.testnet_artifacts_dir / "base-sota-testnet-container-pack.json", schema="sota-base-testnet-container-pack/v1", ok=False, status="yellow")
@@ -99,6 +100,7 @@ def test_release_status_full_requires_all_testnet_gates(tmp_path: Path) -> None:
         "testnet_operator_run",
         "testnet_blockers",
         "testnet_aws_inventory",
+        "testnet_funding",
         "testnet_secret_handles",
         "testnet_apprunner_source_pack",
         "testnet_browser_smoke",
@@ -114,6 +116,7 @@ def test_release_status_full_green_requires_operator_gate(tmp_path: Path) -> Non
     _write_report(args.testnet_artifacts_dir / "base-sota-testnet-operator-run.json", schema="sota-base-testnet-operator-run/v1", ok=True)
     _write_report(args.testnet_artifacts_dir / "base-sota-testnet-blockers.json", schema="sota-base-testnet-blockers/v1", ok=True)
     _write_report(args.testnet_artifacts_dir / "base-sota-testnet-aws-inventory.json", schema="sota-base-testnet-aws-inventory/v1", ok=True)
+    _write_report(args.testnet_artifacts_dir / "base-sota-testnet-funding.json", schema="sota-base-testnet-funding/v1", ok=True)
     _write_report(args.testnet_artifacts_dir / "base-sota-testnet-secret-handles.json", schema="sota-base-testnet-secret-bootstrap/v1", ok=True)
     _write_report(args.testnet_artifacts_dir / "base-sota-testnet-apprunner-source-pack.json", schema="sota-base-testnet-apprunner-source-pack/v1", ok=True)
     _write_report(args.testnet_artifacts_dir / "base-sota-testnet-container-pack.json", schema="sota-base-testnet-container-pack/v1", ok=False, status="yellow")
@@ -131,6 +134,7 @@ def test_release_status_full_green_requires_operator_gate(tmp_path: Path) -> Non
         "testnet_operator_run",
         "testnet_blockers",
         "testnet_aws_inventory",
+        "testnet_funding",
         "testnet_secret_handles",
         "testnet_apprunner_source_pack",
         "testnet_container_pack",

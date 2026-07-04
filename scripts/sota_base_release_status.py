@@ -147,6 +147,14 @@ def default_gates(*, local_report: Path, local_claim_proof: Path, testnet_dir: P
                     next_action="Create or document Base SOTA testnet AWS resources, then rerun scripts/sota_base_testnet_aws_inventory.py.",
                 ),
                 GateSpec(
+                    name="testnet_funding",
+                    phase="base_sepolia",
+                    path=testnet_dir / "base-sota-testnet-funding.json",
+                    expected_schema="sota-base-testnet-funding/v1",
+                    required=True,
+                    next_action="Fund the deployer, root publisher, and test wallet with Base Sepolia ETH, then rerun scripts/sota_base_testnet_funding.py.",
+                ),
+                GateSpec(
                     name="testnet_secret_handles",
                     phase="base_sepolia",
                     path=testnet_dir / "base-sota-testnet-secret-handles.json",

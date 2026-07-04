@@ -138,6 +138,11 @@ def _write_standard_reports(module, paths: dict[str, Path], cmd: list[str]) -> N
             paths["apprunner_source_pack"],
             {"schema": "sota-base-testnet-apprunner-source-pack/v1", "ok": True, "status": "green"},
         )
+    if _has_cmd(cmd, "sota_base_testnet_funding.py"):
+        module._write_json(
+            paths["funding"],
+            {"schema": "sota-base-testnet-funding/v1", "ok": True, "status": "green"},
+        )
     if _has_cmd(cmd, "sota_base_testnet_blockers.py"):
         module._write_json(
             paths["blockers"],
@@ -238,6 +243,8 @@ def test_operator_passes_aws_profile_to_blocker_gate_and_inventory(tmp_path: Pat
         _write_standard_reports(module, paths, cmd)
         if _has_cmd(cmd, "sota_base_testnet_blockers.py"):
             seen["blockers"] = cmd
+        if _has_cmd(cmd, "sota_base_testnet_funding.py"):
+            seen["funding"] = cmd
         if _has_cmd(cmd, "sota_base_testnet_aws_inventory.py"):
             seen["inventory"] = cmd
         return _command_result(cmd)
@@ -247,6 +254,11 @@ def test_operator_passes_aws_profile_to_blocker_gate_and_inventory(tmp_path: Pat
 
     assert "--aws-profile" in seen["blockers"]
     assert seen["blockers"][seen["blockers"].index("--aws-profile") + 1] == "moonrocklab-frankfurt"
+    assert "--aws-profile" in seen["funding"]
+    assert seen["funding"][seen["funding"].index("--aws-profile") + 1] == "moonrocklab-frankfurt"
+    assert "--region" in seen["funding"]
+    assert seen["funding"][seen["funding"].index("--region") + 1] == "us-west-2"
+    assert "--test-wallet-address" in seen["funding"]
     assert "--gas-address" in seen["blockers"]
     assert (
         seen["blockers"][seen["blockers"].index("--gas-address") + 1]
