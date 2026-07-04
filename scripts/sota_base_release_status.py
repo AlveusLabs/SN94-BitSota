@@ -135,6 +135,45 @@ def _local_remote_wallet_status(local_report: Path) -> dict[str, Any]:
     }
 
 
+def _optional_report_status(path: Path, *, expected_schema: str) -> dict[str, Any]:
+    try:
+        report = _load_report(path)
+    except Exception as exc:
+        return {
+            "path": str(path),
+            "schema": None,
+            "ok": False,
+            "status": "red",
+            "message": f"Could not read report: {exc}",
+            "summary": {"green": 0, "yellow": 0, "red": 1},
+        }
+    if report is None:
+        return {
+            "path": str(path),
+            "schema": None,
+            "ok": False,
+            "status": "missing",
+            "message": "Report is missing.",
+            "summary": {"green": 0, "yellow": 0, "red": 0},
+        }
+    schema = str(report.get("schema") or "")
+    schema_ok = schema == expected_schema
+    summary = report.get("summary") if isinstance(report.get("summary"), dict) else {}
+    return {
+        "path": str(path),
+        "schema": schema or None,
+        "ok": bool(report.get("ok")) and schema_ok,
+        "status": "red" if not schema_ok else str(report.get("status") or "red"),
+        "message": str(report.get("message") or ""),
+        "summary": {
+            "green": int(summary.get("green") or 0),
+            "yellow": int(summary.get("yellow") or 0),
+            "red": int(summary.get("red") or 0),
+        },
+        "next_actions": report.get("next_actions") if isinstance(report.get("next_actions"), list) else [],
+    }
+
+
 def default_gates(*, local_report: Path, local_claim_proof: Path, testnet_dir: Path, include_testnet: bool) -> list[GateSpec]:
     gates = [
         GateSpec(
@@ -243,6 +282,10 @@ def run_status(args: argparse.Namespace) -> dict[str, Any]:
     )
     gate_reports = [_gate_status(gate) for gate in gates]
     local_remote_wallet = _local_remote_wallet_status(args.local_report)
+    local_tailscale_preflight = _optional_report_status(
+        args.local_tailscale_preflight,
+        expected_schema="sota-local-tailscale-preflight/v1",
+    )
     local_remote_wallet_gate = {
         "name": "local_remote_wallet",
         "phase": "local",
@@ -286,6 +329,7 @@ def run_status(args: argparse.Namespace) -> dict[str, Any]:
         "local_ok": local_ok,
         "local_remote_wallet_ok": bool(local_remote_wallet.get("ok")),
         "local_remote_wallet": local_remote_wallet,
+        "local_tailscale_preflight": local_tailscale_preflight,
         "testnet_ok": testnet_ok,
         "message": (
             "Local and Base Sepolia gates are green."
@@ -335,6 +379,7 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Aggregate Base SOTA local and Base Sepolia release-gate reports.")
     parser.add_argument("--local-report", type=Path, default=LOCAL_RUN_DIR / "ui-smoke" / "report.json")
     parser.add_argument("--local-claim-proof", type=Path, default=LOCAL_RUN_DIR / "claim-proof" / "latest.json")
+    parser.add_argument("--local-tailscale-preflight", type=Path, default=LOCAL_RUN_DIR / "tailscale-preflight.json")
     parser.add_argument("--testnet-artifacts-dir", type=Path, default=TESTNET_RUN_DIR)
     parser.add_argument("--local-only", action="store_true", help="Only require the local demo gate.")
     parser.add_argument("--json", action="store_true")

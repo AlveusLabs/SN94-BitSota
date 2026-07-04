@@ -41,6 +41,20 @@ def test_launch_claim_proof_runs_reset_after(monkeypatch) -> None:
     assert kwargs["timeout"] == 420
 
 
+def test_refresh_tester_artifacts_runs_tailscale_preflight(monkeypatch) -> None:
+    module = _load_module()
+    calls = []
+
+    monkeypatch.setattr(module, "_run_local_ui_smoke_report", lambda: calls.append("ui"))
+    monkeypatch.setattr(module, "_run_tailscale_preflight_report", lambda: calls.append("tailscale"))
+    monkeypatch.setattr(module, "_generate_release_status_report", lambda: calls.append("release"))
+    monkeypatch.setattr(module, "_generate_handoff", lambda: calls.append("handoff"))
+
+    module._refresh_tester_artifacts()
+
+    assert calls == ["ui", "tailscale", "release", "handoff"]
+
+
 def test_plan_public_share_uses_tailscale_https_urls(monkeypatch) -> None:
     module = _load_module()
 

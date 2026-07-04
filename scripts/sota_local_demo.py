@@ -1074,6 +1074,22 @@ def _run_local_ui_smoke_report() -> None:
     )
 
 
+def _run_tailscale_preflight_report() -> None:
+    subprocess.run(
+        [
+            sys.executable,
+            str(DOCS_REPO / "scripts" / "sota_local_tailscale_preflight.py"),
+            "--report-out",
+            str(RUN_DIR / "tailscale-preflight.json"),
+            "--allow-blocked",
+        ],
+        cwd=DOCS_REPO,
+        check=True,
+        text=True,
+        capture_output=True,
+    )
+
+
 def _run_local_claim_proof_reset() -> None:
     result = subprocess.run(
         [
@@ -1153,6 +1169,7 @@ def _start_handoff() -> None:
 
 def _refresh_tester_artifacts() -> None:
     _run_local_ui_smoke_report()
+    _run_tailscale_preflight_report()
     _generate_release_status_report()
     _generate_handoff()
 

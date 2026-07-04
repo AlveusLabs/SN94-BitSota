@@ -273,6 +273,7 @@ def build_handoff(args: argparse.Namespace) -> dict[str, Any]:
             "local_ok": bool(release.get("local_ok")),
             "local_remote_wallet_ok": bool(release.get("local_remote_wallet_ok")),
             "local_remote_wallet": release.get("local_remote_wallet") or {},
+            "local_tailscale_preflight": release.get("local_tailscale_preflight") or {},
             "testnet_ok": release.get("testnet_ok"),
             "summary": release.get("summary") or {},
         },
@@ -302,10 +303,15 @@ def render_markdown(handoff: dict[str, Any]) -> str:
     lines.append(f"- Local ready: {str(release.get('local_ok')).lower()}")
     lines.append(f"- Remote MetaMask ready: {str(release.get('local_remote_wallet_ok')).lower()}")
     remote_wallet = dict(release.get("local_remote_wallet") or {})
+    tailscale_preflight = dict(release.get("local_tailscale_preflight") or {})
     if remote_wallet:
         lines.append(f"- Remote MetaMask status: {remote_wallet.get('status') or 'unknown'}")
         if remote_wallet.get("message"):
             lines.append(f"- Remote MetaMask detail: {remote_wallet.get('message')}")
+    if tailscale_preflight:
+        lines.append(f"- Tailscale preflight: {tailscale_preflight.get('status') or 'unknown'}")
+        if tailscale_preflight.get("path"):
+            lines.append(f"- Tailscale preflight report: {tailscale_preflight.get('path')}")
     lines.append(f"- Base Sepolia ready: {str(release.get('testnet_ok')).lower()}")
     lines.append(f"- Full local + Base Sepolia status: {release.get('status')}")
     lines.append(f"- Gate summary: {_summary_text(dict(release.get('summary') or {}))}")
@@ -508,6 +514,7 @@ def render_html(handoff: dict[str, Any]) -> str:
         f'<div class="card"><div class="label">Local stack ready</div><div class="value">{escape(str(release.get("local_stack_ok")).lower())}</div></div>',
         f'<div class="card"><div class="label">Local ready</div><div class="value">{escape(str(release.get("local_ok")).lower())}</div></div>',
         f'<div class="card"><div class="label">Remote MetaMask ready</div><div class="value">{escape(str(release.get("local_remote_wallet_ok")).lower())}</div></div>',
+        f'<div class="card"><div class="label">Tailscale preflight</div><div class="value">{escape(str(dict(release.get("local_tailscale_preflight") or {}).get("status") or "unknown"))}</div></div>',
         f'<div class="card"><div class="label">Base Sepolia ready</div><div class="value">{escape(str(release.get("testnet_ok")).lower())}</div></div>',
         "</section>",
         '<section class="audience">',

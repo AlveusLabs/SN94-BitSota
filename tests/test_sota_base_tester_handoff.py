@@ -109,6 +109,14 @@ def _write_inputs(args: argparse.Namespace) -> None:
                 "message": "tester wallet RPC may be rejected by MetaMask from another computer",
                 "next_action": "Relaunch with --share-mode tailscale-https.",
             },
+            "local_tailscale_preflight": {
+                "path": str(args.local_report.parent / "tailscale-preflight.json"),
+                "schema": "sota-local-tailscale-preflight/v1",
+                "ok": False,
+                "status": "red",
+                "message": "Tailscale HTTPS sharing is not ready for remote MetaMask testing.",
+                "summary": {"green": 3, "yellow": 2, "red": 1},
+            },
             "testnet_ok": False,
             "summary": {"green": 2, "yellow": 0, "red": 3},
             "gates": [
@@ -231,6 +239,7 @@ def test_tester_handoff_contains_local_urls_and_warning(tmp_path: Path) -> None:
     assert handoff["release_status"]["local_ok"] is False
     assert handoff["release_status"]["local_remote_wallet_ok"] is False
     assert handoff["release_status"]["local_remote_wallet"]["status"] == "yellow"
+    assert handoff["release_status"]["local_tailscale_preflight"]["status"] == "red"
     assert handoff["local"]["ready"] is False
     assert handoff["local"]["status"] == "green"
     assert handoff["local"]["claims_ui_url"] == "http://100.0.0.1:3000/claims"
@@ -257,6 +266,7 @@ def test_tester_handoff_contains_local_urls_and_warning(tmp_path: Path) -> None:
     assert "Local ready: false" in markdown
     assert "Remote MetaMask ready: false" in markdown
     assert "Remote MetaMask detail: tester wallet RPC may be rejected" in markdown
+    assert "Tailscale preflight: red" in markdown
     assert "Local-only private key" in markdown
     assert "State-changing claim proof: green" in markdown
     assert f"Claim proof report: {args.local_report.parent / 'local-claim-proof.json'}" in markdown
@@ -274,6 +284,7 @@ def test_tester_handoff_contains_local_urls_and_warning(tmp_path: Path) -> None:
     assert "<title>SOTA Base Tester Handoff</title>" in html
     assert "Local demo blocked" in html
     assert "Remote MetaMask ready" in html
+    assert "Tailscale preflight" in html
     assert "Aggregate status: red" not in html
     assert "http://100.0.0.1:3000/claims" in html
     assert "Add SOTA Local Base network" in html

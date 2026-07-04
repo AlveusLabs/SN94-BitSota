@@ -55,6 +55,7 @@ def _args(tmp_path: Path, *, local_only: bool = False):
     return argparse.Namespace(
         local_report=tmp_path / "local" / "report.json",
         local_claim_proof=tmp_path / "local" / "claim-proof.json",
+        local_tailscale_preflight=tmp_path / "local" / "tailscale-preflight.json",
         testnet_artifacts_dir=tmp_path / "testnet",
         local_only=local_only,
     )
