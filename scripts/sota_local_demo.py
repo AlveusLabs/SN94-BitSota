@@ -48,6 +48,14 @@ SERVICE_PORTS = {
     "docs": 9002,
     "handoff": 9003,
 }
+PUBLIC_SERVICE_PORTS = {
+    "claims_ui": 3000,
+    "autoresearch_dashboard": 8000,
+    "indexer_health": 8010,
+    "docs": 9002,
+    "anvil_rpc": 8545,
+    "handoff": 9003,
+}
 ADMIN_TOKEN = "local-admin"
 LANE_ID = "base:sota-local"
 DEMO_MNEMONIC = "test test test test test test test test test test test junk"
@@ -85,8 +93,163 @@ def _tailscale_ip() -> str | None:
     return None
 
 
+def _tailscale_status() -> dict[str, Any]:
+    binary = shutil.which("tailscale")
+    if not binary:
+        return {}
+    try:
+        output = subprocess.check_output([binary, "status", "--json"], text=True, stderr=subprocess.DEVNULL, timeout=3)
+    except Exception:
+        return {}
+    try:
+        payload = json.loads(output or "{}")
+    except json.JSONDecodeError:
+        return {}
+    return payload if isinstance(payload, dict) else {}
+
+
+def _tailscale_dns_name(status: dict[str, Any] | None = None) -> str | None:
+    status = status or _tailscale_status()
+    self_info = dict(status.get("Self") or {})
+    dns_name = str(self_info.get("DNSName") or "").strip().rstrip(".")
+    if dns_name:
+        return dns_name
+    host_name = str(self_info.get("HostName") or "").strip()
+    suffix = str(status.get("MagicDNSSuffix") or "").strip().strip(".")
+    if host_name and suffix:
+        return f"{host_name}.{suffix}"
+    return None
+
+
 def _primary_host() -> str:
     return _tailscale_ip() or "127.0.0.1"
+
+
+def _public_url_set(*, scheme: str, host: str) -> dict[str, str]:
+    def base_url(service: str) -> str:
+        return f"{scheme}://{host}:{PUBLIC_SERVICE_PORTS[service]}"
+
+    return {
+        "claims_ui": f"{base_url('claims_ui')}/claims",
+        "autoresearch_dashboard": f"{base_url('autoresearch_dashboard')}/dashboard",
+        "indexer_health": f"{base_url('indexer_health')}/health",
+        "docs": f"{base_url('docs')}/base/",
+        "anvil_rpc": base_url("anvil_rpc"),
+        "handoff": f"{base_url('handoff')}/",
+    }
+
+
+def _run_tailscale_serve_https(port: int) -> tuple[bool, str]:
+    binary = shutil.which("tailscale")
+    if not binary:
+        return False, "tailscale binary is not installed"
+    try:
+        result = subprocess.run(
+            [
+                binary,
+                "serve",
+                "--bg",
+                "--yes",
+                "--https",
+                str(port),
+                f"http://127.0.0.1:{port}",
+            ],
+            check=False,
+            capture_output=True,
+            text=True,
+            timeout=8,
+        )
+    except subprocess.TimeoutExpired as exc:
+        stdout = exc.stdout.decode("utf-8", errors="replace") if isinstance(exc.stdout, bytes) else (exc.stdout or "")
+        stderr = exc.stderr.decode("utf-8", errors="replace") if isinstance(exc.stderr, bytes) else (exc.stderr or "")
+        detail = (stderr.strip() or stdout.strip() or f"tailscale serve timed out while configuring HTTPS port {port}")
+        return False, detail
+    if result.returncode == 0:
+        return True, ""
+    return False, (result.stderr.strip() or result.stdout.strip() or f"tailscale serve exited {result.returncode}")
+
+
+def _clear_tailscale_serve_https_ports(ports: list[int]) -> None:
+    binary = shutil.which("tailscale")
+    if not binary:
+        return
+    for port in sorted(set(int(port) for port in ports)):
+        subprocess.run(
+            [binary, "serve", "--yes", "--https", str(port), "off"],
+            check=False,
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+
+
+def _plan_public_share(
+    share_mode: str,
+    *,
+    require_remote_wallet: bool,
+    warning_override: str = "",
+) -> tuple[dict[str, str], dict[str, Any]]:
+    host = _primary_host()
+    fallback_urls = _public_url_set(scheme="http", host=host)
+    if share_mode == "http" or not require_remote_wallet:
+        return fallback_urls, {
+            "mode": "http",
+            "status": "green" if host == "127.0.0.1" else "yellow",
+            "host": host,
+            "wallet_rpc_browser_safe": host == "127.0.0.1",
+            "warning": (
+                ""
+                if host == "127.0.0.1"
+                else warning_override
+                or "HTTP Tailscale-IP RPC can be rejected by wallet extensions on another computer; use --share-mode tailscale-https for remote MetaMask testing."
+            ),
+        }
+
+    status = _tailscale_status()
+    dns_name = _tailscale_dns_name(status)
+    if not dns_name:
+        if share_mode == "tailscale-https":
+            raise RuntimeError("Tailscale MagicDNS name is unavailable; cannot publish the local demo over Tailscale Serve HTTPS.")
+        return fallback_urls, {
+            "mode": "http",
+            "status": "yellow",
+            "host": host,
+            "wallet_rpc_browser_safe": host == "127.0.0.1",
+            "warning": "Tailscale MagicDNS is unavailable, so the launcher fell back to HTTP URLs.",
+        }
+
+    return _public_url_set(scheme="https", host=dns_name), {
+        "mode": "tailscale-https",
+        "status": "pending",
+        "host": dns_name,
+        "tailscale_dns_name": dns_name,
+        "configured_https_ports": [],
+        "wallet_rpc_browser_safe": True,
+        "warning": "",
+    }
+
+
+def _activate_public_share(sharing: dict[str, Any]) -> dict[str, Any]:
+    if sharing.get("mode") != "tailscale-https":
+        return sharing
+    configured_ports: list[int] = []
+    errors: list[str] = []
+    for port in sorted(set(PUBLIC_SERVICE_PORTS.values())):
+        ok, detail = _run_tailscale_serve_https(port)
+        if ok:
+            configured_ports.append(port)
+        else:
+            errors.append(f"{port}: {detail}")
+            break
+    if errors:
+        _clear_tailscale_serve_https_ports(configured_ports)
+        raise RuntimeError("Tailscale Serve HTTPS setup failed: " + "; ".join(errors))
+    return {
+        **sharing,
+        "status": "green",
+        "configured_https_ports": configured_ports,
+        "warning": "",
+    }
 
 
 def _json_default(value: Any) -> Any:
@@ -199,6 +362,10 @@ def _wait_for_port_closed(port: int, *, timeout_seconds: float = 10.0) -> None:
 
 
 def stop_stack() -> None:
+    state = _load_json(STATE_PATH)
+    sharing = dict(state.get("sharing") or {})
+    if sharing.get("mode") == "tailscale-https":
+        _clear_tailscale_serve_https_ports([int(port) for port in sharing.get("configured_https_ports") or []])
     pids = _load_json(PIDS_PATH)
     for name, pid in list(pids.items()):
         try:
@@ -853,15 +1020,15 @@ def _start_autoresearch() -> None:
     _wait_http("http://127.0.0.1:8000/readyz")
 
 
-def _start_website(state: dict[str, Any], host: str) -> None:
+def _start_website(state: dict[str, Any], *, browser_rpc_url: str) -> None:
     if _is_port_open("127.0.0.1", 3000):
         raise _port_in_use_error(3000)
     env = {
         "NEXT_PUBLIC_SOTA_CLAIMS_API_URL": "http://127.0.0.1:8010",
         "NEXT_PUBLIC_SOTA_BASE_CHAIN_ID": str(CHAIN_ID),
         "NEXT_PUBLIC_SOTA_BASE_CHAIN_NAME": "SOTA Local Base",
-        "NEXT_PUBLIC_SOTA_BASE_RPC_URL": f"http://{host}:8545",
-        "NEXT_PUBLIC_SOTA_BASE_EXPLORER_URL": f"http://{host}:8545",
+        "NEXT_PUBLIC_SOTA_BASE_RPC_URL": browser_rpc_url,
+        "NEXT_PUBLIC_SOTA_BASE_EXPLORER_URL": browser_rpc_url,
         "NEXT_PUBLIC_SOTA_ENVIRONMENT": "local",
         "NEXT_PUBLIC_SOTA_DEMO_ENABLED": "true",
         "NEXT_PUBLIC_SOTA_DEMO_EVM_ADDRESS": state["accounts"]["alice_reward"],
@@ -990,43 +1157,74 @@ def _refresh_tester_artifacts() -> None:
     _generate_handoff()
 
 
-def start_stack(*, website: bool = True, docs: bool = True, hold: bool = True, claim_proof: bool = False) -> dict[str, Any]:
+def start_stack(
+    *,
+    website: bool = True,
+    docs: bool = True,
+    hold: bool = True,
+    claim_proof: bool = False,
+    share_mode: str = "auto",
+    share_warning_override: str = "",
+) -> dict[str, Any]:
     RUN_DIR.mkdir(parents=True, exist_ok=True)
     stop_stack()
-    _reset_runtime_state()
-    _start_anvil()
-    state = deploy_contracts()
-    _write_json(STATE_PATH, state)
-    _start_indexer(state)
-    state = seed_genesis_onchain_and_indexer(state)
-    _start_autoresearch()
-    state = seed_autoresearch_and_emission(state)
-    state = publish_emission_onchain_and_indexer(state)
-    host = _primary_host()
-    state["urls"] = {
-        "claims_ui": f"http://{host}:3000/claims",
-        "autoresearch_dashboard": f"http://{host}:8000/dashboard",
-        "indexer_health": f"http://{host}:8010/health",
-        "docs": f"http://{host}:9002/base/",
-        "anvil_rpc": f"http://{host}:8545",
-    }
-    if website:
-        _start_website(state, host)
-    if docs:
-        _start_docs()
-    if website and docs:
+    try:
+        _reset_runtime_state()
+        _start_anvil()
+        state = deploy_contracts()
         _write_json(STATE_PATH, state)
-        _refresh_tester_artifacts()
-        _start_handoff()
-        state["urls"]["handoff"] = f"http://{host}:9003/"
-    _write_json(STATE_PATH, state)
-    if website and docs:
-        _refresh_tester_artifacts()
-        if claim_proof:
-            _print("running state-changing local claim proof and resetting to a fresh claimable stack...")
-            _run_local_claim_proof_reset()
-            state = _load_json(STATE_PATH)
+        _start_indexer(state)
+        state = seed_genesis_onchain_and_indexer(state)
+        _start_autoresearch()
+        state = seed_autoresearch_and_emission(state)
+        state = publish_emission_onchain_and_indexer(state)
+        urls, sharing = _plan_public_share(
+            share_mode,
+            require_remote_wallet=website and docs,
+            warning_override=share_warning_override,
+        )
+        state["urls"] = urls
+        state["sharing"] = sharing
+        if website:
+            _start_website(state, browser_rpc_url=urls["anvil_rpc"])
+        if docs:
+            _start_docs()
+        if website and docs:
+            _write_json(STATE_PATH, state)
+            _generate_handoff()
+            _start_handoff()
+            try:
+                sharing = _activate_public_share(sharing)
+            except RuntimeError as exc:
+                if share_mode == "auto":
+                    fallback_warning = (
+                        "Tailscale Serve HTTPS is unavailable, so this run is using HTTP Tailscale-IP URLs. "
+                        f"{exc}. Enable Tailscale Serve for this node, run `sudo tailscale set --operator=$USER` once if the CLI reports operator access denied, then relaunch with `./scripts/sota_local_demo.py launch --share-mode tailscale-https` for remote MetaMask testing."
+                    )
+                    _print(f"Tailscale Serve HTTPS unavailable, falling back to HTTP local URLs: {exc}")
+                    stop_stack()
+                    return start_stack(
+                        website=website,
+                        docs=docs,
+                        hold=hold,
+                        claim_proof=claim_proof,
+                        share_mode="http",
+                        share_warning_override=fallback_warning,
+                    )
+                raise
+            state["sharing"] = sharing
+            _write_json(STATE_PATH, state)
+        _write_json(STATE_PATH, state)
+        if website and docs:
             _refresh_tester_artifacts()
+            if claim_proof:
+                _print("running state-changing local claim proof and resetting to a fresh claimable stack...")
+                _run_local_claim_proof_reset()
+                state = _load_json(STATE_PATH)
+                _refresh_tester_artifacts()
+    except Exception:
+        stop_stack()
+        raise
     print_summary(state)
     if hold:
         try:
@@ -1039,6 +1237,7 @@ def start_stack(*, website: bool = True, docs: bool = True, hold: bool = True, c
 
 def print_summary(state: dict[str, Any]) -> None:
     urls = state.get("urls", {})
+    sharing = dict(state.get("sharing") or {})
     _print("\nSOTA Base local demo is ready.")
     _print(f"Claims UI: {urls.get('claims_ui', 'http://127.0.0.1:3000/claims')}")
     _print(f"Autoresearch dashboard: {urls.get('autoresearch_dashboard', 'http://127.0.0.1:8000/dashboard')}")
@@ -1046,6 +1245,10 @@ def print_summary(state: dict[str, Any]) -> None:
     if urls.get("handoff"):
         _print(f"Tester handoff: {urls['handoff']}")
     _print(f"Anvil RPC for MetaMask: {urls.get('anvil_rpc', ANVIL_RPC_LOCAL)}")
+    if sharing:
+        _print(f"Share mode: {sharing.get('mode', 'unknown')} ({sharing.get('status', 'unknown')})")
+        if sharing.get("warning"):
+            _print(f"Share warning: {sharing['warning']}")
     _print("\nImport this local-only account in MetaMask:")
     _print(f"Private key: {ANVIL_PRIVATE_KEYS['alice_reward']}")
     _print(f"Address: {state['accounts']['alice_reward']}")
@@ -1123,10 +1326,22 @@ def main() -> int:
         action="store_true",
         help="skip the state-changing local claim proof; used by the proof reset path",
     )
+    launch.add_argument(
+        "--share-mode",
+        choices=("auto", "http", "tailscale-https"),
+        default="auto",
+        help="how to publish browser-facing local URLs; auto uses Tailscale Serve HTTPS when available",
+    )
     start = sub.add_parser("start", help="start the full local stack and keep it running")
     start.add_argument("--no-website", action="store_true", help="skip Next.js claims UI")
     start.add_argument("--no-docs", action="store_true", help="skip MkDocs")
     start.add_argument("--detach", action="store_true", help="start the full stack and return after readiness checks")
+    start.add_argument(
+        "--share-mode",
+        choices=("auto", "http", "tailscale-https"),
+        default="auto",
+        help="how to publish browser-facing local URLs; auto uses Tailscale Serve HTTPS when available",
+    )
     sub.add_parser("stop", help="stop processes started by this launcher")
     sub.add_parser("status", help="print the last demo state")
     sub.add_parser("smoke", help="run a noninteractive local E2E smoke and stop")
@@ -1153,10 +1368,21 @@ def main() -> int:
             command.append("--skip-screenshot")
         return subprocess.call(command, cwd=DOCS_REPO)
     if args.command == "launch":
-        start_stack(website=True, docs=True, hold=False, claim_proof=not args.skip_claim_proof)
+        start_stack(
+            website=True,
+            docs=True,
+            hold=False,
+            claim_proof=not args.skip_claim_proof,
+            share_mode=args.share_mode,
+        )
         return 0
     if args.command == "start":
-        start_stack(website=not args.no_website, docs=not args.no_docs, hold=not args.detach)
+        start_stack(
+            website=not args.no_website,
+            docs=not args.no_docs,
+            hold=not args.detach,
+            share_mode=args.share_mode,
+        )
         return 0
     return 1
 

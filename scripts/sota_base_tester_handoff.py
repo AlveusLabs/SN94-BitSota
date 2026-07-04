@@ -54,6 +54,7 @@ def _format_sota_units(value: Any) -> str:
 
 def _local_section(state: dict[str, Any], release: dict[str, Any], local_report: dict[str, Any]) -> dict[str, Any]:
     urls = dict(state.get("urls") or {})
+    sharing = dict(state.get("sharing") or {})
     genesis = dict(state.get("genesis") or {})
     accounts = dict(state.get("accounts") or {})
     autoresearch = dict(state.get("autoresearch") or {})
@@ -116,6 +117,11 @@ def _local_section(state: dict[str, Any], release: dict[str, Any], local_report:
         "docs_url": urls.get("docs") or "",
         "autoresearch_dashboard_url": urls.get("autoresearch_dashboard") or "",
         "anvil_rpc_url": urls.get("anvil_rpc") or "",
+        "share_mode": sharing.get("mode") or "",
+        "share_status": sharing.get("status") or "",
+        "share_warning": sharing.get("warning") or "",
+        "wallet_rpc_browser_safe": bool(sharing.get("wallet_rpc_browser_safe")),
+        "tailscale_dns_name": sharing.get("tailscale_dns_name") or "",
         "chain_id": chain_id,
         "chain_id_hex": hex(chain_id),
         "network_name": "SOTA Local Base",
@@ -312,6 +318,12 @@ def render_markdown(handoff: dict[str, Any]) -> str:
         lines.append(f"- Docs: {local.get('docs_url')}")
         lines.append(f"- Autoresearch dashboard: {local.get('autoresearch_dashboard_url')}")
         lines.append(f"- MetaMask RPC URL: {local.get('anvil_rpc_url')}")
+        lines.append(f"- Share mode: {local.get('share_mode') or 'unknown'} ({local.get('share_status') or 'unknown'})")
+        lines.append(f"- Wallet RPC browser-safe: {str(local.get('wallet_rpc_browser_safe')).lower()}")
+        if local.get("tailscale_dns_name"):
+            lines.append(f"- Tailscale DNS: {local.get('tailscale_dns_name')}")
+        if local.get("share_warning"):
+            lines.append(f"- Share warning: {local.get('share_warning')}")
         lines.append(f"- MetaMask chain ID: {local.get('chain_id')}")
         lines.append(f"- Wallet address: {local.get('wallet_address')}")
         lines.append(f"- Local-only private key: `{local.get('local_only_private_key')}`")
@@ -509,6 +521,7 @@ def render_html(handoff: dict[str, Any]) -> str:
                 f'<div class="card"><div class="label">Docs</div><div class="value"><a href="{escape(str(local.get("docs_url")))}">{escape(str(local.get("docs_url")))}</a></div></div>',
                 f'<div class="card"><div class="label">Autoresearch dashboard</div><div class="value"><a href="{escape(str(local.get("autoresearch_dashboard_url")))}">{escape(str(local.get("autoresearch_dashboard_url")))}</a></div></div>',
                 f'<div class="card"><div class="label">MetaMask RPC URL</div><div class="value">{escape(str(local.get("anvil_rpc_url")))}</div></div>',
+                f'<div class="card"><div class="label">Share mode</div><div class="value">{escape(str(local.get("share_mode") or "unknown"))} ({escape(str(local.get("share_status") or "unknown"))})<br>Wallet RPC browser-safe: {escape(str(local.get("wallet_rpc_browser_safe")).lower())}</div></div>',
                 f'<div class="card"><div class="label">MetaMask chain ID</div><div class="value">{escape(str(local.get("chain_id")))}</div></div>',
                 f'<div class="card"><div class="label">Wallet address</div><div class="value">{escape(str(local.get("wallet_address")))}</div></div>',
                 f'<div class="card"><div class="label">Local-only private key</div><div class="value"><code>{escape(str(local.get("local_only_private_key")))}</code></div></div>',
@@ -532,6 +545,19 @@ def render_html(handoff: dict[str, Any]) -> str:
                 "<li>Verify the emission is backed by accepted peer self-validation evidence from other local users before claiming.</li>",
                 "</ul>",
                 "</div>",
+            ]
+        )
+        if local.get("share_warning"):
+            blocks.extend(
+                [
+                    '<div class="flow">',
+                    "<h3>Remote wallet note</h3>",
+                    f"<p>{escape(str(local.get('share_warning')))}</p>",
+                    "</div>",
+                ]
+            )
+        blocks.extend(
+            [
                 '<div class="actions">',
                 '<button id="add-local-network" type="button">Add SOTA Local Base network</button>',
                 '<button id="copy-local-key" class="secondary" type="button">Copy local-only key</button>',

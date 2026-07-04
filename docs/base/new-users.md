@@ -23,7 +23,9 @@
 
 Open the `Tester handoff` URL printed by the launcher. It shows the local-only
 wallet, the local network button, the claim UI link, and the exact amounts the
-tester should see.
+tester should see. If someone is testing from another computer on the same
+Tailscale, the handoff should show `tailscale-https` share mode and an
+`https://...:8545` MetaMask RPC URL.
 
 <div class="bitsota-path-grid">
   <section class="bitsota-panel">

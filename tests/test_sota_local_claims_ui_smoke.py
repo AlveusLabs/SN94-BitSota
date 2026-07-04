@@ -122,6 +122,31 @@ def test_validate_handoff_page_accepts_required_copy(monkeypatch) -> None:
     assert checks[0]["status"] == "green"
 
 
+def test_validate_tester_share_accepts_tailscale_https_rpc() -> None:
+    module = _load_module()
+    state = _state()
+    state["urls"]["claims_ui"] = "https://sota-host.example.ts.net:3000/claims"
+    state["urls"]["anvil_rpc"] = "https://sota-host.example.ts.net:8545"
+    state["sharing"] = {"mode": "tailscale-https", "wallet_rpc_browser_safe": True}
+
+    checks = module.validate_tester_share(state)
+
+    assert checks[0]["status"] == "green"
+
+
+def test_validate_tester_share_warns_on_http_tailscale_ip_rpc() -> None:
+    module = _load_module()
+    state = _state()
+    state["urls"]["claims_ui"] = "http://100.64.0.10:3000/claims"
+    state["urls"]["anvil_rpc"] = "http://100.64.0.10:8545"
+    state["sharing"] = {"mode": "http", "wallet_rpc_browser_safe": False}
+
+    checks = module.validate_tester_share(state)
+
+    assert checks[0]["status"] == "yellow"
+    assert "--share-mode tailscale-https" in checks[0]["remediation"]
+
+
 def test_validate_api_payloads_accepts_complete_local_demo_payloads() -> None:
     module = _load_module()
     state = _state()

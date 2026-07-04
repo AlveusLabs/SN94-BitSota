@@ -86,22 +86,32 @@ changes after the claim confirms.
 ## Expected Output
 
 A successful run prints a ready message and a URL block. Use the URLs from your
-terminal. If Tailscale is available, the launcher prints Tailscale URLs that
-another computer on the same tailnet can open.
+terminal. When Tailscale MagicDNS is available, the launcher publishes the
+browser-facing services with Tailscale Serve HTTPS so another computer on the
+same tailnet can open the handoff and MetaMask can use an HTTPS local RPC URL.
 
 ```text
 SOTA Base local demo is ready.
 
-Claims UI:              http://100.x.y.z:3000/claims
-Autoresearch dashboard: http://100.x.y.z:8000/dashboard
-Docs:                   http://100.x.y.z:9002/base/
-Tester handoff:         http://100.x.y.z:9003/
-Anvil RPC for MetaMask: http://100.x.y.z:8545
+Claims UI:              https://sota-host.example.ts.net:3000/claims
+Autoresearch dashboard: https://sota-host.example.ts.net:8000/dashboard
+Docs:                   https://sota-host.example.ts.net:9002/base/
+Tester handoff:         https://sota-host.example.ts.net:9003/
+Anvil RPC for MetaMask: https://sota-host.example.ts.net:8545
+Share mode:             tailscale-https (green)
 
 Import this local-only account in MetaMask:
 Private key: 0x...
 Address: 0x...
 Old coldkey for genesis lookup: 5...
+```
+
+If the printed share mode is `http`, the demo still works on the machine that
+started it. For another computer on Tailscale, rerun:
+
+```bash
+cd /home/mekaneeky/repos/SN94-BitSota-live-docs
+./scripts/sota_local_demo.py launch --share-mode tailscale-https
 ```
 
 ## Success Checklist
@@ -113,7 +123,8 @@ You know the demo is working when you can do these steps:
    indexer sync, local contract roles, autoresearch backend, and
    self-validation evidence through the same browser proxy routes.
 3. Import the printed local-only private key into MetaMask.
-4. Add the printed Anvil RPC as the wallet network.
+4. Add the printed Anvil RPC as the wallet network. For another Tailscale
+   computer, the RPC URL should be `https://...:8545`.
 5. Use the printed old coldkey and address to look up the genesis claim.
 6. Submit the genesis claim and see the local SOTA balance card update.
 7. Load the mined emission for the same EVM address.
@@ -133,8 +144,9 @@ cd /home/mekaneeky/repos/SN94-BitSota-live-docs
 
 This checks the actual claims page, the local readiness proxy routes, the
 website proxy to the claims indexer, the website proxy to autoresearch
-self-validation evidence, the Base docs pages a tester follows, and unsigned
-transaction payload generation. It also writes a report to
+self-validation evidence, the tester-facing wallet RPC URL, the Base docs pages
+a tester follows, and unsigned transaction payload generation. It also writes a
+report to
 `/home/mekaneeky/repos/.sota-base-local/ui-smoke/report.json` and, when Firefox
 is available, a screenshot to
 `/home/mekaneeky/repos/.sota-base-local/ui-smoke/claims-page.png`.
@@ -147,12 +159,12 @@ python3 scripts/sota_base_tester_handoff.py --environment local
 ```
 
 The launcher also serves the handoff at the printed `Tester handoff` URL. The
-handoff contains the live claims URL, docs URL, MetaMask RPC URL, chain ID,
-local-only wallet, old coldkey, and plain-English steps. It is generated from
-the current local state and smoke report so the URLs and pass/fail status do
-not drift from the running demo. Running the handoff generator without custom
-output paths refreshes that served copy automatically when the handoff includes
-local content.
+handoff contains the live claims URL, docs URL, MetaMask RPC URL, share mode,
+chain ID, local-only wallet, old coldkey, and plain-English steps. It is
+generated from the current local state and smoke report so the URLs and
+pass/fail status do not drift from the running demo. Running the handoff
+generator without custom output paths refreshes that served copy automatically
+when the handoff includes local content.
 
 For a nontechnical reader, the important point is simple: the app shows who can
 claim, why they can claim, and how the claim is verified before SOTA is

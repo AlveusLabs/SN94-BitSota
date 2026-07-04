@@ -48,10 +48,16 @@ def _write_inputs(args: argparse.Namespace) -> None:
         {
             "chain_id": 31337,
             "urls": {
-                "claims_ui": "http://100.0.0.1:3000/claims",
-                "docs": "http://100.0.0.1:9002/base/",
-                "autoresearch_dashboard": "http://100.0.0.1:8000/dashboard",
-                "anvil_rpc": "http://100.0.0.1:8545",
+                "claims_ui": "https://sota-host.example.ts.net:3000/claims",
+                "docs": "https://sota-host.example.ts.net:9002/base/",
+                "autoresearch_dashboard": "https://sota-host.example.ts.net:8000/dashboard",
+                "anvil_rpc": "https://sota-host.example.ts.net:8545",
+            },
+            "sharing": {
+                "mode": "tailscale-https",
+                "status": "green",
+                "tailscale_dns_name": "sota-host.example.ts.net",
+                "wallet_rpc_browser_safe": True,
             },
             "accounts": {"alice_reward": "0x3C44CdDdB6a900fa2b585dd299e03d12FA4293BC"},
             "genesis": {
@@ -215,8 +221,11 @@ def test_tester_handoff_contains_local_urls_and_warning(tmp_path: Path) -> None:
     assert handoff["schema"] == "sota-base-tester-handoff/v1"
     assert handoff["local"]["ready"] is True
     assert handoff["local"]["status"] == "green"
-    assert handoff["local"]["claims_ui_url"] == "http://100.0.0.1:3000/claims"
+    assert handoff["local"]["claims_ui_url"] == "https://sota-host.example.ts.net:3000/claims"
     assert handoff["local"]["chain_id_hex"] == "0x7a69"
+    assert handoff["local"]["share_mode"] == "tailscale-https"
+    assert handoff["local"]["wallet_rpc_browser_safe"] is True
+    assert handoff["local"]["tailscale_dns_name"] == "sota-host.example.ts.net"
     assert [item["name"] for item in handoff["local"]["local_gates"]] == ["local_demo", "local_claim_proof"]
     assert handoff["local"]["smoke_status"] == "green"
     assert handoff["local"]["claim_proof_status"] == "green"
@@ -250,8 +259,9 @@ def test_tester_handoff_contains_local_urls_and_warning(tmp_path: Path) -> None:
     assert "<title>SOTA Base Tester Handoff</title>" in html
     assert "Local demo ready" in html
     assert "Aggregate status: red" not in html
-    assert "http://100.0.0.1:3000/claims" in html
+    assert "https://sota-host.example.ts.net:3000/claims" in html
     assert "Add SOTA Local Base network" in html
+    assert "Wallet RPC browser-safe: true" in html
     assert "Copy local-only key" in html
     assert "Open autoresearch dashboard" in html
     assert "wallet_addEthereumChain" in html

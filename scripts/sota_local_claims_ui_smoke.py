@@ -13,7 +13,7 @@ import tempfile
 import time
 from typing import Any
 from urllib.error import HTTPError, URLError
-from urllib.parse import quote, urlencode, urljoin
+from urllib.parse import quote, urlencode, urljoin, urlparse
 from urllib.request import Request, urlopen
 
 
@@ -321,6 +321,43 @@ def validate_handoff_page(targets: dict[str, str], *, request_timeout: float) ->
     ]
 
 
+def validate_tester_share(state: dict[str, Any]) -> list[dict[str, str]]:
+    urls = dict(state.get("urls") or {})
+    sharing = dict(state.get("sharing") or {})
+    rpc_url = str(urls.get("anvil_rpc") or "")
+    claims_url = str(urls.get("claims_ui") or "")
+    if not rpc_url or not claims_url:
+        return [
+            _check(
+                "tester_wallet_rpc",
+                False,
+                "tester URLs are missing the claims UI or local RPC URL",
+                remediation="Relaunch the local demo so it regenerates state URLs for the handoff and claims UI.",
+            )
+        ]
+    parsed = urlparse(rpc_url)
+    host = (parsed.hostname or "").lower()
+    browser_safe = (
+        parsed.scheme == "https"
+        and bool(sharing.get("wallet_rpc_browser_safe"))
+    ) or (parsed.scheme == "http" and host in {"127.0.0.1", "localhost"})
+    if browser_safe:
+        return [
+            _check(
+                "tester_wallet_rpc",
+                True,
+                f"tester wallet RPC is browser-safe for share mode {sharing.get('mode') or 'local'}",
+            )
+        ]
+    return [
+        _yellow(
+            "tester_wallet_rpc",
+            f"tester wallet RPC may be rejected by MetaMask from another computer: {rpc_url}",
+            remediation="Relaunch with ./scripts/sota_local_demo.py launch --share-mode tailscale-https for remote Tailscale MetaMask testing.",
+        )
+    ]
+
+
 def _raw_credit(payload: dict[str, Any], key: str) -> str:
     return str(dict(dict(payload.get("credits") or {}).get(key) or {}).get("raw") or "")
 
@@ -533,6 +570,7 @@ def run_smoke(
     checks = validate_page_html(html)
     checks.extend(validate_live_docs_pages(targets, request_timeout=request_timeout))
     checks.extend(validate_handoff_page(targets, request_timeout=request_timeout))
+    checks.extend(validate_tester_share(state))
     checks.extend(
         validate_api_payloads(
             state,
