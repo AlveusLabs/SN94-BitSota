@@ -86,9 +86,10 @@ changes after the claim confirms.
 ## Expected Output
 
 A successful run prints a ready message and a URL block. Use the URLs from your
-terminal. When Tailscale MagicDNS is available, the launcher publishes the
-browser-facing services with Tailscale Serve HTTPS so another computer on the
-same tailnet can open the handoff and MetaMask can use an HTTPS local RPC URL.
+terminal. By default, the launcher tries Tailscale Serve HTTPS for another
+computer on the same tailnet. If that is not available, it falls back to
+wallet-safe `127.0.0.1` URLs for a tester using MetaMask on the same computer
+that started the demo.
 
 ```text
 SOTA Base local demo is ready.
@@ -106,13 +107,18 @@ Address: 0x...
 Old coldkey for genesis lookup: 5...
 ```
 
-If the printed share mode is `http`, the demo still works on the machine that
-started it. For another computer on Tailscale, rerun:
+If the printed share mode is `localhost`, run the browser and MetaMask on the
+same computer that started the launcher. For another computer on Tailscale,
+first enable Tailscale Serve/HTTPS for this node, then rerun:
 
 ```bash
 cd /home/mekaneeky/repos/SN94-BitSota-live-docs
 ./scripts/sota_local_demo.py launch --share-mode tailscale-https
 ```
+
+`--share-mode http` exposes HTTP Tailscale-IP URLs for reading docs or the
+handoff from another tailnet computer, but wallet extensions can reject that RPC
+URL. Use `tailscale-https` for a remote MetaMask test.
 
 ## Success Checklist
 
@@ -123,8 +129,9 @@ You know the demo is working when you can do these steps:
    indexer sync, local contract roles, autoresearch backend, and
    self-validation evidence through the same browser proxy routes.
 3. Import the printed local-only private key into MetaMask.
-4. Add the printed Anvil RPC as the wallet network. For another Tailscale
-   computer, the RPC URL should be `https://...:8545`.
+4. Add the printed Anvil RPC as the wallet network. On the same computer this
+   should be `http://127.0.0.1:8545`. For another Tailscale computer, the RPC
+   URL should be `https://...:8545`.
 5. Use the printed old coldkey and address to look up the genesis claim.
 6. Submit the genesis claim and see the local SOTA balance card update.
 7. Load the mined emission for the same EVM address.
@@ -159,8 +166,9 @@ python3 scripts/sota_base_tester_handoff.py --environment local
 ```
 
 The launcher also serves the handoff at the printed `Tester handoff` URL. The
-handoff contains the live claims URL, docs URL, MetaMask RPC URL, share mode,
-chain ID, local-only wallet, old coldkey, and plain-English steps. It is
+handoff contains the live claims URL, docs URL, local MetaMask status, remote
+Tailscale MetaMask status, RPC URL, share mode, chain ID, local-only wallet,
+old coldkey, and plain-English steps. It is
 generated from the current local state and smoke report so the URLs and
 pass/fail status do not drift from the running demo. Running the handoff
 generator without custom output paths refreshes that served copy automatically
@@ -248,8 +256,10 @@ Use these checks for local release readiness:
 3. `./scripts/sota_local_demo.py ui-smoke --skip-screenshot` reruns the
    browser-facing readiness checks after code or config changes.
 
-The release status report requires both the UI smoke report and the latest
-local claim proof report before it marks `local_ok` as true.
+The release status report requires the UI smoke report, the latest local claim
+proof report, and a browser-safe local MetaMask RPC URL before it marks
+`local_ok` as true. Remote Tailscale MetaMask readiness is reported separately
+by the Tailscale preflight.
 
 ## Escalation
 

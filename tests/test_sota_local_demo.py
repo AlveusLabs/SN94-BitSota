@@ -77,6 +77,35 @@ def test_plan_public_share_uses_tailscale_https_urls(monkeypatch) -> None:
     assert sharing["wallet_rpc_browser_safe"] is True
 
 
+def test_plan_public_share_auto_falls_back_to_wallet_safe_localhost(monkeypatch) -> None:
+    module = _load_module()
+
+    monkeypatch.setattr(module, "_primary_host", lambda: "100.64.0.10")
+    monkeypatch.setattr(module, "_tailscale_status", lambda: {})
+
+    urls, sharing = module._plan_public_share("auto", require_remote_wallet=True)
+
+    assert urls["claims_ui"] == "http://127.0.0.1:3000/claims"
+    assert urls["anvil_rpc"] == "http://127.0.0.1:8545"
+    assert sharing["mode"] == "localhost"
+    assert sharing["status"] == "green"
+    assert sharing["wallet_rpc_browser_safe"] is True
+    assert "only work on the computer running the demo" in sharing["warning"]
+
+
+def test_plan_public_share_http_can_expose_tailscale_ip_with_wallet_warning(monkeypatch) -> None:
+    module = _load_module()
+
+    monkeypatch.setattr(module, "_primary_host", lambda: "100.64.0.10")
+
+    urls, sharing = module._plan_public_share("http", require_remote_wallet=True)
+
+    assert urls["claims_ui"] == "http://100.64.0.10:3000/claims"
+    assert sharing["mode"] == "http"
+    assert sharing["status"] == "yellow"
+    assert sharing["wallet_rpc_browser_safe"] is False
+
+
 def test_plan_public_share_forced_tailscale_https_fails_without_dns(monkeypatch) -> None:
     module = _load_module()
     monkeypatch.setattr(module, "_primary_host", lambda: "100.64.0.10")

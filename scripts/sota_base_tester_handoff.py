@@ -271,6 +271,8 @@ def build_handoff(args: argparse.Namespace) -> dict[str, Any]:
             "status": str(release.get("status") or "unknown"),
             "local_stack_ok": bool(release.get("local_stack_ok")),
             "local_ok": bool(release.get("local_ok")),
+            "local_wallet_ok": bool(release.get("local_wallet_ok")),
+            "local_wallet": release.get("local_wallet") or {},
             "local_remote_wallet_ok": bool(release.get("local_remote_wallet_ok")),
             "local_remote_wallet": release.get("local_remote_wallet") or {},
             "local_tailscale_preflight": release.get("local_tailscale_preflight") or {},
@@ -301,13 +303,19 @@ def render_markdown(handoff: dict[str, Any]) -> str:
     lines.append("")
     lines.append(f"- Local stack ready: {str(release.get('local_stack_ok')).lower()}")
     lines.append(f"- Local ready: {str(release.get('local_ok')).lower()}")
-    lines.append(f"- Remote MetaMask ready: {str(release.get('local_remote_wallet_ok')).lower()}")
+    lines.append(f"- Local MetaMask ready: {str(release.get('local_wallet_ok')).lower()}")
+    lines.append(f"- Remote Tailscale MetaMask ready: {str(release.get('local_remote_wallet_ok')).lower()}")
+    local_wallet = dict(release.get("local_wallet") or {})
     remote_wallet = dict(release.get("local_remote_wallet") or {})
+    if local_wallet:
+        lines.append(f"- Local MetaMask status: {local_wallet.get('status') or 'unknown'}")
+        if local_wallet.get("message"):
+            lines.append(f"- Local MetaMask detail: {local_wallet.get('message')}")
     tailscale_preflight = dict(release.get("local_tailscale_preflight") or {})
     if remote_wallet:
-        lines.append(f"- Remote MetaMask status: {remote_wallet.get('status') or 'unknown'}")
+        lines.append(f"- Remote Tailscale MetaMask status: {remote_wallet.get('status') or 'unknown'}")
         if remote_wallet.get("message"):
-            lines.append(f"- Remote MetaMask detail: {remote_wallet.get('message')}")
+            lines.append(f"- Remote Tailscale MetaMask detail: {remote_wallet.get('message')}")
     if tailscale_preflight:
         lines.append(f"- Tailscale preflight: {tailscale_preflight.get('status') or 'unknown'}")
         if tailscale_preflight.get("path"):
@@ -513,7 +521,8 @@ def render_html(handoff: dict[str, Any]) -> str:
         '<section class="summary">',
         f'<div class="card"><div class="label">Local stack ready</div><div class="value">{escape(str(release.get("local_stack_ok")).lower())}</div></div>',
         f'<div class="card"><div class="label">Local ready</div><div class="value">{escape(str(release.get("local_ok")).lower())}</div></div>',
-        f'<div class="card"><div class="label">Remote MetaMask ready</div><div class="value">{escape(str(release.get("local_remote_wallet_ok")).lower())}</div></div>',
+        f'<div class="card"><div class="label">Local MetaMask ready</div><div class="value">{escape(str(release.get("local_wallet_ok")).lower())}</div></div>',
+        f'<div class="card"><div class="label">Remote Tailscale MetaMask ready</div><div class="value">{escape(str(release.get("local_remote_wallet_ok")).lower())}</div></div>',
         f'<div class="card"><div class="label">Tailscale preflight</div><div class="value">{escape(str(dict(release.get("local_tailscale_preflight") or {}).get("status") or "unknown"))}</div></div>',
         f'<div class="card"><div class="label">Base Sepolia ready</div><div class="value">{escape(str(release.get("testnet_ok")).lower())}</div></div>',
         "</section>",

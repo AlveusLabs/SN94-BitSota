@@ -125,6 +125,10 @@ def _primary_host() -> str:
     return _tailscale_ip() or "127.0.0.1"
 
 
+def _localhost_url_set() -> dict[str, str]:
+    return _public_url_set(scheme="http", host="127.0.0.1")
+
+
 def _public_url_set(*, scheme: str, host: str) -> dict[str, str]:
     def base_url(service: str) -> str:
         return f"{scheme}://{host}:{PUBLIC_SERVICE_PORTS[service]}"
@@ -189,10 +193,23 @@ def _plan_public_share(
     require_remote_wallet: bool,
     warning_override: str = "",
 ) -> tuple[dict[str, str], dict[str, Any]]:
+    if share_mode == "localhost" or not require_remote_wallet:
+        return _localhost_url_set(), {
+            "mode": "localhost",
+            "status": "green",
+            "host": "127.0.0.1",
+            "wallet_rpc_browser_safe": True,
+            "warning": warning_override
+            or (
+                "This wallet-safe local URL only works on the computer running the demo. "
+                "Use --share-mode tailscale-https after enabling Tailscale Serve for remote MetaMask testing."
+            ),
+        }
+
     host = _primary_host()
-    fallback_urls = _public_url_set(scheme="http", host=host)
-    if share_mode == "http" or not require_remote_wallet:
-        return fallback_urls, {
+    http_urls = _public_url_set(scheme="http", host=host)
+    if share_mode == "http":
+        return http_urls, {
             "mode": "http",
             "status": "green" if host == "127.0.0.1" else "yellow",
             "host": host,
@@ -210,12 +227,15 @@ def _plan_public_share(
     if not dns_name:
         if share_mode == "tailscale-https":
             raise RuntimeError("Tailscale MagicDNS name is unavailable; cannot publish the local demo over Tailscale Serve HTTPS.")
-        return fallback_urls, {
-            "mode": "http",
-            "status": "yellow",
-            "host": host,
-            "wallet_rpc_browser_safe": host == "127.0.0.1",
-            "warning": "Tailscale MagicDNS is unavailable, so the launcher fell back to HTTP URLs.",
+        return _localhost_url_set(), {
+            "mode": "localhost",
+            "status": "green",
+            "host": "127.0.0.1",
+            "wallet_rpc_browser_safe": True,
+            "warning": (
+                "Tailscale MagicDNS is unavailable, so the launcher fell back to wallet-safe localhost URLs. "
+                "These URLs only work on the computer running the demo."
+            ),
         }
 
     return _public_url_set(scheme="https", host=dns_name), {
@@ -1215,17 +1235,17 @@ def start_stack(
             except RuntimeError as exc:
                 if share_mode == "auto":
                     fallback_warning = (
-                        "Tailscale Serve HTTPS is unavailable, so this run is using HTTP Tailscale-IP URLs. "
+                        "Tailscale Serve HTTPS is unavailable, so this run is using wallet-safe localhost URLs. "
                         f"{exc}. Enable Tailscale Serve for this node, run `sudo tailscale set --operator=$USER` once if the CLI reports operator access denied, then relaunch with `./scripts/sota_local_demo.py launch --share-mode tailscale-https` for remote MetaMask testing."
                     )
-                    _print(f"Tailscale Serve HTTPS unavailable, falling back to HTTP local URLs: {exc}")
+                    _print(f"Tailscale Serve HTTPS unavailable, falling back to wallet-safe localhost URLs: {exc}")
                     stop_stack()
                     return start_stack(
                         website=website,
                         docs=docs,
                         hold=hold,
                         claim_proof=claim_proof,
-                        share_mode="http",
+                        share_mode="localhost",
                         share_warning_override=fallback_warning,
                     )
                 raise
@@ -1345,9 +1365,9 @@ def main() -> int:
     )
     launch.add_argument(
         "--share-mode",
-        choices=("auto", "http", "tailscale-https"),
+        choices=("auto", "localhost", "http", "tailscale-https"),
         default="auto",
-        help="how to publish browser-facing local URLs; auto uses Tailscale Serve HTTPS when available",
+        help="how to publish browser-facing local URLs; auto uses Tailscale Serve HTTPS when available and otherwise wallet-safe localhost",
     )
     start = sub.add_parser("start", help="start the full local stack and keep it running")
     start.add_argument("--no-website", action="store_true", help="skip Next.js claims UI")
@@ -1355,9 +1375,9 @@ def main() -> int:
     start.add_argument("--detach", action="store_true", help="start the full stack and return after readiness checks")
     start.add_argument(
         "--share-mode",
-        choices=("auto", "http", "tailscale-https"),
+        choices=("auto", "localhost", "http", "tailscale-https"),
         default="auto",
-        help="how to publish browser-facing local URLs; auto uses Tailscale Serve HTTPS when available",
+        help="how to publish browser-facing local URLs; auto uses Tailscale Serve HTTPS when available and otherwise wallet-safe localhost",
     )
     sub.add_parser("stop", help="stop processes started by this launcher")
     sub.add_parser("status", help="print the last demo state")

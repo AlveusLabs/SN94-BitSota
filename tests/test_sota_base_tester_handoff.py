@@ -102,12 +102,19 @@ def _write_inputs(args: argparse.Namespace) -> None:
             "status": "red",
             "local_stack_ok": True,
             "local_ok": False,
-            "local_remote_wallet_ok": False,
-            "local_remote_wallet": {
+            "local_wallet_ok": False,
+            "local_wallet": {
                 "ok": False,
                 "status": "yellow",
                 "message": "tester wallet RPC may be rejected by MetaMask from another computer",
                 "next_action": "Relaunch with --share-mode tailscale-https.",
+            },
+            "local_remote_wallet_ok": False,
+            "local_remote_wallet": {
+                "ok": False,
+                "status": "red",
+                "message": "Tailscale HTTPS sharing is not ready for remote MetaMask testing.",
+                "next_action": "Enable Tailscale Serve/HTTPS.",
             },
             "local_tailscale_preflight": {
                 "path": str(args.local_report.parent / "tailscale-preflight.json"),
@@ -237,8 +244,10 @@ def test_tester_handoff_contains_local_urls_and_warning(tmp_path: Path) -> None:
     assert handoff["schema"] == "sota-base-tester-handoff/v1"
     assert handoff["release_status"]["local_stack_ok"] is True
     assert handoff["release_status"]["local_ok"] is False
+    assert handoff["release_status"]["local_wallet_ok"] is False
+    assert handoff["release_status"]["local_wallet"]["status"] == "yellow"
     assert handoff["release_status"]["local_remote_wallet_ok"] is False
-    assert handoff["release_status"]["local_remote_wallet"]["status"] == "yellow"
+    assert handoff["release_status"]["local_remote_wallet"]["status"] == "red"
     assert handoff["release_status"]["local_tailscale_preflight"]["status"] == "red"
     assert handoff["local"]["ready"] is False
     assert handoff["local"]["status"] == "green"
@@ -264,8 +273,10 @@ def test_tester_handoff_contains_local_urls_and_warning(tmp_path: Path) -> None:
     assert "Never paste a real seed phrase" in markdown
     assert "Local stack ready: true" in markdown
     assert "Local ready: false" in markdown
-    assert "Remote MetaMask ready: false" in markdown
-    assert "Remote MetaMask detail: tester wallet RPC may be rejected" in markdown
+    assert "Local MetaMask ready: false" in markdown
+    assert "Local MetaMask detail: tester wallet RPC may be rejected" in markdown
+    assert "Remote Tailscale MetaMask ready: false" in markdown
+    assert "Remote Tailscale MetaMask detail: Tailscale HTTPS sharing is not ready" in markdown
     assert "Tailscale preflight: red" in markdown
     assert "Local-only private key" in markdown
     assert "State-changing claim proof: green" in markdown
@@ -283,7 +294,8 @@ def test_tester_handoff_contains_local_urls_and_warning(tmp_path: Path) -> None:
     assert "Base Sepolia Faucet Sources" in markdown
     assert "<title>SOTA Base Tester Handoff</title>" in html
     assert "Local demo blocked" in html
-    assert "Remote MetaMask ready" in html
+    assert "Local MetaMask ready" in html
+    assert "Remote Tailscale MetaMask ready" in html
     assert "Tailscale preflight" in html
     assert "Aggregate status: red" not in html
     assert "http://100.0.0.1:3000/claims" in html

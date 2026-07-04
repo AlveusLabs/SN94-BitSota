@@ -73,11 +73,12 @@ def test_release_status_local_only_green(tmp_path: Path) -> None:
     assert report["status"] == "green"
     assert report["local_stack_ok"] is True
     assert report["local_ok"] is True
-    assert report["local_remote_wallet_ok"] is True
-    assert report["local_remote_wallet"]["status"] == "green"
+    assert report["local_wallet_ok"] is True
+    assert report["local_wallet"]["status"] == "green"
+    assert report["local_remote_wallet_ok"] is False
     assert report["testnet_ok"] is None
     assert report["blocked_gates"] == []
-    assert [gate["name"] for gate in report["gates"]] == ["local_demo", "local_claim_proof", "local_remote_wallet"]
+    assert [gate["name"] for gate in report["gates"]] == ["local_demo", "local_claim_proof", "local_wallet"]
 
 
 def test_release_status_local_only_requires_claim_proof(tmp_path: Path) -> None:
@@ -91,10 +92,10 @@ def test_release_status_local_only_requires_claim_proof(tmp_path: Path) -> None:
     assert report["status"] == "red"
     assert report["local_stack_ok"] is False
     assert report["local_ok"] is False
-    assert {gate["name"] for gate in report["blocked_gates"]} == {"local_claim_proof", "local_remote_wallet"}
+    assert {gate["name"] for gate in report["blocked_gates"]} == {"local_claim_proof", "local_wallet"}
 
 
-def test_release_status_reports_remote_wallet_readiness_from_local_smoke(tmp_path: Path) -> None:
+def test_release_status_reports_local_wallet_readiness_from_local_smoke(tmp_path: Path) -> None:
     module = _load_module()
     args = _args(tmp_path, local_only=True)
     _write_report(
@@ -116,14 +117,31 @@ def test_release_status_reports_remote_wallet_readiness_from_local_smoke(tmp_pat
     assert report["status"] == "yellow"
     assert report["local_stack_ok"] is True
     assert report["local_ok"] is False
-    assert report["local_remote_wallet_ok"] is False
-    assert report["local_remote_wallet"] == {
+    assert report["local_wallet_ok"] is False
+    assert report["local_wallet"] == {
         "ok": False,
         "status": "yellow",
         "message": "tester wallet RPC may be rejected by MetaMask from another computer",
         "next_action": "Relaunch with --share-mode tailscale-https.",
     }
-    assert [gate["name"] for gate in report["blocked_gates"]] == ["local_remote_wallet"]
+    assert report["local_remote_wallet_ok"] is False
+    assert [gate["name"] for gate in report["blocked_gates"]] == ["local_wallet"]
+
+
+def test_release_status_remote_wallet_comes_from_tailscale_preflight(tmp_path: Path) -> None:
+    module = _load_module()
+    args = _args(tmp_path, local_only=True)
+    _write_report(args.local_report, schema="sota-local-claims-ui-smoke/v1", ok=True, checks=[_wallet_check()])
+    _write_report(args.local_claim_proof, schema="sota-local-claim-proof/v1", ok=True)
+    _write_report(args.local_tailscale_preflight, schema="sota-local-tailscale-preflight/v1", ok=True)
+
+    report = module.run_status(args)
+
+    assert report["ok"] is True
+    assert report["local_ok"] is True
+    assert report["local_wallet_ok"] is True
+    assert report["local_remote_wallet_ok"] is True
+    assert report["local_remote_wallet"]["status"] == "green"
 
 
 def test_release_status_full_requires_all_testnet_gates(tmp_path: Path) -> None:
@@ -147,6 +165,7 @@ def test_release_status_full_requires_all_testnet_gates(tmp_path: Path) -> None:
     assert report["status"] == "red"
     assert report["local_stack_ok"] is True
     assert report["local_ok"] is True
+    assert report["local_wallet_ok"] is True
     assert report["testnet_ok"] is False
     assert {gate["name"] for gate in report["blocked_gates"]} == {
         "testnet_operator_run",
@@ -183,7 +202,7 @@ def test_release_status_full_green_requires_operator_gate(tmp_path: Path) -> Non
     assert [gate["name"] for gate in report["gates"]] == [
         "local_demo",
         "local_claim_proof",
-        "local_remote_wallet",
+        "local_wallet",
         "testnet_operator_run",
         "testnet_blockers",
         "testnet_aws_inventory",
@@ -246,4 +265,5 @@ def test_release_status_json_without_report_out_only_prints(tmp_path: Path, caps
     assert exit_code == 0
     printed = json.loads(capsys.readouterr().out)
     assert printed["local_ok"] is True
+    assert printed["local_wallet_ok"] is True
     assert printed["ok"] is True

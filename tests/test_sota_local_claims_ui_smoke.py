@@ -110,7 +110,7 @@ def test_validate_handoff_page_accepts_required_copy(monkeypatch) -> None:
         module,
         "_http_text",
             lambda url, timeout: (
-                "SOTA Base Tester Handoff Local demo ready Local Demo Local-only private key "
+                "SOTA Base Tester Handoff Local demo blocked Local Demo Local-only private key "
                 "Add SOTA Local Base network Open claims UI Mined emission claim Self-validation "
                 "Peer validators State-changing claim proof Base Sepolia "
                 "Base Sepolia is not ready for a nontechnical MetaMask tester yet."
@@ -128,6 +128,18 @@ def test_validate_tester_share_accepts_tailscale_https_rpc() -> None:
     state["urls"]["claims_ui"] = "https://sota-host.example.ts.net:3000/claims"
     state["urls"]["anvil_rpc"] = "https://sota-host.example.ts.net:8545"
     state["sharing"] = {"mode": "tailscale-https", "wallet_rpc_browser_safe": True}
+
+    checks = module.validate_tester_share(state)
+
+    assert checks[0]["status"] == "green"
+
+
+def test_validate_tester_share_accepts_localhost_rpc() -> None:
+    module = _load_module()
+    state = _state()
+    state["urls"]["claims_ui"] = "http://127.0.0.1:3000/claims"
+    state["urls"]["anvil_rpc"] = "http://127.0.0.1:8545"
+    state["sharing"] = {"mode": "localhost", "wallet_rpc_browser_safe": True}
 
     checks = module.validate_tester_share(state)
 

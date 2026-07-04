@@ -298,7 +298,6 @@ def validate_handoff_page(targets: dict[str, str], *, request_timeout: float) ->
     visible_text = _visible_text(html)
     expected = (
         "SOTA Base Tester Handoff",
-        "Local demo ready",
         "Local Demo",
         "Local-only private key",
         "Add SOTA Local Base network",
@@ -311,6 +310,8 @@ def validate_handoff_page(targets: dict[str, str], *, request_timeout: float) ->
         "Base Sepolia is not ready for a nontechnical MetaMask tester yet.",
     )
     missing = [text for text in expected if text not in visible_text]
+    if "Local demo ready" not in visible_text and "Local demo blocked" not in visible_text:
+        missing.append("Local demo ready or Local demo blocked")
     return [
         _check(
             "tester_handoff_page",
