@@ -100,6 +100,41 @@ def _gate_status(spec: GateSpec) -> dict[str, Any]:
     }
 
 
+def _local_remote_wallet_status(local_report: Path) -> dict[str, Any]:
+    try:
+        report = _load_report(local_report)
+    except Exception as exc:
+        return {
+            "ok": False,
+            "status": "red",
+            "message": f"Could not read local UI smoke report: {exc}",
+            "next_action": "Run ./scripts/sota_local_demo.py launch and regenerate the local UI smoke report.",
+        }
+    if report is None:
+        return {
+            "ok": False,
+            "status": "red",
+            "message": "Local UI smoke report is missing.",
+            "next_action": "Run ./scripts/sota_local_demo.py launch and regenerate the local UI smoke report.",
+        }
+    for check in report.get("checks") or []:
+        if not isinstance(check, dict) or check.get("name") != "tester_wallet_rpc":
+            continue
+        status = str(check.get("status") or "red")
+        return {
+            "ok": status == "green",
+            "status": status,
+            "message": str(check.get("detail") or ""),
+            "next_action": "" if status == "green" else str(check.get("remediation") or "Relaunch with --share-mode tailscale-https for remote MetaMask testing."),
+        }
+    return {
+        "ok": False,
+        "status": "red",
+        "message": "Local UI smoke did not report tester wallet RPC readiness.",
+        "next_action": "Rerun ./scripts/sota_local_demo.py ui-smoke so the tester_wallet_rpc check is present.",
+    }
+
+
 def default_gates(*, local_report: Path, local_claim_proof: Path, testnet_dir: Path, include_testnet: bool) -> list[GateSpec]:
     gates = [
         GateSpec(
@@ -212,6 +247,7 @@ def run_status(args: argparse.Namespace) -> dict[str, Any]:
     status = _worst([str(gate["status"]) for gate in required])
     blocked = [gate for gate in required if not gate["ok"]]
     local_ok = all(bool(gate["ok"]) for gate in gate_reports if gate["phase"] == "local" and gate["required"])
+    local_remote_wallet = _local_remote_wallet_status(args.local_report)
     testnet_ok = (
         all(bool(gate["ok"]) for gate in gate_reports if gate["phase"] == "base_sepolia" and gate["required"])
         if not args.local_only
@@ -223,6 +259,8 @@ def run_status(args: argparse.Namespace) -> dict[str, Any]:
         "ok": ok,
         "status": status,
         "local_ok": local_ok,
+        "local_remote_wallet_ok": bool(local_remote_wallet.get("ok")),
+        "local_remote_wallet": local_remote_wallet,
         "testnet_ok": testnet_ok,
         "message": (
             "Local and Base Sepolia gates are green."
@@ -251,6 +289,12 @@ def run_status(args: argparse.Namespace) -> dict[str, Any]:
 def _print_text(report: dict[str, Any]) -> None:
     print(f"SOTA Base release status: {report['status'].upper()}")
     print(report["message"])
+    remote = dict(report.get("local_remote_wallet") or {})
+    if remote:
+        print(
+            "Local remote MetaMask: "
+            f"{remote.get('status', 'unknown')} - {remote.get('message', '')}"
+        )
     print(f"Summary: {report['summary']['green']} green, {report['summary']['yellow']} yellow, {report['summary']['red']} red")
     for gate in report["gates"]:
         summary = gate.get("summary") if isinstance(gate.get("summary"), dict) else {}

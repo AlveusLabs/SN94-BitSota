@@ -20,7 +20,7 @@ def _load_module():
     return module
 
 
-def _write_report(path: Path, *, schema: str, ok: bool, status: str = "green") -> None:
+def _write_report(path: Path, *, schema: str, ok: bool, status: str = "green", checks: list[dict] | None = None) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(
         json.dumps(
@@ -30,6 +30,7 @@ def _write_report(path: Path, *, schema: str, ok: bool, status: str = "green") -
                 "status": status,
                 "summary": {"green": 1 if ok else 0, "yellow": 0, "red": 0 if ok else 1},
                 "message": "ok" if ok else "blocked",
+                "checks": checks or [],
             }
         )
         + "\n",
@@ -57,6 +58,8 @@ def test_release_status_local_only_green(tmp_path: Path) -> None:
     assert report["ok"] is True
     assert report["status"] == "green"
     assert report["local_ok"] is True
+    assert report["local_remote_wallet_ok"] is False
+    assert report["local_remote_wallet"]["status"] == "red"
     assert report["testnet_ok"] is None
     assert report["blocked_gates"] == []
     assert [gate["name"] for gate in report["gates"]] == ["local_demo", "local_claim_proof"]
@@ -73,6 +76,38 @@ def test_release_status_local_only_requires_claim_proof(tmp_path: Path) -> None:
     assert report["status"] == "red"
     assert report["local_ok"] is False
     assert [gate["name"] for gate in report["blocked_gates"]] == ["local_claim_proof"]
+
+
+def test_release_status_reports_remote_wallet_readiness_from_local_smoke(tmp_path: Path) -> None:
+    module = _load_module()
+    args = _args(tmp_path, local_only=True)
+    _write_report(
+        args.local_report,
+        schema="sota-local-claims-ui-smoke/v1",
+        ok=True,
+        status="green",
+        checks=[
+            {
+                "name": "tester_wallet_rpc",
+                "status": "yellow",
+                "detail": "tester wallet RPC may be rejected by MetaMask from another computer",
+                "remediation": "Relaunch with --share-mode tailscale-https.",
+            }
+        ],
+    )
+    _write_report(args.local_claim_proof, schema="sota-local-claim-proof/v1", ok=True)
+
+    report = module.run_status(args)
+
+    assert report["ok"] is True
+    assert report["local_ok"] is True
+    assert report["local_remote_wallet_ok"] is False
+    assert report["local_remote_wallet"] == {
+        "ok": False,
+        "status": "yellow",
+        "message": "tester wallet RPC may be rejected by MetaMask from another computer",
+        "next_action": "Relaunch with --share-mode tailscale-https.",
+    }
 
 
 def test_release_status_full_requires_all_testnet_gates(tmp_path: Path) -> None:

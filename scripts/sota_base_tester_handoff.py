@@ -270,6 +270,8 @@ def build_handoff(args: argparse.Namespace) -> dict[str, Any]:
             "ok": bool(release.get("ok")),
             "status": str(release.get("status") or "unknown"),
             "local_ok": bool(release.get("local_ok")),
+            "local_remote_wallet_ok": bool(release.get("local_remote_wallet_ok")),
+            "local_remote_wallet": release.get("local_remote_wallet") or {},
             "testnet_ok": release.get("testnet_ok"),
             "summary": release.get("summary") or {},
         },
@@ -296,6 +298,12 @@ def render_markdown(handoff: dict[str, Any]) -> str:
     lines.append("## Overall Status")
     lines.append("")
     lines.append(f"- Local ready: {str(release.get('local_ok')).lower()}")
+    lines.append(f"- Remote MetaMask ready: {str(release.get('local_remote_wallet_ok')).lower()}")
+    remote_wallet = dict(release.get("local_remote_wallet") or {})
+    if remote_wallet:
+        lines.append(f"- Remote MetaMask status: {remote_wallet.get('status') or 'unknown'}")
+        if remote_wallet.get("message"):
+            lines.append(f"- Remote MetaMask detail: {remote_wallet.get('message')}")
     lines.append(f"- Base Sepolia ready: {str(release.get('testnet_ok')).lower()}")
     lines.append(f"- Full local + Base Sepolia status: {release.get('status')}")
     lines.append(f"- Gate summary: {_summary_text(dict(release.get('summary') or {}))}")
@@ -496,9 +504,9 @@ def render_html(handoff: dict[str, Any]) -> str:
         "</section>",
         '<section class="summary">',
         f'<div class="card"><div class="label">Local ready</div><div class="value">{escape(str(release.get("local_ok")).lower())}</div></div>',
+        f'<div class="card"><div class="label">Remote MetaMask ready</div><div class="value">{escape(str(release.get("local_remote_wallet_ok")).lower())}</div></div>',
         f'<div class="card"><div class="label">Base Sepolia ready</div><div class="value">{escape(str(release.get("testnet_ok")).lower())}</div></div>',
         f'<div class="card"><div class="label">Full release status</div><div class="value">{escape(str(release.get("status")))}</div></div>',
-        f'<div class="card"><div class="label">Gate summary</div><div class="value">{escape(_summary_text(dict(release.get("summary") or {})))}</div></div>',
         "</section>",
         '<section class="audience">',
         "<div><strong>I am new</strong><span>Follow Local Steps and use only the printed local-only MetaMask account. You do not need TAO, Base ETH, or a Bittensor wallet.</span></div>",
