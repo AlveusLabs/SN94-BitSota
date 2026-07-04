@@ -83,6 +83,10 @@
     <strong>Local tester</strong>
     <span>Run the complete local stack, import the printed wallet, claim SOTA, and inspect validation evidence.</span>
   </a>
+  <a class="bitsota-card" href="base-sepolia-tester/">
+    <strong>Base Sepolia tester</strong>
+    <span>Use an operator-provided seeded test wallet to claim on Base Sepolia and send back transaction evidence.</span>
+  </a>
   <a class="bitsota-card" href="architecture/">
     <strong>Technical reviewer</strong>
     <span>Review the contracts, root lifecycle, indexer, attestation checks, and launch gates.</span>

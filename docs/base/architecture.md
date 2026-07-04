@@ -62,10 +62,16 @@ sequenceDiagram
 - Claim roots must still be reproducible. A validator can recompute leaves,
   proofs, and roots before a root becomes claimable.
 
-## Current Launch Gaps
+## Current Testnet State
 
-- No Base/Base Sepolia deployment manifest yet.
-- No final multisig/timelock ownership transfer yet.
-- No live Base claims/indexer service on AWS yet.
-- No browser wallet smoke against deployed distributors yet.
-- External audit and fuzz expansion are still required before public mainnet launch.
+- Local demo evidence covers the full local loop: contracts, indexer/API,
+  autoresearch backend, UI, genesis claim, mined emission claim, and
+  self-validation.
+- Base Sepolia has a deployment manifest, deployed test contracts, public
+  claims UI/API services, finalized test-only claim artifacts, and green
+  browser smoke for the current seeded wallet/root cycle.
+- The Base Sepolia dry run is still not a mainnet launch. Full testnet evidence
+  turns green only after the current seeded MetaMask wallet submits both the
+  genesis and emission claim transactions and those hashes verify.
+- No final multisig/timelock ownership transfer, external audit signoff, or
+  Base mainnet release evidence is claimed by these testnet artifacts.

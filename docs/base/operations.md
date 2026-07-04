@@ -317,7 +317,9 @@ claim. It creates a new throwaway Base Sepolia test wallet file, seeds real
 public self-validation evidence, tops the wallet up with Base Sepolia test ETH
 from the local faucet wallet if needed, publishes/imports the new genesis and
 emission roots, runs browser smoke, and refreshes release status plus the
-tester handoff.
+tester handoff. It also refreshes the website repo's public Base Sepolia JSON
+artifacts locally so the static readiness and claim-artifact files match the
+current wallet/root cycle.
 
 ```bash
 cd /home/mekaneeky/repos/SN94-BitSota-live-docs
@@ -328,6 +330,11 @@ The command prints only the reward address, claim URL, handoff path, and next
 operator action. It writes the wallet key JSON under `.sota-base-testnet/` and
 does not print private keys. Wallet access must still be provided out of band
 to the human tester.
+
+After the command succeeds, commit and push the refreshed public JSON artifacts
+in the website repo so the App Runner claims UI serves the current readiness,
+seed, genesis claim, and emission claim files. Do not commit wallet key JSON or
+private key material.
 
 ## Base Sepolia Self-Validation Seed
 

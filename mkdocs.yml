@@ -137,6 +137,7 @@ nav:
       - New Users: base/new-users.md
       - Bittensor Migrants: base/bittensor-migrants.md
       - One-Command Demo: base/local-e2e.md
+      - Base Sepolia Tester: base/base-sepolia-tester.md
       - How Base SOTA Works: base/architecture.md
       - Claims And Allocation: base/claims-and-allocation.md
       - Contracts: base/contracts.md

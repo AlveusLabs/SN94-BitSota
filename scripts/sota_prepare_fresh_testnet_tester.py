@@ -7,6 +7,7 @@ from decimal import Decimal
 import json
 import os
 from pathlib import Path
+import shutil
 import subprocess
 import sys
 import time
@@ -20,6 +21,7 @@ from web3 import Web3
 REPOS = Path("/home/mekaneeky/repos")
 DOCS_REPO = Path(__file__).resolve().parents[1]
 DEFAULT_ARTIFACTS_DIR = REPOS / ".sota-base-testnet"
+DEFAULT_WEBSITE_REPO = REPOS / "bitsota_website"
 DEFAULT_RPC_URL = "https://sepolia.base.org"
 DEFAULT_AWS_PROFILE = "moonrocklab-frankfurt"
 DEFAULT_AWS_REGION = "eu-central-1"
@@ -34,6 +36,12 @@ DEFAULT_OLD_COLDKEY = "5GrwvaEF5zXb26Fz9rcQpDWS57CtERHpNehXCPcNoHGKutQY"
 BASE_SEPOLIA_CHAIN_ID = 84532
 BASE_MAINNET_CHAIN_ID = 8453
 ONE_ETH_WEI = 10**18
+PUBLIC_ARTIFACT_FILES = [
+    "base-sota-testnet-readiness.json",
+    "base-sota-testnet-seed-artifacts-finalized.json",
+    "base-sota-testnet-genesis-claim-artifact.json",
+    "base-sota-testnet-emission-claim-artifact.json",
+]
 
 
 def _write_json(path: Path, payload: dict[str, Any]) -> None:
@@ -253,6 +261,31 @@ def _is_claimable(payload: dict[str, Any]) -> bool:
     return bool(payload.get("eligible")) and bool(state.get("claimable")) and unclaimed_units > 0
 
 
+def _refresh_website_public_artifacts(args: argparse.Namespace) -> dict[str, Any]:
+    if args.skip_website_public_refresh:
+        return {"status": "skipped", "copied": [], "reason": "disabled by --skip-website-public-refresh"}
+    public_dir = args.website_repo / "public"
+    nested_dir = public_dir / "base-sota"
+    if not public_dir.exists():
+        return {"status": "skipped", "copied": [], "reason": f"{public_dir} does not exist"}
+    copied: list[str] = []
+    for filename in PUBLIC_ARTIFACT_FILES:
+        source = args.artifacts_dir / filename
+        if not source.exists():
+            raise RuntimeError(f"cannot refresh website public artifact; missing {source}")
+        for target_dir in (public_dir, nested_dir):
+            target_dir.mkdir(parents=True, exist_ok=True)
+            target = target_dir / filename
+            shutil.copyfile(source, target)
+            copied.append(str(target))
+    return {
+        "status": "green",
+        "website_repo": str(args.website_repo),
+        "copied": copied,
+        "next_action": "Commit and push the refreshed public JSON artifacts so App Runner serves the current wallet/root cycle.",
+    }
+
+
 def prepare_fresh_tester(args: argparse.Namespace) -> dict[str, Any]:
     args.artifacts_dir.mkdir(parents=True, exist_ok=True)
     stamp = _timestamp()
@@ -349,6 +382,7 @@ def prepare_fresh_tester(args: argparse.Namespace) -> dict[str, Any]:
         timeout=args.command_timeout,
     )
     _assert_ok(handoff_result, label="tester handoff refresh")
+    website_public_artifacts = _refresh_website_public_artifacts(args)
     operator_report = _load_json(args.artifacts_dir / "base-sota-testnet-operator-run.json")
     eligibility = _eligibility(args, wallet=wallet, old_coldkey=args.test_old_coldkey, lane_id=args.lane_id)
     claimable = _is_claimable(dict(eligibility["genesis"])) and _is_claimable(dict(eligibility["emission"]))
@@ -376,6 +410,7 @@ def prepare_fresh_tester(args: argparse.Namespace) -> dict[str, Any]:
         "operator_report": str(args.artifacts_dir / "base-sota-testnet-operator-run.json"),
         "release_status": str(args.artifacts_dir / "base-sota-release-status.json"),
         "handoff": str(args.artifacts_dir / "base-sota-tester-handoff.md"),
+        "website_public_artifacts": website_public_artifacts,
         "next_action": "Give wallet access out of band, open the claims UI, submit genesis and emission in MetaMask, then run the claim transaction evidence verifier.",
         "does_not": ["print_private_keys", "touch_production_bittensor", "touch_base_mainnet"],
     }
@@ -402,6 +437,8 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--aws-region", default=os.environ.get("AWS_REGION", DEFAULT_AWS_REGION))
     parser.add_argument("--indexer-admin-secret-id", default=DEFAULT_INDEXER_ADMIN_SECRET_ID)
     parser.add_argument("--sponsor-key-file", type=Path, default=DEFAULT_SPONSOR_KEY_FILE)
+    parser.add_argument("--website-repo", type=Path, default=DEFAULT_WEBSITE_REPO)
+    parser.add_argument("--skip-website-public-refresh", action="store_true")
     parser.add_argument("--min-wallet-balance-eth", default="0.005")
     parser.add_argument("--top-up-eth", default="0.01")
     parser.add_argument("--max-priority-fee-gwei", default="0.001")

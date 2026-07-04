@@ -280,6 +280,8 @@ def test_tester_handoff_contains_local_urls_and_warning(tmp_path: Path) -> None:
     assert "Remote Tailscale MetaMask ready: false" in markdown
     assert "Remote Tailscale MetaMask detail: Tailscale HTTPS sharing is not ready" in markdown
     assert "Tailscale preflight: red" in markdown
+    assert "Tester Decision" in markdown
+    assert "Local same-machine: false" not in markdown
     assert "Local-only private key" in markdown
     assert "State-changing claim proof: green" in markdown
     assert f"Claim proof report: {args.local_report.parent / 'local-claim-proof.json'}" in markdown
@@ -288,6 +290,8 @@ def test_tester_handoff_contains_local_urls_and_warning(tmp_path: Path) -> None:
     assert "Mined emission claim amount: 2 SOTA" in markdown
     assert "Expected final local SOTA balance after both claims: 3.5 SOTA" in markdown
     assert "Manual MetaMask Network Fields" in markdown
+    assert "Local Evidence To Send Back" in markdown
+    assert "Operator Only: Local Claim Evidence Command" in markdown
     assert "Block explorer URL: leave blank" in markdown
     assert "Peer validators: Bob" in markdown
     assert "Base Sepolia infrastructure is not ready" in markdown
@@ -445,6 +449,23 @@ def test_tester_handoff_marks_testnet_ready_for_claim_tester_when_only_tx_eviden
         artifacts_dir / "base-sota-testnet-browser-smoke.json",
         {"status": "green", "summary": {"green": 21, "yellow": 0, "red": 0}},
     )
+    _write_json(
+        artifacts_dir / "base-sota-fresh-testnet-tester.json",
+        {
+            "status": "green",
+            "ok": True,
+            "reward_address": "0xe93dae9bb94aa2f2aba57c7cadec822b800461fc",
+            "reward_key_file": str(artifacts_dir / "fresh-claim-wallet.json"),
+            "private_key_printed": False,
+            "epoch": 2,
+            "funding": {
+                "status": "green",
+                "tx_hash": "0x" + "33" * 32,
+                "balance_after_eth": "0.00500000",
+            },
+            "next_action": "Open the public Base Sepolia claims UI with this wallet.",
+        },
+    )
 
     handoff = module.build_handoff(args)
     markdown = module.render_markdown(handoff)
@@ -456,13 +477,30 @@ def test_tester_handoff_marks_testnet_ready_for_claim_tester_when_only_tx_eviden
     assert handoff["testnet"]["test_wallet_address"] == "0xe93dae9bb94aa2f2aba57c7cadec822b800461fc"
     assert handoff["testnet"]["genesis_claim_amount"] == "1.5 SOTA"
     assert handoff["testnet"]["emission_claim_amount"] == "2 SOTA"
+    assert handoff["testnet"]["fresh_tester"]["status"] == "green"
+    assert handoff["testnet"]["fresh_tester"]["private_key_printed"] is False
+    assert handoff["testnet"]["fresh_tester"]["reward_key_file"] == str(artifacts_dir / "fresh-claim-wallet.json")
     assert "Base Sepolia is ready for a MetaMask claim tester" in markdown
     assert "operator-provided seeded Base Sepolia test wallet" in markdown
+    assert "Base Sepolia claim test: ready only with the operator-provided seeded wallet" in markdown
+    assert "Base Sepolia MetaMask Network Fields" in markdown
+    assert "Chain ID: 84532" in markdown
+    assert "Expected selected account: `0xe93dae9bb94aa2f2aba57c7cadec822b800461fc`" in markdown
+    assert "Expected final SOTA balance after both claims: 3.5 SOTA" in markdown
+    assert "Fresh Tester Prep" in markdown
+    assert "Operator-only wallet key file" in markdown
+    assert "Private key printed by prep command: false" in markdown
+    assert "Base Sepolia Evidence To Send Back" in markdown
     assert "Remaining Evidence Gate" in markdown
     assert "BASE_SEPOLIA_GENESIS_TX_HASH" in markdown
-    assert "Refresh Release/Handoff After Evidence" in markdown
+    assert "Operator Only: Refresh Release/Handoff After Evidence" in markdown
     assert "https://claims.example.test/claims" in html
     assert "Testnet wallet access" in html
+    assert "Tester Decision" in html
+    assert "Base Sepolia MetaMask Network Fields" in html
+    assert "Fresh Tester Prep" in html
+    assert "Private key printed by prep command: false" in html
+    assert "Base Sepolia Evidence To Send Back" in html
     assert "Copy testnet wallet" in html
     assert "Remaining Evidence Gate" in html
 
