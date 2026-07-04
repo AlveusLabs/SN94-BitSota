@@ -25,6 +25,7 @@ def _args(tmp_path: Path, **overrides):
         "region": "eu-central-1",
         "timeout": 1.0,
         "service_url": [],
+        "external_dns_owner": "",
         "required_secret": list(
             (
                 "base-sota/test/base-sepolia/rpc-url",
@@ -180,6 +181,98 @@ def test_inventory_accepts_configured_app_runner_service_urls(tmp_path: Path, mo
     assert report["inventory"]["configured_service_urls"]["claims_api"] == "https://api.awsapprunner.com"
     assert report["inventory"]["app_runner_connections"][0]["name"] == "bitsota"
     assert report["inventory"]["required_secret_handles"] == args.required_secret
+
+
+def test_inventory_accepts_direct_service_urls_without_route53_zone(tmp_path: Path, monkeypatch) -> None:
+    module = _load_module()
+    args = _args(
+        tmp_path,
+        service_url=[
+            "claims_ui=https://ui.awsapprunner.com",
+            "claims_api=https://api.awsapprunner.com",
+            "coordinator=https://coordinator.awsapprunner.com",
+            "root_publisher=https://root.awsapprunner.com",
+        ],
+    )
+
+    def fake_run_aws(cmd: list[str], *, profile: str, region: str, timeout: float):
+        if cmd[:2] == ["sts", "get-caller-identity"]:
+            return {"Account": "924380800822", "Arn": "arn:aws:sts::924380800822:assumed-role/Frankfurt-PowerUser/test"}
+        if cmd[:2] == ["apprunner", "list-services"]:
+            return {
+                "ServiceSummaryList": [
+                    {"ServiceName": "bitsota-website-test", "Status": "RUNNING", "ServiceUrl": "ui.awsapprunner.com"},
+                    {"ServiceName": "bitsota-pool-test", "Status": "RUNNING", "ServiceUrl": "api.awsapprunner.com"},
+                    {"ServiceName": "bitsota-autoresearch-test", "Status": "RUNNING", "ServiceUrl": "coordinator.awsapprunner.com"},
+                    {"ServiceName": "bitsota-root-test", "Status": "RUNNING", "ServiceUrl": "root.awsapprunner.com"},
+                ]
+            }
+        if cmd[:2] == ["route53", "list-hosted-zones"]:
+            return {"HostedZones": []}
+        if cmd[:2] == ["ecr", "describe-repositories"]:
+            return {"repositories": [{"repositoryName": "base-sota-claims-api"}]}
+        if cmd[:2] == ["secretsmanager", "list-secrets"]:
+            return {
+                "SecretList": [
+                    {"Name": name, "ARN": f"arn:{index}"}
+                    for index, name in enumerate(args.required_secret, start=1)
+                ]
+            }
+        if cmd[:2] == ["apprunner", "list-connections"]:
+            return {"ConnectionSummaryList": [{"ConnectionName": "bitsota", "Status": "AVAILABLE", "ProviderType": "GITHUB"}]}
+        raise AssertionError(cmd)
+
+    monkeypatch.setattr(module, "_run_aws", fake_run_aws)
+
+    report = module.build_inventory(args)
+    checks = {check["name"]: check for check in report["checks"]}
+
+    assert report["ok"] is True
+    assert report["status"] == "green"
+    assert checks["route53_bitsota_zone"]["status"] == "green"
+    assert "direct public service URLs" in checks["route53_bitsota_zone"]["detail"]
+
+
+def test_inventory_accepts_external_dns_owner_without_route53_zone(tmp_path: Path, monkeypatch) -> None:
+    module = _load_module()
+    args = _args(tmp_path, external_dns_owner="Cloudflare bitsota.com account")
+
+    def fake_run_aws(cmd: list[str], *, profile: str, region: str, timeout: float):
+        if cmd[:2] == ["sts", "get-caller-identity"]:
+            return {"Account": "924380800822", "Arn": "arn:aws:sts::924380800822:assumed-role/Frankfurt-PowerUser/test"}
+        if cmd[:2] == ["apprunner", "list-services"]:
+            return {
+                "ServiceSummaryList": [
+                    {"ServiceName": "base-sota-claims-ui-test", "Status": "RUNNING"},
+                    {"ServiceName": "base-sota-claims-api-test", "Status": "RUNNING"},
+                    {"ServiceName": "base-sota-coordinator-test", "Status": "RUNNING"},
+                    {"ServiceName": "base-sota-root-publisher-test", "Status": "RUNNING"},
+                ]
+            }
+        if cmd[:2] == ["route53", "list-hosted-zones"]:
+            return {"HostedZones": []}
+        if cmd[:2] == ["ecr", "describe-repositories"]:
+            return {"repositories": [{"repositoryName": "base-sota-claims-api"}]}
+        if cmd[:2] == ["secretsmanager", "list-secrets"]:
+            return {
+                "SecretList": [
+                    {"Name": name, "ARN": f"arn:{index}"}
+                    for index, name in enumerate(args.required_secret, start=1)
+                ]
+            }
+        if cmd[:2] == ["apprunner", "list-connections"]:
+            return {"ConnectionSummaryList": [{"ConnectionName": "bitsota", "Status": "AVAILABLE", "ProviderType": "GITHUB"}]}
+        raise AssertionError(cmd)
+
+    monkeypatch.setattr(module, "_run_aws", fake_run_aws)
+
+    report = module.build_inventory(args)
+    checks = {check["name"]: check for check in report["checks"]}
+
+    assert report["ok"] is True
+    assert checks["route53_bitsota_zone"]["status"] == "green"
+    assert "Cloudflare bitsota.com account" in checks["route53_bitsota_zone"]["detail"]
+    assert report["inventory"]["external_dns_owner"] == "Cloudflare bitsota.com account"
 
 
 def test_inventory_only_records_secret_handles_not_secret_values(tmp_path: Path, monkeypatch) -> None:

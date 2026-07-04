@@ -206,18 +206,30 @@ removes the custom-DNS dependency; browser smoke still has to prove the
 services are configured for Base Sepolia, expose real claim artifacts, and
 return unsigned Base Sepolia claim transactions.
 
+If `bitsota.com` is delegated outside the AWS account used for App Runner,
+record that explicitly instead of requiring a Route53 hosted zone in this
+account:
+
+```bash
+python3 scripts/sota_base_testnet_operator.py \
+  --external-dns-owner "Cloudflare bitsota.com production account" \
+  --allow-blocked
+```
+
 ## Base Sepolia AWS Inventory
 
 Run the read-only AWS inventory after authenticating with the approved testnet
 profile. It checks whether the account has explicit Base SOTA App Runner
-services, a `bitsota.com` Route53 hosted zone, optional Base SOTA/claims ECR
-repositories, and Base Sepolia/Base SOTA secret handles. It records secret names
-and ARNs only; it never reads secret values.
+services, a `bitsota.com` Route53 hosted zone or an explicit non-Route53 DNS
+plan, optional Base SOTA/claims ECR repositories, and Base Sepolia/Base SOTA
+secret handles. It records secret names and ARNs only; it never reads secret
+values.
 
 ```bash
 cd /home/mekaneeky/repos/SN94-BitSota-live-docs
 python3 scripts/sota_base_testnet_aws_inventory.py \
   --aws-profile moonrocklab-frankfurt \
+  --external-dns-owner "Cloudflare bitsota.com production account" \
   --out /home/mekaneeky/repos/.sota-base-testnet/base-sota-testnet-aws-inventory.json \
   --allow-blocked
 ```
@@ -225,7 +237,9 @@ python3 scripts/sota_base_testnet_aws_inventory.py \
 Green means the public AWS side is named and discoverable. Red means do not
 invite a nontechnical tester to the Base Sepolia path yet. Yellow only appears
 for optional ECR repository discovery when the deployment plan might use source
-deploys instead of containers.
+deploys instead of containers. Do not use `--external-dns-owner` to skip DNS
+work; the blocker gate and browser smoke still verify that the actual public
+URLs resolve and serve the Base Sepolia app.
 
 ## Base Sepolia Funding Gate
 

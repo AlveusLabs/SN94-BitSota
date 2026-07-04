@@ -538,6 +538,8 @@ def _aws_inventory_cmd(args: argparse.Namespace, paths: dict[str, Path]) -> list
         ("root_publisher", args.root_publisher_url),
     ):
         cmd.extend(["--service-url", f"{name}={value}"])
+    if args.external_dns_owner:
+        cmd.extend(["--external-dns-owner", args.external_dns_owner])
     return cmd
 
 
@@ -1203,6 +1205,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--monitoring-alert-policy-url", default=os.environ.get("SOTA_MONITORING_ALERT_POLICY_URL", ""))
     parser.add_argument("--monitoring-log-group-or-sink", default=os.environ.get("SOTA_MONITORING_LOG_GROUP_OR_SINK", ""))
     parser.add_argument("--readiness-url", default=os.environ.get("NEXT_PUBLIC_SOTA_READINESS_URL", DEFAULT_URLS["readiness"]))
+    parser.add_argument("--external-dns-owner", default=os.environ.get("SOTA_EXTERNAL_DNS_OWNER", ""))
     parser.add_argument("--build-website", action="store_true")
     parser.add_argument("--broadcast-roots", action="store_true", help="Broadcast root publication transactions with SOTA_ROOT_PUBLISHER_PRIVATE_KEY")
     parser.add_argument("--root-publisher-private-key-secret-id", default=os.environ.get("SOTA_ROOT_PUBLISHER_PRIVATE_KEY_SECRET_ID", DEFAULT_ROOT_PUBLISHER_SECRET_ID))

@@ -29,12 +29,23 @@ BASE_SERVICE_PATTERNS = {
     "coordinator": re.compile(r"(base[-_]?sota|sota[-_]?base).*coordinator|coordinator[-_]?test", re.I),
     "root_publisher": re.compile(r"(base[-_]?sota|sota[-_]?base).*root|root[-_]?publisher[-_]?test", re.I),
 }
+REQUIRED_PUBLIC_SERVICE_KEYS = tuple(BASE_SERVICE_PATTERNS)
 BASE_SECRET_RE = re.compile(r"(base[-_/]?sepolia|base[-_/]?sota|sota[-_/]?base)", re.I)
 
 
 def _host(value: str) -> str:
     parsed = urlparse(value if "://" in value else f"https://{value}")
     return (parsed.hostname or value).strip().lower()
+
+
+def _is_bitsota_host(value: str) -> bool:
+    host = _host(value)
+    return host == "bitsota.com" or host.endswith(".bitsota.com")
+
+
+def _has_direct_service_url_plan(service_urls: dict[str, str]) -> bool:
+    configured = {key: str(service_urls.get(key) or "").strip() for key in REQUIRED_PUBLIC_SERVICE_KEYS}
+    return all(configured.values()) and not any(_is_bitsota_host(value) for value in configured.values())
 
 
 @dataclass(frozen=True)
@@ -180,6 +191,7 @@ def _inventory_checks(
     connections: list[dict[str, Any]],
     service_urls: dict[str, str],
     required_secret_names: list[str],
+    external_dns_owner: str,
 ) -> list[Check]:
     checks: list[Check] = []
     if identity_error:
@@ -201,12 +213,29 @@ def _inventory_checks(
         )
 
     bitsota_zone = next((zone for zone in zones if str(zone["name"]).lower() == "bitsota.com."), None)
+    direct_service_url_plan = _has_direct_service_url_plan(service_urls)
+    if bitsota_zone:
+        route53_status = "green"
+        route53_detail = f"Route53 hosted zone found for bitsota.com: {bitsota_zone['id']}."
+        route53_remediation = ""
+    elif external_dns_owner:
+        route53_status = "green"
+        route53_detail = f"No Route53 hosted zone for bitsota.com was found in this AWS account; external DNS owner documented: {external_dns_owner}."
+        route53_remediation = ""
+    elif direct_service_url_plan:
+        route53_status = "green"
+        route53_detail = "No Route53 hosted zone for bitsota.com was found in this AWS account; direct public service URLs are configured, so custom DNS is not required for this testnet run."
+        route53_remediation = ""
+    else:
+        route53_status = "red"
+        route53_detail = "No Route53 hosted zone for bitsota.com was found in this AWS account."
+        route53_remediation = "Create DNS records wherever bitsota.com is hosted, document the external DNS owner, or pass direct public service URLs for testnet domains."
     checks.append(
         Check(
             "route53_bitsota_zone",
-            "green" if bitsota_zone else "red",
-            f"Route53 hosted zone found for bitsota.com: {bitsota_zone['id']}." if bitsota_zone else "No Route53 hosted zone for bitsota.com was found in this AWS account.",
-            "" if bitsota_zone else "Create DNS records wherever bitsota.com is hosted, or document the external DNS owner for testnet domains.",
+            route53_status,
+            route53_detail,
+            route53_remediation,
         )
     )
 
@@ -307,6 +336,7 @@ def build_inventory(args: argparse.Namespace) -> dict[str, Any]:
         key, value = item.split("=", 1)
         service_urls[key.strip()] = value.strip()
     required_secret_names = [str(item).strip() for item in args.required_secret if str(item).strip()]
+    external_dns_owner = str(getattr(args, "external_dns_owner", "") or "").strip()
 
     identity, identity_error = _safe_call(["sts", "get-caller-identity"], profile=args.aws_profile, region="", timeout=args.timeout)
     services_payload, services_error = _safe_call(["apprunner", "list-services"], profile=args.aws_profile, region=args.region, timeout=args.timeout)
@@ -330,6 +360,7 @@ def build_inventory(args: argparse.Namespace) -> dict[str, Any]:
         connections=connections,
         service_urls=service_urls,
         required_secret_names=required_secret_names,
+        external_dns_owner=external_dns_owner,
     )
     for name, error in (
         ("apprunner_list_services", services_error),
@@ -362,6 +393,7 @@ def build_inventory(args: argparse.Namespace) -> dict[str, Any]:
             "required_secret_handles": required_secret_names,
             "app_runner_connections": connections,
             "configured_service_urls": service_urls,
+            "external_dns_owner": external_dns_owner,
         },
         "checks": [check.as_dict() for check in checks],
         "summary": _summary(checks),
@@ -375,6 +407,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--region", default=DEFAULT_REGION)
     parser.add_argument("--timeout", type=float, default=15.0)
     parser.add_argument("--service-url", action="append", default=[], help="Configured public service URL as name=url. Repeatable.")
+    parser.add_argument("--external-dns-owner", default="", help="Optional note naming the system or owner that manages bitsota.com DNS outside this AWS account.")
     parser.add_argument("--required-secret", action="append", default=list(DEFAULT_REQUIRED_SECRET_NAMES), help="Required AWS Secrets Manager secret name. Repeatable.")
     parser.add_argument("--out", type=Path, default=DEFAULT_ARTIFACTS_DIR / "base-sota-testnet-aws-inventory.json")
     parser.add_argument("--json", action="store_true")

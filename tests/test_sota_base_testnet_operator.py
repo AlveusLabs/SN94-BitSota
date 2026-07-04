@@ -60,6 +60,7 @@ def _args(tmp_path: Path, **overrides):
         "monitoring_alert_policy_url": "",
         "monitoring_log_group_or_sink": "",
         "readiness_url": "https://claims-test.example.invalid/base-sota-testnet-readiness.json",
+        "external_dns_owner": "",
         "build_website": False,
         "broadcast_roots": False,
         "root_publisher_private_key_secret_id": "",
@@ -356,6 +357,25 @@ def test_operator_passes_configured_app_runner_urls_to_aws_inventory(tmp_path: P
     assert "claims_api=https://def.awsapprunner.com" in service_values
     assert "coordinator=https://ghi.awsapprunner.com" in service_values
     assert "root_publisher=https://root.awsapprunner.com" in service_values
+
+
+def test_operator_passes_external_dns_owner_to_aws_inventory(tmp_path: Path, monkeypatch) -> None:
+    module = _load_module()
+    args = _args(tmp_path, external_dns_owner="Cloudflare bitsota.com account")
+    paths = module._paths(args.artifacts_dir)
+    seen = {}
+
+    def fake_run(cmd: list[str], **kwargs) -> dict:
+        _write_standard_reports(module, paths, cmd)
+        if _has_cmd(cmd, "sota_base_testnet_aws_inventory.py"):
+            seen["inventory"] = cmd
+        return _command_result(cmd)
+
+    monkeypatch.setattr(module, "_run_command", fake_run)
+    module.run_operator(args)
+
+    assert "--external-dns-owner" in seen["inventory"]
+    assert seen["inventory"][seen["inventory"].index("--external-dns-owner") + 1] == "Cloudflare bitsota.com account"
 
 
 def test_operator_dry_run_roots_keeps_claim_import_yellow(tmp_path: Path, monkeypatch) -> None:
