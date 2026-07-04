@@ -85,6 +85,16 @@ def _summary(steps: list[StepResult]) -> dict[str, int]:
     }
 
 
+def _next_actions(steps: list[StepResult]) -> list[str]:
+    actions: list[str] = []
+    for step in steps:
+        if step.status == "green" or not step.remediation:
+            continue
+        if step.remediation not in actions:
+            actions.append(step.remediation)
+    return actions
+
+
 def _write_json(path: Path, payload: dict[str, Any]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
@@ -443,6 +453,8 @@ def _apprunner_source_pack_cmd(args: argparse.Namespace, paths: dict[str, Path])
         str(paths["apprunner_source_dir"]),
         "--report-out",
         str(paths["apprunner_source_pack"]),
+        "--aws-inventory",
+        str(paths["aws_inventory"]),
         "--aws-profile",
         args.aws_profile,
         "--region",
@@ -875,11 +887,7 @@ def run_operator(args: argparse.Namespace) -> dict[str, Any]:
             "resolved_seed_inputs": resolved_seed_inputs,
             "steps": [step.as_dict() for step in current_steps],
             "summary": _summary(current_steps),
-            "next_actions": [
-                step.remediation
-                for step in current_steps
-                if step.status != "green" and step.remediation
-            ],
+            "next_actions": _next_actions(current_steps),
         }
 
     service_pack = _run_command(_service_pack_cmd(args, paths), timeout=args.timeout)

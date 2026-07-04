@@ -271,6 +271,25 @@ def test_operator_passes_aws_profile_to_blocker_gate_and_inventory(tmp_path: Pat
     assert "--service-url" in seen["inventory"]
 
 
+def test_operator_passes_cached_aws_inventory_to_apprunner_source_pack(tmp_path: Path, monkeypatch) -> None:
+    module = _load_module()
+    args = _args(tmp_path, aws_profile="moonrocklab-frankfurt")
+    paths = module._paths(args.artifacts_dir)
+    seen = {}
+
+    def fake_run(cmd: list[str], **kwargs) -> dict:
+        _write_standard_reports(module, paths, cmd)
+        if _has_cmd(cmd, "sota_base_testnet_apprunner_source_pack.py"):
+            seen["source_pack"] = cmd
+        return _command_result(cmd)
+
+    monkeypatch.setattr(module, "_run_command", fake_run)
+    module.run_operator(args)
+
+    assert "--aws-inventory" in seen["source_pack"]
+    assert seen["source_pack"][seen["source_pack"].index("--aws-inventory") + 1] == str(paths["aws_inventory"])
+
+
 def test_operator_passes_configured_service_urls_to_blocker_gate(tmp_path: Path, monkeypatch) -> None:
     module = _load_module()
     args = _args(
@@ -613,3 +632,18 @@ def test_step_from_result_turns_zero_gas_into_funding_remediation() -> None:
 
     assert step.status == "red"
     assert "Fund the listed deployer address" in step.remediation
+
+
+def test_next_actions_are_deduplicated() -> None:
+    module = _load_module()
+
+    actions = module._next_actions(
+        [
+            module.StepResult("a", "red", "a", "same"),
+            module.StepResult("b", "yellow", "b", "same"),
+            module.StepResult("c", "red", "c", "other"),
+            module.StepResult("d", "green", "d", "ignored"),
+        ]
+    )
+
+    assert actions == ["same", "other"]
