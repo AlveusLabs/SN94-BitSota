@@ -167,6 +167,7 @@ def _testnet_section(release: dict[str, Any]) -> dict[str, Any]:
     blocked = list(release.get("blocked_gates") or [])
     testnet_gates = [gate for gate in gates if dict(gate).get("phase") == "base_sepolia"]
     blocker_gate = next((dict(gate) for gate in testnet_gates if dict(gate).get("name") == "testnet_blockers"), {})
+    funding_gate = next((dict(gate) for gate in testnet_gates if dict(gate).get("name") == "testnet_funding"), {})
     immediate_blockers: list[dict[str, str]] = []
     if blocker_gate.get("path"):
         blocker_report = _load_json(Path(str(blocker_gate.get("path"))))
@@ -179,6 +180,35 @@ def _testnet_section(release: dict[str, Any]) -> dict[str, Any]:
                     "status": str(check.get("status") or "unknown"),
                     "detail": str(check.get("detail") or ""),
                     "remediation": str(check.get("remediation") or ""),
+                }
+            )
+    funding_targets: list[dict[str, str]] = []
+    faucet_sources: list[dict[str, str]] = []
+    if funding_gate.get("path"):
+        funding_report = _load_json(Path(str(funding_gate.get("path"))))
+        for target in funding_report.get("funding_targets") or []:
+            if not isinstance(target, dict):
+                continue
+            funding_targets.append(
+                {
+                    "label": str(target.get("label") or ""),
+                    "status": str(target.get("status") or "unknown"),
+                    "address": str(target.get("address") or ""),
+                    "balance_eth": str(target.get("balance_eth") or ""),
+                    "minimum_balance_eth": str(target.get("minimum_balance_eth") or ""),
+                    "needed_eth": str(target.get("needed_eth") or ""),
+                    "explorer_url": str(target.get("explorer_url") or ""),
+                    "remediation": str(target.get("remediation") or ""),
+                }
+            )
+        for source in funding_report.get("faucet_sources") or []:
+            if not isinstance(source, dict):
+                continue
+            faucet_sources.append(
+                {
+                    "name": str(source.get("name") or ""),
+                    "url": str(source.get("url") or ""),
+                    "note": str(source.get("note") or ""),
                 }
             )
     return {
@@ -203,6 +233,8 @@ def _testnet_section(release: dict[str, Any]) -> dict[str, Any]:
             if dict(gate).get("phase") == "base_sepolia"
         ],
         "immediate_blockers": immediate_blockers,
+        "funding_targets": funding_targets,
+        "faucet_sources": faucet_sources,
         "tester_message": (
             "Base Sepolia is ready for a nontechnical MetaMask tester."
             if release.get("testnet_ok")
@@ -348,6 +380,30 @@ def render_markdown(handoff: dict[str, Any]) -> str:
                 if check.get("remediation"):
                     detail += f" Next: {check.get('remediation')}"
                 lines.append(f"- {detail}")
+        funding_targets = testnet.get("funding_targets") or []
+        if funding_targets:
+            lines.append("")
+            lines.append("### Base Sepolia Funding Targets")
+            lines.append("")
+            for target in funding_targets:
+                target = dict(target)
+                lines.append(
+                    "- "
+                    f"{target.get('label')}: {target.get('status')}; "
+                    f"address `{target.get('address')}`; "
+                    f"balance {target.get('balance_eth') or 'unknown'} ETH; "
+                    f"minimum {target.get('minimum_balance_eth') or 'unknown'} ETH; "
+                    f"needs {target.get('needed_eth') or 'unknown'} ETH"
+                )
+        faucet_sources = testnet.get("faucet_sources") or []
+        if faucet_sources:
+            lines.append("")
+            lines.append("### Base Sepolia Faucet Sources")
+            lines.append("")
+            for source in faucet_sources:
+                source = dict(source)
+                note = f" - {source.get('note')}" if source.get("note") else ""
+                lines.append(f"- [{source.get('name')}]({source.get('url')}){note}")
         lines.append("")
         lines.append("### Testnet Steps When Ready")
         lines.append("")
@@ -521,6 +577,62 @@ def render_html(handoff: dict[str, Any]) -> str:
             blocks.extend(["<h3>Blocked Gates</h3>", f"<ul>{_html_list(blocked_lines)}</ul>"])
         if immediate_lines:
             blocks.extend(["<h3>Immediate Base Sepolia Blockers</h3>", f"<ul>{_html_list(immediate_lines)}</ul>"])
+        funding_targets = [
+            dict(target)
+            for target in testnet.get("funding_targets") or []
+            if isinstance(target, dict)
+        ]
+        if funding_targets:
+            funding_cards = []
+            for target in funding_targets:
+                address = str(target.get("address") or "")
+                explorer_url = str(target.get("explorer_url") or "")
+                explorer_link = (
+                    f'<a class="button secondary" href="{escape(explorer_url)}">Open explorer</a>'
+                    if explorer_url
+                    else ""
+                )
+                funding_cards.append(
+                    '<div class="card">'
+                    f'<div class="label">{escape(str(target.get("label") or "target"))} funding</div>'
+                    f'<div class="value">{escape(str(target.get("status") or "unknown"))}<br>'
+                    f'Balance: {escape(str(target.get("balance_eth") or "unknown"))} ETH<br>'
+                    f'Minimum: {escape(str(target.get("minimum_balance_eth") or "unknown"))} ETH<br>'
+                    f'Needed: {escape(str(target.get("needed_eth") or "unknown"))} ETH<br>'
+                    f'<code>{escape(address)}</code></div>'
+                    '<div class="actions">'
+                    f'<button class="secondary funding-copy" type="button" data-address="{escape(address)}">Copy address</button>'
+                    f"{explorer_link}"
+                    "</div>"
+                    "</div>"
+                )
+            blocks.extend(
+                [
+                    "<h3>Base Sepolia Funding Targets</h3>",
+                    '<section class="grid">',
+                    *funding_cards,
+                    "</section>",
+                ]
+            )
+        faucet_sources = [
+            dict(source)
+            for source in testnet.get("faucet_sources") or []
+            if isinstance(source, dict)
+        ]
+        if faucet_sources:
+            faucet_lines = []
+            for source in faucet_sources:
+                name = escape(str(source.get("name") or "Faucet source"))
+                url = escape(str(source.get("url") or ""))
+                note = escape(str(source.get("note") or ""))
+                link = f'<a href="{url}">{name}</a>' if url else name
+                faucet_lines.append(f"{link}: {note}" if note else link)
+            blocks.extend(
+                [
+                    "<h3>Base Sepolia Faucet Sources</h3>",
+                    "<ul>" + "\n".join(f"<li>{line}</li>" for line in faucet_lines) + "</ul>",
+                ]
+            )
         blocks.extend(
             [
                 "<h3>Testnet Steps When Ready</h3>",
@@ -557,6 +669,7 @@ def render_html(handoff: dict[str, Any]) -> str:
             "}",
             "document.getElementById('copy-local-key')?.addEventListener('click', () => copyText(localHandoff.localOnlyPrivateKey, 'Local-only key'));",
             "document.getElementById('copy-wallet-address')?.addEventListener('click', () => copyText(localHandoff.walletAddress, 'Wallet address'));",
+            "document.querySelectorAll('.funding-copy').forEach((button) => button.addEventListener('click', () => copyText(button.dataset.address, 'Funding address')));",
             "document.getElementById('add-local-network')?.addEventListener('click', async () => {",
             "  try {",
             "    if(!window.ethereum){ setStatus('MetaMask is not available in this browser.'); return; }",

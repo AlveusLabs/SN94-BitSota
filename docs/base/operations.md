@@ -233,8 +233,30 @@ python3 scripts/sota_base_testnet_funding.py \
   --allow-blocked
 ```
 
-Green means the deployer, root publisher, and seeded test wallet all have Base
-Sepolia ETH. Red means fund the listed public address and rerun this gate.
+Green means the deployer, root publisher, and seeded test wallet all meet the
+minimum Base Sepolia ETH balance for their role. The defaults are `0.020 ETH`
+for the deployer, `0.005 ETH` for the root publisher, and `0.005 ETH` for the
+seeded test wallet. Red means fund the listed public address with the displayed
+additional amount and rerun this gate. The report includes BaseScan address
+links and the official Base network faucet documentation URL. Use native Base
+Sepolia ETH only; never fund these testnet roles with Base mainnet ETH.
+If AWS SSO is temporarily expired, the script may reuse cached public addresses
+from existing funding or blocker reports so the funding checklist remains
+actionable. The AWS identity check still remains red until the approved profile
+is authenticated again.
+
+Override the minimum only when the operator explicitly accepts a different gas
+budget:
+
+```bash
+python3 scripts/sota_base_testnet_funding.py \
+  --aws-profile moonrocklab-frankfurt \
+  --min-balance deployer=0.030 \
+  --min-balance root_publisher=0.008 \
+  --min-balance test_wallet=0.006 \
+  --report-out /home/mekaneeky/repos/.sota-base-testnet/base-sota-testnet-funding.json \
+  --allow-blocked
+```
 
 ## Source App Runner Pack
 

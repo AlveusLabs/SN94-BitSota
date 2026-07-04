@@ -42,6 +42,7 @@ def _args(tmp_path: Path, *, environment: str = "both"):
 def _write_inputs(args: argparse.Namespace) -> None:
     claim_proof_report = args.local_report.parent / "local-claim-proof.json"
     blocker_report = args.local_report.parent / "blockers.json"
+    funding_report = args.local_report.parent / "funding.json"
     _write_json(
         args.state,
         {
@@ -118,6 +119,13 @@ def _write_inputs(args: argparse.Namespace) -> None:
                     "summary": {"green": 1, "yellow": 0, "red": 12},
                     "path": str(blocker_report),
                 },
+                {
+                    "name": "testnet_funding",
+                    "phase": "base_sepolia",
+                    "status": "red",
+                    "summary": {"green": 2, "yellow": 0, "red": 3},
+                    "path": str(funding_report),
+                },
             ],
             "blocked_gates": [
                 {
@@ -125,6 +133,12 @@ def _write_inputs(args: argparse.Namespace) -> None:
                     "phase": "base_sepolia",
                     "status": "red",
                     "next_action": "Clear AWS/DNS blockers.",
+                },
+                {
+                    "name": "testnet_funding",
+                    "phase": "base_sepolia",
+                    "status": "red",
+                    "next_action": "Fund Base Sepolia roles.",
                 }
             ],
         },
@@ -160,6 +174,33 @@ def _write_inputs(args: argparse.Namespace) -> None:
             ],
         },
     )
+    _write_json(
+        funding_report,
+        {
+            "schema": "sota-base-testnet-funding/v1",
+            "ok": False,
+            "status": "red",
+            "funding_targets": [
+                {
+                    "label": "deployer",
+                    "status": "red",
+                    "address": "0x00000000000000000000000000000000000000aa",
+                    "balance_eth": "0.00000000",
+                    "minimum_balance_eth": "0.02000000",
+                    "needed_eth": "0.02000000",
+                    "explorer_url": "https://sepolia.basescan.org/address/0x00000000000000000000000000000000000000aa",
+                    "remediation": "Fund the deployer.",
+                }
+            ],
+            "faucet_sources": [
+                {
+                    "name": "Base network faucets",
+                    "url": "https://docs.base.org/base-chain/network-information/network-faucets",
+                    "note": "Use native Base Sepolia ETH.",
+                }
+            ],
+        },
+    )
 
 
 def test_tester_handoff_contains_local_urls_and_warning(tmp_path: Path) -> None:
@@ -187,6 +228,9 @@ def test_tester_handoff_contains_local_urls_and_warning(tmp_path: Path) -> None:
     assert handoff["local"]["self_validation_status"] == "accepted"
     assert handoff["local"]["self_validation_summary"] == "3/3 accepted"
     assert handoff["testnet"]["immediate_blockers"][0]["name"] == "gas_deployer"
+    assert handoff["testnet"]["funding_targets"][0]["label"] == "deployer"
+    assert handoff["testnet"]["funding_targets"][0]["needed_eth"] == "0.02000000"
+    assert handoff["testnet"]["faucet_sources"][0]["name"] == "Base network faucets"
     assert [item["name"] for item in handoff["local"]["peer_validators"]] == ["Bob", "Charlie", "Dave"]
     assert "Never paste a real seed phrase" in markdown
     assert "Local-only private key" in markdown
@@ -200,6 +244,9 @@ def test_tester_handoff_contains_local_urls_and_warning(tmp_path: Path) -> None:
     assert "Immediate Base Sepolia Blockers" in markdown
     assert "gas_deployer" in markdown
     assert "has 0 ETH on Base Sepolia" in markdown
+    assert "Base Sepolia Funding Targets" in markdown
+    assert "needs 0.02000000 ETH" in markdown
+    assert "Base Sepolia Faucet Sources" in markdown
     assert "<title>SOTA Base Tester Handoff</title>" in html
     assert "Local demo ready" in html
     assert "Aggregate status: red" not in html
@@ -213,6 +260,9 @@ def test_tester_handoff_contains_local_urls_and_warning(tmp_path: Path) -> None:
     assert "State-changing claim proof" in html
     assert "Immediate Base Sepolia Blockers" in html
     assert "gas_deployer" in html
+    assert "Base Sepolia Funding Targets" in html
+    assert "Copy address" in html
+    assert "Base Sepolia Faucet Sources" in html
     assert str(args.local_report.parent / "local-claim-proof.json") in html
     assert "archived pre-reset evidence" in html
 
