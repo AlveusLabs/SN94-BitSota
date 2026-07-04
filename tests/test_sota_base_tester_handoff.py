@@ -285,7 +285,7 @@ def test_tester_handoff_contains_local_urls_and_warning(tmp_path: Path) -> None:
     assert "Genesis claim amount: 1.5 SOTA" in markdown
     assert "Mined emission claim amount: 2 SOTA" in markdown
     assert "Peer validators: Bob" in markdown
-    assert "Base Sepolia is not ready" in markdown
+    assert "Base Sepolia infrastructure is not ready" in markdown
     assert "Immediate Base Sepolia Blockers" in markdown
     assert "gas_deployer" in markdown
     assert "has 0 ETH on Base Sepolia" in markdown
@@ -314,6 +314,148 @@ def test_tester_handoff_contains_local_urls_and_warning(tmp_path: Path) -> None:
     assert "Base Sepolia Faucet Sources" in html
     assert str(args.local_report.parent / "local-claim-proof.json") in html
     assert "archived pre-reset evidence" in html
+
+
+def test_tester_handoff_marks_testnet_ready_for_claim_tester_when_only_tx_evidence_is_red(tmp_path: Path) -> None:
+    module = _load_module()
+    args = _args(tmp_path)
+    _write_inputs(args)
+    artifacts_dir = args.release_status.parent
+    release = json.loads(args.release_status.read_text(encoding="utf-8"))
+    release["testnet_ok"] = False
+    release["gates"] = [
+        gate
+        for gate in release["gates"]
+        if gate["phase"] == "local"
+    ] + [
+        {
+            "name": "testnet_operator_run",
+            "phase": "base_sepolia",
+            "status": "green",
+            "required": True,
+            "summary": {"green": 14, "yellow": 0, "red": 0},
+            "path": str(artifacts_dir / "operator.json"),
+        },
+        {
+            "name": "testnet_blockers",
+            "phase": "base_sepolia",
+            "status": "green",
+            "required": True,
+            "summary": {"green": 15, "yellow": 0, "red": 0},
+            "path": str(artifacts_dir / "blockers-green.json"),
+        },
+        {
+            "name": "testnet_funding",
+            "phase": "base_sepolia",
+            "status": "green",
+            "required": True,
+            "summary": {"green": 5, "yellow": 0, "red": 0},
+            "path": str(artifacts_dir / "funding-green.json"),
+        },
+        {
+            "name": "testnet_container_pack",
+            "phase": "base_sepolia",
+            "status": "yellow",
+            "required": False,
+            "summary": {"green": 3, "yellow": 1, "red": 0},
+            "path": str(artifacts_dir / "container.json"),
+        },
+        {
+            "name": "testnet_browser_smoke",
+            "phase": "base_sepolia",
+            "status": "green",
+            "required": True,
+            "summary": {"green": 21, "yellow": 0, "red": 0},
+            "path": str(artifacts_dir / "browser.json"),
+        },
+        {
+            "name": "claim_tx_evidence",
+            "phase": "base_sepolia",
+            "status": "red",
+            "required": True,
+            "summary": {"green": 4, "yellow": 0, "red": 5},
+            "path": str(artifacts_dir / "base-sota-claim-tx-evidence.json"),
+        },
+    ]
+    release["blocked_gates"] = [
+        {
+            "name": "claim_tx_evidence",
+            "phase": "base_sepolia",
+            "status": "red",
+            "next_action": "Submit both MetaMask claims and rerun evidence verification.",
+        }
+    ]
+    _write_json(args.release_status, release)
+    _write_json(artifacts_dir / "blockers-green.json", {"checks": []})
+    _write_json(
+        artifacts_dir / "funding-green.json",
+        {
+            "funding_targets": [
+                {
+                    "label": "test_wallet",
+                    "status": "green",
+                    "address": "0xE93daE9Bb94aa2f2abA57C7CadEC822b800461Fc",
+                    "balance_eth": "0.03999904",
+                    "minimum_balance_eth": "0.00500000",
+                    "needed_eth": "0.00000000",
+                }
+            ],
+            "faucet_sources": [],
+        },
+    )
+    _write_json(
+        artifacts_dir / "base-sota-testnet-seed-artifacts-finalized.json",
+        {
+            "seeded_claims": {
+                "test_wallet_address": "0xe93dae9bb94aa2f2aba57c7cadec822b800461fc",
+                "test_old_coldkey": "5GrwvaEF5zXb26Fz9rcQpDWS57CtERHpNehXCPcNoHGKutQY",
+                "lane_id": "base:sota-local",
+                "epoch": 2,
+                "genesis_total_units": "1500000000000000000",
+                "emission_total_units": "2000000000000000000",
+            },
+            "root_ids": {
+                "genesis": "0x" + "11" * 32,
+                "emission": "0x" + "22" * 32,
+            },
+        },
+    )
+    _write_json(
+        artifacts_dir / "base-sepolia-deployment-manifest.json",
+        {
+            "services": {
+                "claims_ui": {
+                    "public_url": "https://claims.example.test",
+                    "browser_safe_env": {
+                        "NEXT_PUBLIC_SOTA_READINESS_URL": "https://claims.example.test/base-sota-testnet-readiness.json"
+                    },
+                },
+                "indexer_api": {"public_base_url": "https://api.example.test"},
+            }
+        },
+    )
+    _write_json(
+        artifacts_dir / "base-sota-testnet-browser-smoke.json",
+        {"status": "green", "summary": {"green": 21, "yellow": 0, "red": 0}},
+    )
+
+    handoff = module.build_handoff(args)
+    markdown = module.render_markdown(handoff)
+    html = module.render_html(handoff)
+
+    assert handoff["testnet"]["ready"] is True
+    assert handoff["testnet"]["release_ready"] is False
+    assert handoff["testnet"]["claims_ui_url"] == "https://claims.example.test/claims"
+    assert handoff["testnet"]["test_wallet_address"] == "0xe93dae9bb94aa2f2aba57c7cadec822b800461fc"
+    assert handoff["testnet"]["genesis_claim_amount"] == "1.5 SOTA"
+    assert handoff["testnet"]["emission_claim_amount"] == "2 SOTA"
+    assert "Base Sepolia is ready for a MetaMask claim tester" in markdown
+    assert "Remaining Evidence Gate" in markdown
+    assert "BASE_SEPOLIA_GENESIS_TX_HASH" in markdown
+    assert "Refresh Release/Handoff After Evidence" in markdown
+    assert "https://claims.example.test/claims" in html
+    assert "Copy testnet wallet" in html
+    assert "Remaining Evidence Gate" in html
 
 
 def test_tester_handoff_testnet_only_omits_local_private_key(tmp_path: Path) -> None:

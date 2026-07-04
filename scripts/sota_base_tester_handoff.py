@@ -14,6 +14,7 @@ LOCAL_RUN_DIR = REPOS / ".sota-base-local"
 TESTNET_RUN_DIR = REPOS / ".sota-base-testnet"
 LOCAL_HANDOFF_DIR = LOCAL_RUN_DIR / "handoff"
 LOCAL_PRIVATE_KEY = "0x5de4111afa1a4b94908f83103eb1f1706367c2e68ca870fc3fb9a804cdab365a"
+CLAIM_TX_EVIDENCE_GATE = "claim_tx_evidence"
 
 
 def _load_json(path: Path) -> dict[str, Any]:
@@ -23,6 +24,19 @@ def _load_json(path: Path) -> dict[str, Any]:
     if not isinstance(payload, dict):
         raise ValueError(f"{path} must contain a JSON object")
     return payload
+
+
+def _load_env(path: Path) -> dict[str, str]:
+    if not path.exists():
+        return {}
+    values: dict[str, str] = {}
+    for raw_line in path.read_text(encoding="utf-8").splitlines():
+        line = raw_line.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        key, value = line.split("=", 1)
+        values[key.strip()] = value.strip().strip('"').strip("'")
+    return values
 
 
 def _summary_text(summary: dict[str, Any] | None) -> str:
@@ -50,6 +64,20 @@ def _format_sota_units(value: Any) -> str:
         return f"{whole} SOTA"
     fraction_text = str(fraction).rjust(18, "0").rstrip("0")
     return f"{whole}.{fraction_text} SOTA"
+
+
+def _append_claims_path(url: str) -> str:
+    url = str(url or "").strip().rstrip("/")
+    if not url:
+        return ""
+    return url if url.endswith("/claims") else f"{url}/claims"
+
+
+def _funding_target(funding_targets: list[dict[str, str]], label: str) -> dict[str, str]:
+    for target in funding_targets:
+        if str(target.get("label") or "") == label:
+            return target
+    return {}
 
 
 def _local_section(state: dict[str, Any], release: dict[str, Any], local_report: dict[str, Any]) -> dict[str, Any]:
@@ -168,12 +196,34 @@ def _local_section(state: dict[str, Any], release: dict[str, Any], local_report:
     }
 
 
-def _testnet_section(release: dict[str, Any]) -> dict[str, Any]:
+def _required_testnet_infra_ready(testnet_gates: list[dict[str, Any]]) -> bool:
+    required_infra = []
+    for gate in testnet_gates:
+        name = str(dict(gate).get("name") or "")
+        if name == CLAIM_TX_EVIDENCE_GATE:
+            continue
+        required = bool(dict(gate).get("required", name != "testnet_container_pack"))
+        if required:
+            required_infra.append(gate)
+    return bool(required_infra) and all(str(dict(gate).get("status") or "red") == "green" for gate in required_infra)
+
+
+def _testnet_section(release: dict[str, Any], testnet_dir: Path = TESTNET_RUN_DIR) -> dict[str, Any]:
     gates = list(release.get("gates") or [])
     blocked = list(release.get("blocked_gates") or [])
     testnet_gates = [gate for gate in gates if dict(gate).get("phase") == "base_sepolia"]
+    claim_tester_ready = _required_testnet_infra_ready(testnet_gates)
     blocker_gate = next((dict(gate) for gate in testnet_gates if dict(gate).get("name") == "testnet_blockers"), {})
     funding_gate = next((dict(gate) for gate in testnet_gates if dict(gate).get("name") == "testnet_funding"), {})
+    seed_report = _load_json(testnet_dir / "base-sota-testnet-seed-artifacts-finalized.json")
+    manifest = _load_json(testnet_dir / "base-sepolia-deployment-manifest.json")
+    env = _load_env(testnet_dir / "base-sota.env.testnet")
+    browser_smoke = _load_json(testnet_dir / "base-sota-testnet-browser-smoke.json")
+    services = dict(manifest.get("services") or {})
+    claims_ui_service = dict(services.get("claims_ui") or {})
+    claims_api_service = dict(services.get("indexer_api") or {})
+    seeded_claims = dict(seed_report.get("seeded_claims") or {})
+    root_ids = dict(seed_report.get("root_ids") or {})
     immediate_blockers: list[dict[str, str]] = []
     if blocker_gate.get("path"):
         blocker_report = _load_json(Path(str(blocker_gate.get("path"))))
@@ -217,9 +267,60 @@ def _testnet_section(release: dict[str, Any]) -> dict[str, Any]:
                     "note": str(source.get("note") or ""),
                 }
             )
+    test_wallet = (
+        str(seeded_claims.get("test_wallet_address") or "")
+        or str(_funding_target(funding_targets, "test_wallet").get("address") or "")
+    )
+    claims_ui_url = _append_claims_path(
+        env.get("SOTA_CLAIMS_UI_URL")
+        or env.get("NEXT_PUBLIC_SOTA_CLAIMS_UI_URL")
+        or str(claims_ui_service.get("public_url") or "")
+    )
+    claims_api_url = (
+        env.get("SOTA_CLAIMS_API_URL")
+        or env.get("NEXT_PUBLIC_SOTA_CLAIMS_API_URL")
+        or str(claims_api_service.get("public_base_url") or "")
+    )
+    readiness_url = (
+        env.get("NEXT_PUBLIC_SOTA_READINESS_URL")
+        or str(claims_ui_service.get("browser_safe_env", {}).get("NEXT_PUBLIC_SOTA_READINESS_URL") or "")
+    )
+    evidence_command = (
+        "python3 scripts/sota_base_claim_tx_evidence.py --environment testnet "
+        f"--artifacts-dir {testnet_dir} "
+        '--genesis-tx "$BASE_SEPOLIA_GENESIS_TX_HASH" '
+        '--emission-tx "$BASE_SEPOLIA_EMISSION_TX_HASH" '
+        f"--report-out {testnet_dir / 'base-sota-claim-tx-evidence.json'}"
+    )
+    post_evidence_refresh_command = (
+        "python3 scripts/sota_base_release_status.py "
+        f"--testnet-artifacts-dir {testnet_dir} "
+        f"--report-out {testnet_dir / 'base-sota-release-status.json'} && "
+        "python3 scripts/sota_base_tester_handoff.py --environment both "
+        f"--release-status {testnet_dir / 'base-sota-release-status.json'} --mirror-local"
+    )
+    claim_gate = next((dict(gate) for gate in testnet_gates if dict(gate).get("name") == CLAIM_TX_EVIDENCE_GATE), {})
     return {
-        "ready": bool(release.get("testnet_ok")),
-        "status": "green" if release.get("testnet_ok") else "red",
+        "ready": claim_tester_ready,
+        "release_ready": bool(release.get("testnet_ok")),
+        "status": "green" if claim_tester_ready else "red",
+        "release_status": "green" if release.get("testnet_ok") else "red",
+        "claims_ui_url": claims_ui_url,
+        "claims_api_url": claims_api_url,
+        "readiness_url": readiness_url,
+        "browser_smoke_status": str(browser_smoke.get("status") or "missing"),
+        "browser_smoke_summary": browser_smoke.get("summary") or {},
+        "test_wallet_address": test_wallet,
+        "old_coldkey": str(seeded_claims.get("test_old_coldkey") or ""),
+        "lane_id": str(seeded_claims.get("lane_id") or ""),
+        "epoch": str(seeded_claims.get("epoch") or ""),
+        "genesis_claim_amount": _format_sota_units(seeded_claims.get("genesis_total_units")),
+        "emission_claim_amount": _format_sota_units(seeded_claims.get("emission_total_units")),
+        "genesis_root_id": str(root_ids.get("genesis") or ""),
+        "emission_root_id": str(root_ids.get("emission") or ""),
+        "claim_tx_evidence_status": str(claim_gate.get("status") or "missing"),
+        "claim_tx_evidence_command": evidence_command,
+        "post_evidence_refresh_command": post_evidence_refresh_command,
         "gates": [
             {
                 "name": dict(gate).get("name"),
@@ -242,17 +343,26 @@ def _testnet_section(release: dict[str, Any]) -> dict[str, Any]:
         "funding_targets": funding_targets,
         "faucet_sources": faucet_sources,
         "tester_message": (
-            "Base Sepolia is ready for a nontechnical MetaMask tester."
+            "Base Sepolia is fully verified, including human MetaMask claim transaction evidence."
             if release.get("testnet_ok")
-            else "Base Sepolia is not ready for a nontechnical MetaMask tester yet."
+            else "Base Sepolia is ready for a MetaMask claim tester; full release turns green after the two claim transaction hashes verify."
+            if claim_tester_ready
+            else "Base Sepolia infrastructure is not ready for a nontechnical MetaMask tester yet."
         ),
         "expected_flow_when_ready": [
-            "Open the public Base Sepolia claims URL from the readiness artifact.",
+            "Open the public Base Sepolia claims URL.",
             "Connect the seeded test MetaMask wallet.",
             "Switch MetaMask to Base Sepolia.",
-            "Submit the genesis claim and record the transaction hash.",
-            "Submit the mined emission claim and record the transaction hash.",
+            "Submit the genesis claim and copy the transaction hash from MetaMask activity or Basescan.",
+            "Submit the mined emission claim and copy the transaction hash.",
             "Run the claim transaction evidence verifier against both hashes.",
+            "Refresh release status and this handoff after the verifier is green.",
+        ]
+        if claim_tester_ready
+        else [
+            "Clear the infrastructure blockers listed above.",
+            "Rerun the Base Sepolia operator and browser smoke.",
+            "Return to this handoff when the claim tester readiness is green.",
         ],
     }
 
@@ -282,13 +392,13 @@ def build_handoff(args: argparse.Namespace) -> dict[str, Any]:
         "warnings": [
             "Use the printed local-only private key only on the local Anvil network.",
             "Never paste a real seed phrase or production private key into the local demo.",
-            "Do not invite a Base Sepolia tester while any Base Sepolia gate is red.",
+            "Do not invite a Base Sepolia tester while infrastructure gates are red; claim transaction evidence is the tester action that completes full verification.",
         ],
     }
     if args.environment in {"local", "both"}:
         payload["local"] = _local_section(state, release, local_report)
     if args.environment in {"testnet", "both"}:
-        payload["testnet"] = _testnet_section(release)
+        payload["testnet"] = _testnet_section(release, args.release_status.parent)
     return payload
 
 
@@ -320,7 +430,9 @@ def render_markdown(handoff: dict[str, Any]) -> str:
         lines.append(f"- Tailscale preflight: {tailscale_preflight.get('status') or 'unknown'}")
         if tailscale_preflight.get("path"):
             lines.append(f"- Tailscale preflight report: {tailscale_preflight.get('path')}")
-    lines.append(f"- Base Sepolia ready: {str(release.get('testnet_ok')).lower()}")
+    testnet = handoff.get("testnet") if isinstance(handoff.get("testnet"), dict) else {}
+    lines.append(f"- Base Sepolia claim test ready: {str(dict(testnet).get('ready')).lower() if testnet else 'unknown'}")
+    lines.append(f"- Base Sepolia full release ready: {str(release.get('testnet_ok')).lower()}")
     lines.append(f"- Full local + Base Sepolia status: {release.get('status')}")
     lines.append(f"- Gate summary: {_summary_text(dict(release.get('summary') or {}))}")
     lines.append("")
@@ -380,13 +492,33 @@ def render_markdown(handoff: dict[str, Any]) -> str:
             lines.append(str(local.get("local_tx_evidence_command")))
             lines.append("```")
         lines.append("")
-    testnet = handoff.get("testnet")
     if isinstance(testnet, dict):
         lines.append("## Base Sepolia")
         lines.append("")
-        lines.append(f"- Ready: {str(testnet.get('ready')).lower()}")
-        lines.append(f"- Status: {testnet.get('status')}")
+        lines.append(f"- Claim test ready: {str(testnet.get('ready')).lower()}")
+        lines.append(f"- Full release ready: {str(testnet.get('release_ready')).lower()}")
+        lines.append(f"- Claim test status: {testnet.get('status')}")
+        lines.append(f"- Release status: {testnet.get('release_status')}")
         lines.append(f"- Tester message: {testnet.get('tester_message')}")
+        if testnet.get("claims_ui_url"):
+            lines.append(f"- Claims UI: {testnet.get('claims_ui_url')}")
+        if testnet.get("claims_api_url"):
+            lines.append(f"- Claims API: {testnet.get('claims_api_url')}")
+        if testnet.get("readiness_url"):
+            lines.append(f"- Readiness: {testnet.get('readiness_url')}")
+        lines.append(f"- Browser smoke: {testnet.get('browser_smoke_status')} ({_summary_text(dict(testnet.get('browser_smoke_summary') or {}))})")
+        if testnet.get("test_wallet_address"):
+            lines.append(f"- Test wallet: `{testnet.get('test_wallet_address')}`")
+        if testnet.get("old_coldkey"):
+            lines.append(f"- Old coldkey lookup: `{testnet.get('old_coldkey')}`")
+        if testnet.get("lane_id"):
+            lines.append(f"- Emission lane: `{testnet.get('lane_id')}` epoch {testnet.get('epoch')}")
+        lines.append(f"- Genesis claim amount: {testnet.get('genesis_claim_amount')}")
+        lines.append(f"- Mined emission claim amount: {testnet.get('emission_claim_amount')}")
+        if testnet.get("genesis_root_id"):
+            lines.append(f"- Genesis root id: `{testnet.get('genesis_root_id')}`")
+        if testnet.get("emission_root_id"):
+            lines.append(f"- Emission root id: `{testnet.get('emission_root_id')}`")
         lines.append("")
         lines.append("### Gates")
         lines.append("")
@@ -400,7 +532,7 @@ def render_markdown(handoff: dict[str, Any]) -> str:
         blocked = testnet.get("blocked_gates") or []
         if blocked:
             lines.append("")
-            lines.append("### Blocked Gates")
+            lines.append("### Remaining Evidence Gate" if testnet.get("ready") else "### Blocked Gates")
             lines.append("")
             for gate in blocked:
                 gate = dict(gate)
@@ -441,10 +573,24 @@ def render_markdown(handoff: dict[str, Any]) -> str:
                 note = f" - {source.get('note')}" if source.get("note") else ""
                 lines.append(f"- [{source.get('name')}]({source.get('url')}){note}")
         lines.append("")
-        lines.append("### Testnet Steps When Ready")
+        lines.append("### Testnet Claim Steps")
         lines.append("")
         for index, step in enumerate(testnet.get("expected_flow_when_ready") or [], start=1):
             lines.append(f"{index}. {step}")
+        if testnet.get("claim_tx_evidence_command"):
+            lines.append("")
+            lines.append("### Base Sepolia Claim Evidence Command")
+            lines.append("")
+            lines.append("```bash")
+            lines.append(str(testnet.get("claim_tx_evidence_command")))
+            lines.append("```")
+        if testnet.get("post_evidence_refresh_command"):
+            lines.append("")
+            lines.append("### Refresh Release/Handoff After Evidence")
+            lines.append("")
+            lines.append("```bash")
+            lines.append(str(testnet.get("post_evidence_refresh_command")))
+            lines.append("```")
         lines.append("")
     return "\n".join(lines).rstrip() + "\n"
 
@@ -524,7 +670,8 @@ def render_html(handoff: dict[str, Any]) -> str:
         f'<div class="card"><div class="label">Local MetaMask ready</div><div class="value">{escape(str(release.get("local_wallet_ok")).lower())}</div></div>',
         f'<div class="card"><div class="label">Remote Tailscale MetaMask ready</div><div class="value">{escape(str(release.get("local_remote_wallet_ok")).lower())}</div></div>',
         f'<div class="card"><div class="label">Tailscale preflight</div><div class="value">{escape(str(dict(release.get("local_tailscale_preflight") or {}).get("status") or "unknown"))}</div></div>',
-        f'<div class="card"><div class="label">Base Sepolia ready</div><div class="value">{escape(str(release.get("testnet_ok")).lower())}</div></div>',
+        f'<div class="card"><div class="label">Base Sepolia claim test ready</div><div class="value">{escape(str(dict(testnet or {}).get("ready")).lower() if testnet else "unknown")}</div></div>',
+        f'<div class="card"><div class="label">Base Sepolia full release ready</div><div class="value">{escape(str(release.get("testnet_ok")).lower())}</div></div>',
         "</section>",
         '<section class="audience">',
         "<div><strong>I am new</strong><span>Follow Local Steps and use only the printed local-only MetaMask account. You do not need TAO, Base ETH, or a Bittensor wallet.</span></div>",
@@ -621,12 +768,31 @@ def render_html(handoff: dict[str, Any]) -> str:
             [
                 "<h2>Base Sepolia</h2>",
                 f"<p>{escape(str(testnet.get('tester_message')))}</p>",
+                '<section class="grid">',
+                f'<div class="card"><div class="label">Claim test ready</div><div class="value">{escape(str(testnet.get("ready")).lower())}</div></div>',
+                f'<div class="card"><div class="label">Full release ready</div><div class="value">{escape(str(testnet.get("release_ready")).lower())}</div></div>',
+                f'<div class="card"><div class="label">Browser smoke</div><div class="value">{escape(str(testnet.get("browser_smoke_status") or "missing"))} ({escape(_summary_text(dict(testnet.get("browser_smoke_summary") or {})))})</div></div>',
+                f'<div class="card"><div class="label">Claims UI</div><div class="value"><a href="{escape(str(testnet.get("claims_ui_url") or ""))}">{escape(str(testnet.get("claims_ui_url") or ""))}</a></div></div>',
+                f'<div class="card"><div class="label">Claims API</div><div class="value">{escape(str(testnet.get("claims_api_url") or ""))}</div></div>',
+                f'<div class="card"><div class="label">Readiness</div><div class="value"><a href="{escape(str(testnet.get("readiness_url") or ""))}">{escape(str(testnet.get("readiness_url") or ""))}</a></div></div>',
+                f'<div class="card"><div class="label">Test wallet</div><div class="value"><code>{escape(str(testnet.get("test_wallet_address") or ""))}</code></div></div>',
+                f'<div class="card"><div class="label">Old coldkey lookup</div><div class="value"><code>{escape(str(testnet.get("old_coldkey") or ""))}</code></div></div>',
+                f'<div class="card"><div class="label">Emission lane</div><div class="value"><code>{escape(str(testnet.get("lane_id") or ""))}</code><br>Epoch {escape(str(testnet.get("epoch") or ""))}</div></div>',
+                f'<div class="card"><div class="label">Genesis claim</div><div class="value">{escape(str(testnet.get("genesis_claim_amount") or ""))}</div></div>',
+                f'<div class="card"><div class="label">Mined emission claim</div><div class="value">{escape(str(testnet.get("emission_claim_amount") or ""))}</div></div>',
+                f'<div class="card"><div class="label">Root IDs</div><div class="value">Genesis <code>{escape(str(testnet.get("genesis_root_id") or ""))}</code><br>Emission <code>{escape(str(testnet.get("emission_root_id") or ""))}</code></div></div>',
+                "</section>",
+                '<div class="actions">',
+                f'<a class="button secondary" href="{escape(str(testnet.get("claims_ui_url") or ""))}">Open Base Sepolia claims UI</a>',
+                '<button id="copy-testnet-wallet" class="secondary" type="button">Copy testnet wallet</button>',
+                "</div>",
                 "<h3>Gates</h3>",
                 f"<ul>{_html_list(gate_lines) if gate_lines else '<li>No Base Sepolia gate reports found.</li>'}</ul>",
             ]
         )
         if blocked_lines:
-            blocks.extend(["<h3>Blocked Gates</h3>", f"<ul>{_html_list(blocked_lines)}</ul>"])
+            heading = "Remaining Evidence Gate" if testnet.get("ready") else "Blocked Gates"
+            blocks.extend([f"<h3>{heading}</h3>", f"<ul>{_html_list(blocked_lines)}</ul>"])
         if immediate_lines:
             blocks.extend(["<h3>Immediate Base Sepolia Blockers</h3>", f"<ul>{_html_list(immediate_lines)}</ul>"])
         funding_targets = [
@@ -687,8 +853,12 @@ def render_html(handoff: dict[str, Any]) -> str:
             )
         blocks.extend(
             [
-                "<h3>Testnet Steps When Ready</h3>",
+                "<h3>Testnet Claim Steps</h3>",
                 f"<ol>{_html_list([str(item) for item in testnet.get('expected_flow_when_ready') or []])}</ol>",
+                "<h3>Base Sepolia Claim Evidence Command</h3>",
+                f"<p><code>{escape(str(testnet.get('claim_tx_evidence_command') or ''))}</code></p>",
+                "<h3>Refresh Release/Handoff After Evidence</h3>",
+                f"<p><code>{escape(str(testnet.get('post_evidence_refresh_command') or ''))}</code></p>",
             ]
         )
     local_script = {}
@@ -705,10 +875,16 @@ def render_html(handoff: dict[str, Any]) -> str:
             "walletAddress": local.get("wallet_address"),
             "localOnlyPrivateKey": local.get("local_only_private_key"),
         }
+    testnet_script = {}
+    if testnet:
+        testnet_script = {
+            "walletAddress": testnet.get("test_wallet_address"),
+        }
     blocks.extend(
         [
             "<script>",
             f"const localHandoff = {_json_for_script(local_script)};",
+            f"const testnetHandoff = {_json_for_script(testnet_script)};",
             "const statusNode = document.getElementById('handoff-action-status');",
             "function setStatus(message){ if(statusNode){ statusNode.textContent = message; } }",
             "async function copyText(value, label){",
@@ -721,6 +897,7 @@ def render_html(handoff: dict[str, Any]) -> str:
             "}",
             "document.getElementById('copy-local-key')?.addEventListener('click', () => copyText(localHandoff.localOnlyPrivateKey, 'Local-only key'));",
             "document.getElementById('copy-wallet-address')?.addEventListener('click', () => copyText(localHandoff.walletAddress, 'Wallet address'));",
+            "document.getElementById('copy-testnet-wallet')?.addEventListener('click', () => copyText(testnetHandoff.walletAddress, 'Testnet wallet'));",
             "document.querySelectorAll('.funding-copy').forEach((button) => button.addEventListener('click', () => copyText(button.dataset.address, 'Funding address')));",
             "document.getElementById('add-local-network')?.addEventListener('click', async () => {",
             "  try {",
