@@ -711,6 +711,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--json-out", type=Path)
     parser.add_argument("--markdown-out", type=Path)
     parser.add_argument("--html-out", type=Path)
+    parser.add_argument("--mirror-local", action="store_true", help="Also refresh the locally served handoff copy when explicit outputs are supplied.")
     parser.add_argument("--print-markdown", action="store_true")
     args = parser.parse_args(argv)
     default_outputs = not (args.json_out or args.markdown_out or args.html_out)
@@ -729,7 +730,7 @@ def main(argv: list[str] | None = None) -> int:
         html_out=args.html_out,
     )
     local_mirror: dict[str, str] | None = None
-    if default_outputs and args.environment in {"local", "both"}:
+    if (default_outputs or args.mirror_local) and args.environment in {"local", "both"}:
         mirror_json = LOCAL_HANDOFF_DIR / "handoff.json"
         mirror_markdown = LOCAL_HANDOFF_DIR / "handoff.md"
         mirror_html = LOCAL_HANDOFF_DIR / "index.html"

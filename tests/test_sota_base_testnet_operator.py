@@ -41,6 +41,7 @@ def _args(tmp_path: Path, **overrides):
         "default_lane_id": "base:sota-test",
         "emission_evidence": None,
         "local_state": tmp_path / "local-state.json",
+        "local_report": tmp_path / "local-report.json",
         "test_wallet_address": "0x00000000000000000000000000000000000000aa",
         "test_old_coldkey": "5GrwvaEF5zXb26Fz9rcQpDWS57CtERHpNehXCPcNoHGKutQY",
         "test_epoch": "1",
@@ -164,6 +165,13 @@ def _write_standard_reports(module, paths: dict[str, Path], cmd: list[str]) -> N
             paths["release_status"],
             {"schema": "sota-base-release-status/v1", "ok": True, "status": "green"},
         )
+    if _has_cmd(cmd, "sota_base_tester_handoff.py"):
+        module._write_json(
+            paths["tester_handoff_json"],
+            {"schema": "sota-base-tester-handoff/v1", "ok": True},
+        )
+        paths["tester_handoff_md"].write_text("# SOTA Base Tester Handoff\n", encoding="utf-8")
+        paths["tester_handoff_html"].write_text("<!doctype html><title>SOTA Base Tester Handoff</title>\n", encoding="utf-8")
 
 
 def test_operator_report_is_red_without_deployment_or_evidence(tmp_path: Path, monkeypatch) -> None:
@@ -289,6 +297,35 @@ def test_operator_passes_cached_aws_inventory_to_apprunner_source_pack(tmp_path:
 
     assert "--aws-inventory" in seen["source_pack"]
     assert seen["source_pack"][seen["source_pack"].index("--aws-inventory") + 1] == str(paths["aws_inventory"])
+
+
+def test_operator_refreshes_tester_handoff_after_release_status(tmp_path: Path, monkeypatch) -> None:
+    module = _load_module()
+    args = _args(tmp_path, local_report=tmp_path / "local-ui-smoke.json")
+    paths = module._paths(args.artifacts_dir)
+    seen = {}
+
+    def fake_run(cmd: list[str], **kwargs) -> dict:
+        _write_standard_reports(module, paths, cmd)
+        if _has_cmd(cmd, "sota_base_tester_handoff.py"):
+            seen["handoff"] = cmd
+        return _command_result(cmd)
+
+    monkeypatch.setattr(module, "_run_command", fake_run)
+    report = module.run_operator(args)
+    steps = {step["name"]: step for step in report["steps"]}
+
+    assert steps["tester_handoff"]["status"] == "green"
+    assert "--state" in seen["handoff"]
+    assert seen["handoff"][seen["handoff"].index("--state") + 1] == str(args.local_state)
+    assert "--local-report" in seen["handoff"]
+    assert seen["handoff"][seen["handoff"].index("--local-report") + 1] == str(args.local_report)
+    assert "--release-status" in seen["handoff"]
+    assert seen["handoff"][seen["handoff"].index("--release-status") + 1] == str(paths["release_status"])
+    assert seen["handoff"][seen["handoff"].index("--json-out") + 1] == str(paths["tester_handoff_json"])
+    assert seen["handoff"][seen["handoff"].index("--markdown-out") + 1] == str(paths["tester_handoff_md"])
+    assert seen["handoff"][seen["handoff"].index("--html-out") + 1] == str(paths["tester_handoff_html"])
+    assert "--mirror-local" in seen["handoff"]
 
 
 def test_operator_passes_configured_service_urls_to_blocker_gate(tmp_path: Path, monkeypatch) -> None:

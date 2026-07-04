@@ -360,3 +360,34 @@ def test_tester_handoff_default_outputs_refresh_local_served_copy(tmp_path: Path
     assert (local_handoff_dir / "handoff.md").exists()
     assert (local_handoff_dir / "index.html").exists()
     assert "Local demo ready" in (local_handoff_dir / "index.html").read_text(encoding="utf-8")
+
+
+def test_tester_handoff_can_mirror_local_with_explicit_outputs(tmp_path: Path, monkeypatch) -> None:
+    module = _load_module()
+    args = _args(tmp_path)
+    _write_inputs(args)
+    local_handoff_dir = tmp_path / ".sota-base-local" / "handoff"
+    monkeypatch.setattr(module, "LOCAL_HANDOFF_DIR", local_handoff_dir)
+
+    exit_code = module.main(
+        [
+            "--state",
+            str(args.state),
+            "--local-report",
+            str(args.local_report),
+            "--release-status",
+            str(args.release_status),
+            "--json-out",
+            str(args.json_out),
+            "--markdown-out",
+            str(args.markdown_out),
+            "--html-out",
+            str(args.html_out),
+            "--mirror-local",
+        ]
+    )
+
+    assert exit_code == 0
+    assert args.html_out.exists()
+    assert (local_handoff_dir / "index.html").exists()
+    assert "Local demo ready" in (local_handoff_dir / "index.html").read_text(encoding="utf-8")

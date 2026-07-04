@@ -23,6 +23,7 @@ DEFAULT_AWS_REGION = "eu-central-1"
 DEFAULT_DEPLOYER_SECRET_ID = "base-sota/test/base-sepolia/deployer"
 DEFAULT_ROOT_PUBLISHER_SECRET_ID = "base-sota/test/base-sepolia/root-publisher"
 DEFAULT_LOCAL_STATE = REPOS / ".sota-base-local" / "state.json"
+DEFAULT_LOCAL_REPORT = REPOS / ".sota-base-local" / "ui-smoke" / "report.json"
 DEFAULT_TEMPLATE = DOCS_REPO / "docs" / "base" / "manifests" / "base-sepolia-deployment-manifest.template.json"
 DEFAULT_URLS = {
     "claims_ui": "https://claims-test.bitsota.com",
@@ -716,6 +717,28 @@ def _release_status_cmd(args: argparse.Namespace, paths: dict[str, Path]) -> lis
     ]
 
 
+def _tester_handoff_cmd(args: argparse.Namespace, paths: dict[str, Path]) -> list[str]:
+    return [
+        sys.executable,
+        "scripts/sota_base_tester_handoff.py",
+        "--environment",
+        "both",
+        "--state",
+        str(args.local_state),
+        "--local-report",
+        str(args.local_report),
+        "--release-status",
+        str(paths["release_status"]),
+        "--json-out",
+        str(paths["tester_handoff_json"]),
+        "--markdown-out",
+        str(paths["tester_handoff_md"]),
+        "--html-out",
+        str(paths["tester_handoff_html"]),
+        "--mirror-local",
+    ]
+
+
 def _paths(artifacts_dir: Path) -> dict[str, Path]:
     return {
         "artifacts_dir": artifacts_dir,
@@ -743,6 +766,9 @@ def _paths(artifacts_dir: Path) -> dict[str, Path]:
         "emission_claim_artifact": artifacts_dir / "base-sota-testnet-emission-claim-artifact.json",
         "browser_smoke": artifacts_dir / "base-sota-testnet-browser-smoke.json",
         "release_status": artifacts_dir / "base-sota-release-status.json",
+        "tester_handoff_json": artifacts_dir / "base-sota-tester-handoff.json",
+        "tester_handoff_md": artifacts_dir / "base-sota-tester-handoff.md",
+        "tester_handoff_html": artifacts_dir / "base-sota-tester-handoff.html",
         "operator_report": artifacts_dir / "base-sota-testnet-operator-run.json",
     }
 
@@ -1160,6 +1186,20 @@ def run_operator(args: argparse.Namespace) -> dict[str, Any]:
             artifacts={"report": str(paths["release_status"])},
         )
     )
+    handoff = _run_command(_tester_handoff_cmd(args, paths), timeout=args.timeout)
+    steps.append(
+        _step_from_result(
+            "tester_handoff",
+            handoff,
+            success_detail="Regenerated nontechnical tester handoff from the current local and Base Sepolia gate reports.",
+            failure_remediation="Fix the release status, local state, or local UI smoke report, then regenerate the tester handoff.",
+            artifacts={
+                "json": str(paths["tester_handoff_json"]),
+                "markdown": str(paths["tester_handoff_md"]),
+                "html": str(paths["tester_handoff_html"]),
+            },
+        )
+    )
 
     report = build_report(steps)
     _write_json(paths["operator_report"], report)
@@ -1186,6 +1226,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--default-lane-id", default=os.environ.get("NEXT_PUBLIC_SOTA_DEFAULT_LANE_ID", "base:sota-local"))
     parser.add_argument("--emission-evidence", type=Path)
     parser.add_argument("--local-state", type=Path, default=DEFAULT_LOCAL_STATE)
+    parser.add_argument("--local-report", type=Path, default=DEFAULT_LOCAL_REPORT)
     parser.add_argument("--test-wallet-address", default=os.environ.get("SOTA_TEST_WALLET_ADDRESS", ""))
     parser.add_argument("--test-old-coldkey", default=os.environ.get("SOTA_TEST_OLD_COLDKEY", ""))
     parser.add_argument("--test-epoch", default=os.environ.get("SOTA_TEST_EPOCH", "1"))
