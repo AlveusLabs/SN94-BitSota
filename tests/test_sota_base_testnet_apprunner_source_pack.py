@@ -99,6 +99,7 @@ def _args(tmp_path: Path, **overrides):
         "region": "eu-central-1",
         "connection_name": "bitsota",
         "connection_arn": "",
+        "aws_inventory": tmp_path / "aws-inventory.json",
         "instance_role_arn": "arn:aws:iam::924380800822:role/AppRunnerReadSecrets",
         "no_resolve_connection_arn": False,
         "skip_remote_check": False,
@@ -217,3 +218,58 @@ def test_source_pack_ignores_unrelated_dirty_paths_for_readiness(tmp_path: Path,
     assert report["status"] == "green"
     assert checks["source_dirty_base-sota-indexer-api-test"]["status"] == "green"
     assert report["source_publication"][0]["deployment_relevant_dirty_count"] == 0
+
+
+def test_source_pack_uses_cached_connection_when_aws_lookup_fails(tmp_path: Path, monkeypatch) -> None:
+    module = _load_module()
+    args = _args(tmp_path)
+    args.aws_inventory.write_text(
+        json.dumps(
+            {
+                "schema": "sota-base-testnet-aws-inventory/v1",
+                "inventory": {
+                    "app_runner_connections": [
+                        {
+                            "name": "bitsota",
+                            "arn": "arn:aws:apprunner:eu-central-1:924380800822:connection/bitsota/cached",
+                            "status": "AVAILABLE",
+                        }
+                    ]
+                },
+            },
+            indent=2,
+            sort_keys=True,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(module, "_run_aws", lambda *a, **k: (_ for _ in ()).throw(RuntimeError("SSO expired")))
+    monkeypatch.setattr(module, "_git_status", lambda path, timeout: "")
+    monkeypatch.setattr(module, "_git_remote_head", lambda remote_url, branch, timeout: "a" * 40)
+
+    report = module.build_pack(args)
+    rendered = json.loads((args.out_dir / "base-sota-indexer-api-test.json").read_text(encoding="utf-8"))
+    checks = {check["name"]: check for check in report["checks"]}
+
+    assert report["status"] == "green"
+    assert checks["connection_arn"]["status"] == "green"
+    assert "cached AVAILABLE" in checks["connection_arn"]["detail"]
+    assert rendered["SourceConfiguration"]["AuthenticationConfiguration"]["ConnectionArn"].endswith("/cached")
+
+
+def test_source_pack_reports_missing_cached_connection_after_aws_failure(tmp_path: Path, monkeypatch) -> None:
+    module = _load_module()
+    args = _args(tmp_path, skip_remote_check=True)
+    args.aws_inventory.write_text(
+        json.dumps({"inventory": {"app_runner_connections": []}}) + "\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(module, "_run_aws", lambda *a, **k: (_ for _ in ()).throw(RuntimeError("SSO expired")))
+    monkeypatch.setattr(module, "_git_status", lambda path, timeout: "")
+
+    report = module.build_pack(args)
+    checks = {check["name"]: check for check in report["checks"]}
+
+    assert report["status"] == "yellow"
+    assert checks["connection_arn"]["status"] == "yellow"
+    assert "Cached fallback was unavailable" in checks["connection_arn"]["detail"]

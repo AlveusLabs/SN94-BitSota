@@ -17,6 +17,7 @@ DEFAULT_SERVICE_PACK = DEFAULT_ARTIFACTS_DIR / "base-sota-testnet-service-pack.j
 DEFAULT_INPUT_DIR = DEFAULT_ARTIFACTS_DIR / "apprunner"
 DEFAULT_OUT_DIR = DEFAULT_ARTIFACTS_DIR / "apprunner-source"
 DEFAULT_REPORT_OUT = DEFAULT_ARTIFACTS_DIR / "base-sota-testnet-apprunner-source-pack.json"
+DEFAULT_AWS_INVENTORY = DEFAULT_ARTIFACTS_DIR / "base-sota-testnet-aws-inventory.json"
 DEFAULT_AWS_PROFILE = "moonrocklab-frankfurt"
 DEFAULT_REGION = "eu-central-1"
 DEFAULT_CONNECTION_NAME = "bitsota"
@@ -94,6 +95,31 @@ def _run_aws(args: list[str], *, profile: str, region: str, timeout: float) -> d
     return payload
 
 
+def _cached_connection_arn(args: argparse.Namespace) -> tuple[str, str]:
+    path = Path(getattr(args, "aws_inventory", DEFAULT_AWS_INVENTORY))
+    if not path.exists():
+        return "", ""
+    try:
+        payload = _load_json(path)
+    except Exception as exc:
+        return "", f"cached inventory {path} could not be read: {exc}"
+    inventory = dict(payload.get("inventory") or {})
+    matches = [
+        dict(item)
+        for item in inventory.get("app_runner_connections") or []
+        if isinstance(item, dict) and item.get("name") == args.connection_name
+    ]
+    available = [item for item in matches if str(item.get("status") or "").upper() == "AVAILABLE"]
+    selected = available[0] if available else (matches[0] if matches else {})
+    arn = str(selected.get("arn") or "")
+    if not arn:
+        return "", f"cached inventory {path} does not contain connection {args.connection_name!r}"
+    status = str(selected.get("status") or "UNKNOWN")
+    if status.upper() != "AVAILABLE":
+        return "", f"cached connection {args.connection_name!r} in {path} is {status}, not AVAILABLE"
+    return arn, str(path)
+
+
 def _resolve_connection_arn(args: argparse.Namespace, checks: list[dict[str, str]]) -> str:
     if args.connection_arn:
         checks.append({"name": "connection_arn", "status": "green", "detail": "Using explicitly supplied App Runner GitHub connection ARN."})
@@ -115,11 +141,25 @@ def _resolve_connection_arn(args: argparse.Namespace, checks: list[dict[str, str
     try:
         payload = _run_aws(["apprunner", "list-connections"], profile=args.aws_profile, region=args.region, timeout=args.timeout)
     except Exception as exc:
+        cached_arn, cached_source = _cached_connection_arn(args)
+        if cached_arn:
+            checks.append(
+                {
+                    "name": "connection_arn",
+                    "status": "green",
+                    "detail": (
+                        f"Using cached AVAILABLE App Runner GitHub connection ARN for "
+                        f"{args.connection_name!r} from {cached_source}; live AWS lookup failed: {exc}"
+                    ),
+                }
+            )
+            return cached_arn
+        fallback_detail = f" Cached fallback was unavailable: {cached_source}" if cached_source else ""
         checks.append(
             {
                 "name": "connection_arn",
                 "status": "yellow",
-                "detail": f"Could not resolve App Runner connection {args.connection_name!r}: {exc}",
+                "detail": f"Could not resolve App Runner connection {args.connection_name!r}: {exc}.{fallback_detail}",
                 "remediation": f"Set ${CONNECTION_ARN_ENV} to the approved App Runner GitHub connection ARN.",
             }
         )
@@ -536,6 +576,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--region", default=DEFAULT_REGION)
     parser.add_argument("--connection-name", default=DEFAULT_CONNECTION_NAME)
     parser.add_argument("--connection-arn", default="")
+    parser.add_argument("--aws-inventory", type=Path, default=DEFAULT_AWS_INVENTORY)
     parser.add_argument("--instance-role-arn", default=DEFAULT_INSTANCE_ROLE_ARN)
     parser.add_argument("--no-resolve-connection-arn", action="store_true")
     parser.add_argument("--skip-remote-check", action="store_true")
