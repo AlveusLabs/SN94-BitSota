@@ -4,6 +4,7 @@ import argparse
 import importlib.util
 import json
 from pathlib import Path
+from types import SimpleNamespace
 import sys
 
 
@@ -144,3 +145,21 @@ def test_claim_proof_can_reset_after_success(tmp_path: Path, monkeypatch) -> Non
     assert checks["reset_after"]["status"] == "green"
     assert reset["timeout"] == 1.0
     assert "ready" in report["reset_stdout_tail"]
+
+
+def test_claim_proof_reset_launches_without_recursive_proof(monkeypatch) -> None:
+    module = _load_module()
+    calls = []
+
+    def fake_run(command, **kwargs):
+        calls.append((command, kwargs))
+        return SimpleNamespace(returncode=0, stdout="SOTA Base local demo is ready.", stderr="")
+
+    monkeypatch.setattr(module.subprocess, "run", fake_run)
+
+    output = module._restart_local_stack(12.0)
+
+    assert output == "SOTA Base local demo is ready."
+    command, kwargs = calls[0]
+    assert command[-2:] == ["launch", "--skip-claim-proof"]
+    assert kwargs["timeout"] == 12.0

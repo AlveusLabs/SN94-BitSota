@@ -907,6 +907,27 @@ def _run_local_ui_smoke_report() -> None:
     )
 
 
+def _run_local_claim_proof_reset() -> None:
+    result = subprocess.run(
+        [
+            sys.executable,
+            str(DOCS_REPO / "scripts" / "sota_local_claim_proof.py"),
+            "--reset-after",
+            "--report-out",
+            str(RUN_DIR / "claim-proof" / "latest.json"),
+            "--evidence-out",
+            str(RUN_DIR / "claim-proof" / "local-claim-tx-evidence.json"),
+        ],
+        cwd=DOCS_REPO,
+        check=False,
+        text=True,
+        capture_output=True,
+        timeout=420,
+    )
+    if result.returncode != 0:
+        raise RuntimeError(result.stderr.strip() or result.stdout.strip() or f"local claim proof exited {result.returncode}")
+
+
 def _generate_release_status_report() -> None:
     subprocess.run(
         [
@@ -963,7 +984,13 @@ def _start_handoff() -> None:
     _wait_http("http://127.0.0.1:9003/", timeout_seconds=30)
 
 
-def start_stack(*, website: bool = True, docs: bool = True, hold: bool = True) -> dict[str, Any]:
+def _refresh_tester_artifacts() -> None:
+    _run_local_ui_smoke_report()
+    _generate_release_status_report()
+    _generate_handoff()
+
+
+def start_stack(*, website: bool = True, docs: bool = True, hold: bool = True, claim_proof: bool = False) -> dict[str, Any]:
     RUN_DIR.mkdir(parents=True, exist_ok=True)
     stop_stack()
     _reset_runtime_state()
@@ -989,16 +1016,17 @@ def start_stack(*, website: bool = True, docs: bool = True, hold: bool = True) -
         _start_docs()
     if website and docs:
         _write_json(STATE_PATH, state)
-        _run_local_ui_smoke_report()
-        _generate_release_status_report()
-        _generate_handoff()
+        _refresh_tester_artifacts()
         _start_handoff()
         state["urls"]["handoff"] = f"http://{host}:9003/"
     _write_json(STATE_PATH, state)
     if website and docs:
-        _run_local_ui_smoke_report()
-        _generate_release_status_report()
-        _generate_handoff()
+        _refresh_tester_artifacts()
+        if claim_proof:
+            _print("running state-changing local claim proof and resetting to a fresh claimable stack...")
+            _run_local_claim_proof_reset()
+            state = _load_json(STATE_PATH)
+            _refresh_tester_artifacts()
     print_summary(state)
     if hold:
         try:
@@ -1089,7 +1117,12 @@ def smoke() -> None:
 def main() -> int:
     parser = argparse.ArgumentParser(description="Run the local SOTA Base fork demo stack.")
     sub = parser.add_subparsers(dest="command", required=True)
-    sub.add_parser("launch", help="start the full local tester stack, run readiness checks, and return")
+    launch = sub.add_parser("launch", help="start the full local tester stack, prove claims, reset fresh, and return")
+    launch.add_argument(
+        "--skip-claim-proof",
+        action="store_true",
+        help="skip the state-changing local claim proof; used by the proof reset path",
+    )
     start = sub.add_parser("start", help="start the full local stack and keep it running")
     start.add_argument("--no-website", action="store_true", help="skip Next.js claims UI")
     start.add_argument("--no-docs", action="store_true", help="skip MkDocs")
@@ -1120,7 +1153,7 @@ def main() -> int:
             command.append("--skip-screenshot")
         return subprocess.call(command, cwd=DOCS_REPO)
     if args.command == "launch":
-        start_stack(website=True, docs=True, hold=False)
+        start_stack(website=True, docs=True, hold=False, claim_proof=not args.skip_claim_proof)
         return 0
     if args.command == "start":
         start_stack(website=not args.no_website, docs=not args.no_docs, hold=not args.detach)

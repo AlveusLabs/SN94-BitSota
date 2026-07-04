@@ -30,7 +30,10 @@ cd /home/mekaneeky/repos/SN94-BitSota-live-docs
 
 The launcher must start the local EVM, indexer, autoresearch backend, website,
 and docs. It must seed demo users, run miners through self-validation, and
-print the URLs a reviewer should open.
+print the URLs a reviewer should open. Before printing the final ready block,
+it must also submit and verify one automated local genesis claim and one
+automated local emission claim, then reset the stack so the reviewer still
+starts with unclaimed SOTA.
 
 Success means a reviewer can:
 
@@ -53,6 +56,8 @@ cd /home/mekaneeky/repos/SN94-BitSota-live-docs
 Save evidence that a nontechnical reviewer can read later:
 
 - the ready URL block printed by the launcher;
+- the local claim proof report under
+  `/home/mekaneeky/repos/.sota-base-local/claim-proof/latest.json`;
 - the local wallet address and old coldkey shown by the launcher;
 - screenshots or notes for before/after local SOTA balances;
 - the autoresearch dashboard showing the seeded task, submission, and

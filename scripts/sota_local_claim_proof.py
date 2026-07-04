@@ -196,7 +196,12 @@ def _run_evidence(
 
 
 def _restart_local_stack(timeout: float) -> str:
-    command = [sys.executable, str(DOCS_REPO / "scripts" / "sota_local_demo.py"), "launch"]
+    command = [
+        sys.executable,
+        str(DOCS_REPO / "scripts" / "sota_local_demo.py"),
+        "launch",
+        "--skip-claim-proof",
+    ]
     result = subprocess.run(command, cwd=DOCS_REPO, check=False, text=True, capture_output=True, timeout=timeout)
     if result.returncode != 0:
         raise RuntimeError(result.stderr.strip() or result.stdout.strip() or f"local reset exited {result.returncode}")

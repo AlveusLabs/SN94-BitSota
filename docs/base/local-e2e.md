@@ -15,9 +15,11 @@
 ./scripts/sota_local_demo.py launch</code></pre>
 </div>
 
-`launch` runs the readiness checks, serves the tester handoff, leaves the
-services running, and returns to the shell. Developers who want the launcher to
-hold the terminal open can use `./scripts/sota_local_demo.py start` instead.
+`launch` runs the readiness checks, submits and verifies one automated pair of
+local genesis/emission claims, resets the stack so the human tester still sees
+unclaimed SOTA, serves the tester handoff, leaves the services running, and
+returns to the shell. Developers who want the launcher to hold the terminal
+open can use `./scripts/sota_local_demo.py start` instead.
 
 Do not assemble the demo by running separate contract, backend, indexer, or UI
 tests. Those checks are useful for developers, but they are not the product
@@ -121,8 +123,8 @@ You know the demo is working when you can do these steps:
 10. Open the autoresearch dashboard and see the seeded task, submission, and
    self-validation evidence.
 
-Before handing the demo to a nontechnical tester, run the UI smoke against the
-already-running stack:
+The launcher runs this UI smoke automatically. If you changed code after launch,
+rerun it against the already-running stack:
 
 ```bash
 cd /home/mekaneeky/repos/SN94-BitSota-live-docs
@@ -172,11 +174,13 @@ This verifier is read-only. It checks the local chain ID, distributor
 addresses, receipts, SOTA transfer events, and final balance evidence without
 signing or broadcasting anything.
 
-If you need a no-mock operator proof before handing the demo to someone else,
-run the local claim proof command. It fetches the same unsigned calldata that
-the claims UI gives MetaMask, signs it with the printed local-only key, submits
-both local claim transactions, runs the receipt verifier, writes evidence, and
-then resets the stack so the next tester still starts with unclaimed SOTA:
+The launcher also runs the no-mock operator proof automatically before it prints
+the final ready block. It fetches the same unsigned calldata that the claims UI
+gives MetaMask, signs it with the printed local-only key, submits both local
+claim transactions, runs the receipt verifier, writes evidence, and then resets
+the stack so the tester still starts with unclaimed SOTA.
+
+If you need to rerun only that proof against an already-running stack, use:
 
 ```bash
 cd /home/mekaneeky/repos/SN94-BitSota-live-docs
@@ -222,16 +226,15 @@ cd /home/mekaneeky/repos/SN94-BitSota-live-docs
 ./scripts/sota_local_demo.py smoke
 ```
 
-Use all three checks for local release readiness:
+Use these checks for local release readiness:
 
 1. `./scripts/sota_local_demo.py smoke` proves the contract/indexer/backend
    transaction loop without a browser.
-2. `./scripts/sota_local_demo.py launch` followed by
-   `./scripts/sota_local_demo.py ui-smoke` proves the running user-facing page
-   and proxy routes that a tester opens.
-3. `./scripts/sota_local_claim_proof.py --reset-after` proves the running UI
-   claim payloads can be submitted and receipt-verified, then restores a clean
-   unclaimed tester stack.
+2. `./scripts/sota_local_demo.py launch` proves the running user-facing page,
+   proxy routes, state-changing claim payloads, receipt evidence, reset path,
+   docs, and tester handoff.
+3. `./scripts/sota_local_demo.py ui-smoke --skip-screenshot` reruns the
+   browser-facing readiness checks after code or config changes.
 
 The release status report requires both the UI smoke report and the latest
 local claim proof report before it marks `local_ok` as true.

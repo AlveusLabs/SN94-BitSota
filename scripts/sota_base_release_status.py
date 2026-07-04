@@ -116,7 +116,7 @@ def default_gates(*, local_report: Path, local_claim_proof: Path, testnet_dir: P
             path=local_claim_proof,
             expected_schema="sota-local-claim-proof/v1",
             required=True,
-            next_action="Run ./scripts/sota_local_claim_proof.py --reset-after before handing the local stack to a tester.",
+            next_action="Run ./scripts/sota_local_demo.py launch so it records the local claim proof and resets the stack for the tester.",
         ),
     ]
     if include_testnet:
