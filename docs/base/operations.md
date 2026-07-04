@@ -310,6 +310,25 @@ service so operators can publish only the Base SOTA service changes.
 The ECR/container pack is optional. Use it only if an existing App Runner ECR
 access role ARN is provided and `iam:PassRole` works for that role.
 
+## Base Sepolia Fresh Tester Prep
+
+Use this when the next nontechnical tester needs a clean first-time MetaMask
+claim. It creates a new throwaway Base Sepolia test wallet file, seeds real
+public self-validation evidence, tops the wallet up with Base Sepolia test ETH
+from the local faucet wallet if needed, publishes/imports the new genesis and
+emission roots, runs browser smoke, and refreshes release status plus the
+tester handoff.
+
+```bash
+cd /home/mekaneeky/repos/SN94-BitSota-live-docs
+python3 scripts/sota_prepare_fresh_testnet_tester.py
+```
+
+The command prints only the reward address, claim URL, handoff path, and next
+operator action. It writes the wallet key JSON under `.sota-base-testnet/` and
+does not print private keys. Wallet access must still be provided out of band
+to the human tester.
+
 ## Base Sepolia Self-Validation Seed
 
 Before building claim artifacts for a fresh public tester, seed real
@@ -332,6 +351,10 @@ The script reads the autoresearch admin token from the approved AWS Secrets
 Manager handle unless `SOTA_AUTORESEARCH_ADMIN_TOKEN` is already set. It does
 not print the reward wallet private key and does not touch production
 Bittensor, Base mainnet, or production TAO.
+
+The fresh-tester prep command above wraps this seed step and the guarded
+operator run. Use this lower-level command only when debugging or reviewing a
+specific seed artifact.
 
 ## Base Sepolia Operator Run
 
