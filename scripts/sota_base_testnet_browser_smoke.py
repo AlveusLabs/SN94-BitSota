@@ -180,6 +180,20 @@ def _raw_credit(payload: dict[str, Any], key: str) -> str:
     return str(dict(credits.get(camel) or {}).get("raw") or "")
 
 
+def _claim_is_fully_claimed(payload: dict[str, Any]) -> bool:
+    state = dict(payload.get("claim_state") or {})
+    if str(state.get("status") or "").lower() == "claimed":
+        return True
+    claimed = _as_int(_raw_credit(payload, "claimed_sota")) or 0
+    total = _as_int(_raw_credit(payload, "total_sota")) or 0
+    unclaimed = _as_int(_raw_credit(payload, "unclaimed_sota")) or 0
+    return total > 0 and claimed >= total and unclaimed == 0
+
+
+def _already_claimed_error(exc: Exception) -> bool:
+    return "already_claimed" in str(exc)
+
+
 def _readiness_payload(args: argparse.Namespace, readiness_url: str) -> dict[str, Any]:
     local = _load_json(args.readiness_file)
     if local:
@@ -419,50 +433,51 @@ def _claim_lookup_checks(values: dict[str, str], *, timeout: float) -> list[Chec
             remediation="Run a self-validated test competition and import its emission claim artifact.",
         )
     )
-    try:
-        genesis_tx = dict(
-            _http_json(
-                "POST",
-                _join_url(base, "/api/v1/base/claims/transaction"),
-                payload={"program": "genesis", "rewardAddress": wallet},
-                timeout=timeout,
+    for label, payload, request_payload, remediation in (
+        (
+            "genesis",
+            genesis,
+            {"program": "genesis", "rewardAddress": wallet},
+            "Fix genesis distributor address, proof args, or chain id in the claims API.",
+        ),
+        (
+            "emission",
+            emission,
+            {"program": "emission", "evmAddress": wallet, "laneId": lane_id},
+            "Fix emission distributor address, proof args, or chain id in the claims API.",
+        ),
+    ):
+        try:
+            tx_response = dict(
+                _http_json(
+                    "POST",
+                    _join_url(base, "/api/v1/base/claims/transaction"),
+                    payload=request_payload,
+                    timeout=timeout,
+                )
+                or {}
             )
-            or {}
-        )
-        tx = dict(genesis_tx.get("transaction") or {})
-        checks.append(
-            _result_check(
-                "genesis_calldata",
-                str(tx.get("data") or "").startswith("0x") and _as_int(tx.get("chainId")) == BASE_SEPOLIA_CHAIN_ID,
-                "Claims API returns unsigned genesis calldata for Base Sepolia.",
-                f"Genesis transaction builder returned chainId={tx.get('chainId')!r}, data_prefix={str(tx.get('data') or '')[:10]!r}.",
-                remediation="Fix genesis distributor address, proof args, or chain id in the claims API.",
+            tx = dict(tx_response.get("transaction") or {})
+            checks.append(
+                _result_check(
+                    f"{label}_calldata",
+                    str(tx.get("data") or "").startswith("0x") and _as_int(tx.get("chainId")) == BASE_SEPOLIA_CHAIN_ID,
+                    f"Claims API returns unsigned {label} calldata for Base Sepolia.",
+                    f"{label.capitalize()} transaction builder returned chainId={tx.get('chainId')!r}, data_prefix={str(tx.get('data') or '')[:10]!r}.",
+                    remediation=remediation,
+                )
             )
-        )
-    except Exception as exc:
-        checks.append(Check("genesis_calldata", "red", f"Genesis calldata failed: {exc}", "Fix transaction builder for genesis claims."))
-    try:
-        emission_tx = dict(
-            _http_json(
-                "POST",
-                _join_url(base, "/api/v1/base/claims/transaction"),
-                payload={"program": "emission", "evmAddress": wallet, "laneId": lane_id},
-                timeout=timeout,
-            )
-            or {}
-        )
-        tx = dict(emission_tx.get("transaction") or {})
-        checks.append(
-            _result_check(
-                "emission_calldata",
-                str(tx.get("data") or "").startswith("0x") and _as_int(tx.get("chainId")) == BASE_SEPOLIA_CHAIN_ID,
-                "Claims API returns unsigned emission calldata for Base Sepolia.",
-                f"Emission transaction builder returned chainId={tx.get('chainId')!r}, data_prefix={str(tx.get('data') or '')[:10]!r}.",
-                remediation="Fix emission distributor address, proof args, or chain id in the claims API.",
-            )
-        )
-    except Exception as exc:
-        checks.append(Check("emission_calldata", "red", f"Emission calldata failed: {exc}", "Fix transaction builder for emission claims."))
+        except Exception as exc:
+            if _already_claimed_error(exc) and _claim_is_fully_claimed(payload):
+                checks.append(
+                    Check(
+                        f"{label}_calldata",
+                        "green",
+                        f"{label.capitalize()} claim is already complete for the seeded wallet; transaction builder correctly refuses a duplicate claim.",
+                    )
+                )
+            else:
+                checks.append(Check(f"{label}_calldata", "red", f"{label.capitalize()} calldata failed: {exc}", f"Fix transaction builder for {label} claims."))
     return checks
 
 

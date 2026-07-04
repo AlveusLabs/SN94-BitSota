@@ -157,6 +157,40 @@ def test_browser_smoke_green_for_public_testnet_fixture(tmp_path: Path, monkeypa
     assert names["self_validation_evidence"]["status"] == "green"
 
 
+def test_browser_smoke_accepts_already_claimed_seeded_wallet(tmp_path: Path, monkeypatch) -> None:
+    module = _load_module()
+    args = _args(tmp_path)
+    _write_artifacts(args)
+    _install_green_http(module, monkeypatch)
+
+    original_http_json = module._http_json
+
+    def wrapped_json(method: str, url: str, *, payload=None, timeout: float):
+        if "/api/v1/base/eligibility/" in url:
+            return {
+                "eligible": True,
+                "credits": {
+                    "total_sota": {"raw": "1500000000000000000"},
+                    "claimed_sota": {"raw": "1500000000000000000"},
+                    "unclaimed_sota": {"raw": "0"},
+                },
+                "claim_state": {"status": "claimed", "claimable": False},
+            }
+        if url.endswith("/api/v1/base/claims/transaction"):
+            raise RuntimeError('POST failed with HTTP 409: {"detail":{"code":"already_claimed"}}')
+        return original_http_json(method, url, payload=payload, timeout=timeout)
+
+    monkeypatch.setattr(module, "_http_json", wrapped_json)
+
+    report = module.run_browser_smoke(args)
+    names = {check["name"]: check for check in report["checks"]}
+
+    assert report["ok"] is True
+    assert names["genesis_calldata"]["status"] == "green"
+    assert "already complete" in names["genesis_calldata"]["detail"]
+    assert names["emission_calldata"]["status"] == "green"
+
+
 def test_browser_smoke_rejects_readiness_that_is_not_green(tmp_path: Path, monkeypatch) -> None:
     module = _load_module()
     args = _args(tmp_path)
