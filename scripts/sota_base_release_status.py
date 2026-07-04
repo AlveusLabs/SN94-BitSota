@@ -242,12 +242,36 @@ def run_status(args: argparse.Namespace) -> dict[str, Any]:
         include_testnet=not args.local_only,
     )
     gate_reports = [_gate_status(gate) for gate in gates]
+    local_remote_wallet = _local_remote_wallet_status(args.local_report)
+    local_remote_wallet_gate = {
+        "name": "local_remote_wallet",
+        "phase": "local",
+        "required": True,
+        "path": str(args.local_report),
+        "expected_schema": "sota-local-claims-ui-smoke/v1",
+        "schema": "sota-local-claims-ui-smoke/v1",
+        "ok": bool(local_remote_wallet.get("ok")),
+        "status": str(local_remote_wallet.get("status") or "red"),
+        "summary": {
+            "green": 1 if local_remote_wallet.get("status") == "green" else 0,
+            "yellow": 1 if local_remote_wallet.get("status") == "yellow" else 0,
+            "red": 1 if local_remote_wallet.get("status") not in {"green", "yellow"} else 0,
+        },
+        "message": str(local_remote_wallet.get("message") or ""),
+        "next_action": str(local_remote_wallet.get("next_action") or ""),
+    }
+    insert_at = next((index for index, gate in enumerate(gate_reports) if gate["phase"] != "local"), len(gate_reports))
+    gate_reports.insert(insert_at, local_remote_wallet_gate)
     required = [gate for gate in gate_reports if gate["required"]]
     ok = all(bool(gate["ok"]) for gate in required)
     status = _worst([str(gate["status"]) for gate in required])
     blocked = [gate for gate in required if not gate["ok"]]
-    local_ok = all(bool(gate["ok"]) for gate in gate_reports if gate["phase"] == "local" and gate["required"])
-    local_remote_wallet = _local_remote_wallet_status(args.local_report)
+    local_stack_ok = all(
+        bool(gate["ok"])
+        for gate in gate_reports
+        if gate["phase"] == "local" and gate["required"] and gate["name"] != "local_remote_wallet"
+    )
+    local_ok = local_stack_ok and bool(local_remote_wallet.get("ok"))
     testnet_ok = (
         all(bool(gate["ok"]) for gate in gate_reports if gate["phase"] == "base_sepolia" and gate["required"])
         if not args.local_only
@@ -258,6 +282,7 @@ def run_status(args: argparse.Namespace) -> dict[str, Any]:
         "generated_at": datetime.now(timezone.utc).isoformat(),
         "ok": ok,
         "status": status,
+        "local_stack_ok": local_stack_ok,
         "local_ok": local_ok,
         "local_remote_wallet_ok": bool(local_remote_wallet.get("ok")),
         "local_remote_wallet": local_remote_wallet,

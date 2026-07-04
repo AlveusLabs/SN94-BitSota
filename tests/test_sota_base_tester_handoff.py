@@ -48,16 +48,16 @@ def _write_inputs(args: argparse.Namespace) -> None:
         {
             "chain_id": 31337,
             "urls": {
-                "claims_ui": "https://sota-host.example.ts.net:3000/claims",
-                "docs": "https://sota-host.example.ts.net:9002/base/",
-                "autoresearch_dashboard": "https://sota-host.example.ts.net:8000/dashboard",
-                "anvil_rpc": "https://sota-host.example.ts.net:8545",
+                "claims_ui": "http://100.0.0.1:3000/claims",
+                "docs": "http://100.0.0.1:9002/base/",
+                "autoresearch_dashboard": "http://100.0.0.1:8000/dashboard",
+                "anvil_rpc": "http://100.0.0.1:8545",
             },
             "sharing": {
-                "mode": "tailscale-https",
-                "status": "green",
-                "tailscale_dns_name": "sota-host.example.ts.net",
-                "wallet_rpc_browser_safe": True,
+                "mode": "http",
+                "status": "yellow",
+                "wallet_rpc_browser_safe": False,
+                "warning": "Tailscale Serve HTTPS is unavailable.",
             },
             "accounts": {"alice_reward": "0x3C44CdDdB6a900fa2b585dd299e03d12FA4293BC"},
             "genesis": {
@@ -100,7 +100,8 @@ def _write_inputs(args: argparse.Namespace) -> None:
             "schema": "sota-base-release-status/v1",
             "ok": False,
             "status": "red",
-            "local_ok": True,
+            "local_stack_ok": True,
+            "local_ok": False,
             "local_remote_wallet_ok": False,
             "local_remote_wallet": {
                 "ok": False,
@@ -226,15 +227,16 @@ def test_tester_handoff_contains_local_urls_and_warning(tmp_path: Path) -> None:
     html = module.render_html(handoff)
 
     assert handoff["schema"] == "sota-base-tester-handoff/v1"
+    assert handoff["release_status"]["local_stack_ok"] is True
+    assert handoff["release_status"]["local_ok"] is False
     assert handoff["release_status"]["local_remote_wallet_ok"] is False
     assert handoff["release_status"]["local_remote_wallet"]["status"] == "yellow"
-    assert handoff["local"]["ready"] is True
+    assert handoff["local"]["ready"] is False
     assert handoff["local"]["status"] == "green"
-    assert handoff["local"]["claims_ui_url"] == "https://sota-host.example.ts.net:3000/claims"
+    assert handoff["local"]["claims_ui_url"] == "http://100.0.0.1:3000/claims"
     assert handoff["local"]["chain_id_hex"] == "0x7a69"
-    assert handoff["local"]["share_mode"] == "tailscale-https"
-    assert handoff["local"]["wallet_rpc_browser_safe"] is True
-    assert handoff["local"]["tailscale_dns_name"] == "sota-host.example.ts.net"
+    assert handoff["local"]["share_mode"] == "http"
+    assert handoff["local"]["wallet_rpc_browser_safe"] is False
     assert [item["name"] for item in handoff["local"]["local_gates"]] == ["local_demo", "local_claim_proof"]
     assert handoff["local"]["smoke_status"] == "green"
     assert handoff["local"]["claim_proof_status"] == "green"
@@ -251,6 +253,8 @@ def test_tester_handoff_contains_local_urls_and_warning(tmp_path: Path) -> None:
     assert handoff["testnet"]["faucet_sources"][0]["name"] == "Base network faucets"
     assert [item["name"] for item in handoff["local"]["peer_validators"]] == ["Bob", "Charlie", "Dave"]
     assert "Never paste a real seed phrase" in markdown
+    assert "Local stack ready: true" in markdown
+    assert "Local ready: false" in markdown
     assert "Remote MetaMask ready: false" in markdown
     assert "Remote MetaMask detail: tester wallet RPC may be rejected" in markdown
     assert "Local-only private key" in markdown
@@ -268,12 +272,12 @@ def test_tester_handoff_contains_local_urls_and_warning(tmp_path: Path) -> None:
     assert "needs 0.02000000 ETH" in markdown
     assert "Base Sepolia Faucet Sources" in markdown
     assert "<title>SOTA Base Tester Handoff</title>" in html
-    assert "Local demo ready" in html
+    assert "Local demo blocked" in html
     assert "Remote MetaMask ready" in html
     assert "Aggregate status: red" not in html
-    assert "https://sota-host.example.ts.net:3000/claims" in html
+    assert "http://100.0.0.1:3000/claims" in html
     assert "Add SOTA Local Base network" in html
-    assert "Wallet RPC browser-safe: true" in html
+    assert "Wallet RPC browser-safe: false" in html
     assert "Copy local-only key" in html
     assert "Open autoresearch dashboard" in html
     assert "wallet_addEthereumChain" in html
@@ -381,7 +385,7 @@ def test_tester_handoff_default_outputs_refresh_local_served_copy(tmp_path: Path
     assert (local_handoff_dir / "handoff.json").exists()
     assert (local_handoff_dir / "handoff.md").exists()
     assert (local_handoff_dir / "index.html").exists()
-    assert "Local demo ready" in (local_handoff_dir / "index.html").read_text(encoding="utf-8")
+    assert "Local demo blocked" in (local_handoff_dir / "index.html").read_text(encoding="utf-8")
 
 
 def test_tester_handoff_can_mirror_local_with_explicit_outputs(tmp_path: Path, monkeypatch) -> None:
@@ -412,4 +416,4 @@ def test_tester_handoff_can_mirror_local_with_explicit_outputs(tmp_path: Path, m
     assert exit_code == 0
     assert args.html_out.exists()
     assert (local_handoff_dir / "index.html").exists()
-    assert "Local demo ready" in (local_handoff_dir / "index.html").read_text(encoding="utf-8")
+    assert "Local demo blocked" in (local_handoff_dir / "index.html").read_text(encoding="utf-8")

@@ -269,6 +269,7 @@ def build_handoff(args: argparse.Namespace) -> dict[str, Any]:
         "release_status": {
             "ok": bool(release.get("ok")),
             "status": str(release.get("status") or "unknown"),
+            "local_stack_ok": bool(release.get("local_stack_ok")),
             "local_ok": bool(release.get("local_ok")),
             "local_remote_wallet_ok": bool(release.get("local_remote_wallet_ok")),
             "local_remote_wallet": release.get("local_remote_wallet") or {},
@@ -297,6 +298,7 @@ def render_markdown(handoff: dict[str, Any]) -> str:
     lines.append("")
     lines.append("## Overall Status")
     lines.append("")
+    lines.append(f"- Local stack ready: {str(release.get('local_stack_ok')).lower()}")
     lines.append(f"- Local ready: {str(release.get('local_ok')).lower()}")
     lines.append(f"- Remote MetaMask ready: {str(release.get('local_remote_wallet_ok')).lower()}")
     remote_wallet = dict(release.get("local_remote_wallet") or {})
@@ -503,10 +505,10 @@ def render_html(handoff: dict[str, Any]) -> str:
         f"<p>Generated: {escape(str(handoff.get('generated_at')))}</p>",
         "</section>",
         '<section class="summary">',
+        f'<div class="card"><div class="label">Local stack ready</div><div class="value">{escape(str(release.get("local_stack_ok")).lower())}</div></div>',
         f'<div class="card"><div class="label">Local ready</div><div class="value">{escape(str(release.get("local_ok")).lower())}</div></div>',
         f'<div class="card"><div class="label">Remote MetaMask ready</div><div class="value">{escape(str(release.get("local_remote_wallet_ok")).lower())}</div></div>',
         f'<div class="card"><div class="label">Base Sepolia ready</div><div class="value">{escape(str(release.get("testnet_ok")).lower())}</div></div>',
-        f'<div class="card"><div class="label">Full release status</div><div class="value">{escape(str(release.get("status")))}</div></div>',
         "</section>",
         '<section class="audience">',
         "<div><strong>I am new</strong><span>Follow Local Steps and use only the printed local-only MetaMask account. You do not need TAO, Base ETH, or a Bittensor wallet.</span></div>",
