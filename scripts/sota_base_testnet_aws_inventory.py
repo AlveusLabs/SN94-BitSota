@@ -192,6 +192,7 @@ def _inventory_checks(
     service_urls: dict[str, str],
     required_secret_names: list[str],
     external_dns_owner: str,
+    collection_errors: dict[str, str | None],
 ) -> list[Check]:
     checks: list[Check] = []
     if identity_error:
@@ -212,9 +213,16 @@ def _inventory_checks(
             )
         )
 
+    collection_remediation = "Authenticate with the approved testnet AWS profile and verify read-only inventory permissions."
+
     bitsota_zone = next((zone for zone in zones if str(zone["name"]).lower() == "bitsota.com."), None)
     direct_service_url_plan = _has_direct_service_url_plan(service_urls)
-    if bitsota_zone:
+    zones_error = collection_errors.get("zones")
+    if zones_error and not external_dns_owner and not direct_service_url_plan:
+        route53_status = "red"
+        route53_detail = f"Route53 hosted zone inventory unavailable: {zones_error}"
+        route53_remediation = collection_remediation
+    elif bitsota_zone:
         route53_status = "green"
         route53_detail = f"Route53 hosted zone found for bitsota.com: {bitsota_zone['id']}."
         route53_remediation = ""
@@ -239,68 +247,112 @@ def _inventory_checks(
         )
     )
 
-    service_names = [str(service["name"]) for service in services]
-    service_hosts = {_host(str(service.get("url") or "")): str(service.get("name") or "") for service in services if service.get("url")}
-    configured_service_matches = {
-        key: service_hosts[_host(value)]
-        for key, value in service_urls.items()
-        if value and _host(value) in service_hosts
-    }
-    missing_service_keys = [
-        key
-        for key, pattern in BASE_SERVICE_PATTERNS.items()
-        if key not in configured_service_matches and not any(pattern.search(name) for name in service_names)
-    ]
-    service_detail = (
-        "Base SOTA-specific or explicitly configured App Runner service URLs are present: "
-        + ", ".join(f"{key}={value}" for key, value in sorted(configured_service_matches.items()))
-        if configured_service_matches
-        else "Base SOTA-specific App Runner service names are present."
-    )
-    checks.append(
-        Check(
-            "base_sota_apprunner_services",
-            "green" if not missing_service_keys else "red",
-            service_detail
-            if not missing_service_keys
-            else f"Missing Base SOTA-specific App Runner services for: {', '.join(missing_service_keys)}. Existing services: {', '.join(service_names) or 'none'}.",
-            "" if not missing_service_keys else "Create, configure, or pass direct public App Runner URLs for Base SOTA testnet services before public browser testing.",
+    services_error = collection_errors.get("services")
+    if services_error:
+        checks.append(
+            Check(
+                "base_sota_apprunner_services",
+                "red",
+                f"App Runner service inventory unavailable: {services_error}",
+                collection_remediation,
+            )
         )
-    )
+    else:
+        service_names = [str(service["name"]) for service in services]
+        service_hosts = {_host(str(service.get("url") or "")): str(service.get("name") or "") for service in services if service.get("url")}
+        configured_service_matches = {
+            key: service_hosts[_host(value)]
+            for key, value in service_urls.items()
+            if value and _host(value) in service_hosts
+        }
+        missing_service_keys = [
+            key
+            for key, pattern in BASE_SERVICE_PATTERNS.items()
+            if key not in configured_service_matches and not any(pattern.search(name) for name in service_names)
+        ]
+        service_detail = (
+            "Base SOTA-specific or explicitly configured App Runner service URLs are present: "
+            + ", ".join(f"{key}={value}" for key, value in sorted(configured_service_matches.items()))
+            if configured_service_matches
+            else "Base SOTA-specific App Runner service names are present."
+        )
+        checks.append(
+            Check(
+                "base_sota_apprunner_services",
+                "green" if not missing_service_keys else "red",
+                service_detail
+                if not missing_service_keys
+                else f"Missing Base SOTA-specific App Runner services for: {', '.join(missing_service_keys)}. Existing services: {', '.join(service_names) or 'none'}.",
+                "" if not missing_service_keys else "Create, configure, or pass direct public App Runner URLs for Base SOTA testnet services before public browser testing.",
+            )
+        )
 
-    github_connections = [
-        connection
-        for connection in connections
-        if str(connection.get("provider_type")).upper() == "GITHUB"
-        and str(connection.get("status")).upper() == "AVAILABLE"
-    ]
-    checks.append(
-        Check(
-            "apprunner_github_connection",
-            "green" if github_connections else "red",
-            f"Available App Runner GitHub connections found: {', '.join(connection['name'] for connection in github_connections)}."
-            if github_connections
-            else "No AVAILABLE App Runner GitHub connection was found.",
-            "" if github_connections else "Create or approve an App Runner GitHub connection before source-based service deployment.",
+    connections_error = collection_errors.get("connections")
+    if connections_error:
+        checks.append(
+            Check(
+                "apprunner_github_connection",
+                "red",
+                f"App Runner GitHub connection inventory unavailable: {connections_error}",
+                collection_remediation,
+            )
         )
-    )
+    else:
+        github_connections = [
+            connection
+            for connection in connections
+            if str(connection.get("provider_type")).upper() == "GITHUB"
+            and str(connection.get("status")).upper() == "AVAILABLE"
+        ]
+        checks.append(
+            Check(
+                "apprunner_github_connection",
+                "green" if github_connections else "red",
+                f"Available App Runner GitHub connections found: {', '.join(connection['name'] for connection in github_connections)}."
+                if github_connections
+                else "No AVAILABLE App Runner GitHub connection was found.",
+                "" if github_connections else "Create or approve an App Runner GitHub connection before source-based service deployment.",
+            )
+        )
 
-    base_repos = [repo for repo in repos if re.search(r"(base[-_]?sota|sota[-_]?base|claims)", str(repo["name"]), re.I)]
-    checks.append(
-        Check(
-            "base_sota_ecr_repos",
-            "green" if base_repos else "yellow",
-            f"Base SOTA/claims ECR repositories found: {', '.join(repo['name'] for repo in base_repos)}."
-            if base_repos
-            else "No Base SOTA/claims ECR repository found. This is acceptable only if App Runner deploys from source.",
-            "" if base_repos else "Create ECR repositories only if the service deployment plan uses container images.",
+    repos_error = collection_errors.get("repos")
+    if repos_error:
+        checks.append(
+            Check(
+                "base_sota_ecr_repos",
+                "yellow",
+                f"ECR repository inventory unavailable: {repos_error}",
+                "Fix AWS inventory access if the deployment plan uses ECR images; source-based App Runner deploys do not require this.",
+            )
         )
-    )
+    else:
+        base_repos = [repo for repo in repos if re.search(r"(base[-_]?sota|sota[-_]?base|claims)", str(repo["name"]), re.I)]
+        checks.append(
+            Check(
+                "base_sota_ecr_repos",
+                "green" if base_repos else "yellow",
+                f"Base SOTA/claims ECR repositories found: {', '.join(repo['name'] for repo in base_repos)}."
+                if base_repos
+                else "No Base SOTA/claims ECR repository found. This is acceptable only if App Runner deploys from source.",
+                "" if base_repos else "Create ECR repositories only if the service deployment plan uses container images.",
+            )
+        )
 
     existing_secret_names = {str(secret["name"]) for secret in secrets}
     required_secret_names = [name for name in required_secret_names if name]
     missing_required_secrets = sorted(set(required_secret_names) - existing_secret_names)
     base_secrets = [secret for secret in secrets if BASE_SECRET_RE.search(str(secret["name"]))]
+    secrets_error = collection_errors.get("secrets")
+    if secrets_error:
+        checks.append(
+            Check(
+                "base_sepolia_secret_handles",
+                "red",
+                f"Secrets Manager handle inventory unavailable: {secrets_error}",
+                collection_remediation,
+            )
+        )
+        return checks
     if required_secret_names:
         secret_ok = not missing_required_secrets
         secret_detail = (
@@ -361,6 +413,13 @@ def build_inventory(args: argparse.Namespace) -> dict[str, Any]:
         service_urls=service_urls,
         required_secret_names=required_secret_names,
         external_dns_owner=external_dns_owner,
+        collection_errors={
+            "services": services_error,
+            "zones": zones_error,
+            "repos": repos_error,
+            "secrets": secrets_error,
+            "connections": connections_error,
+        },
     )
     for name, error in (
         ("apprunner_list_services", services_error),

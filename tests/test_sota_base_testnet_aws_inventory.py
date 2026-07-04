@@ -275,6 +275,37 @@ def test_inventory_accepts_external_dns_owner_without_route53_zone(tmp_path: Pat
     assert report["inventory"]["external_dns_owner"] == "Cloudflare bitsota.com account"
 
 
+def test_inventory_reports_unavailable_resources_when_aws_queries_fail(tmp_path: Path, monkeypatch) -> None:
+    module = _load_module()
+    args = _args(tmp_path)
+
+    def fake_run_aws(cmd: list[str], *, profile: str, region: str, timeout: float):
+        raise RuntimeError("SSO expired")
+
+    monkeypatch.setattr(module, "_run_aws", fake_run_aws)
+
+    report = module.build_inventory(args)
+    checks = {check["name"]: check for check in report["checks"]}
+
+    assert report["ok"] is False
+    assert report["status"] == "red"
+    assert checks["aws_identity"]["status"] == "red"
+    assert checks["route53_bitsota_zone"]["status"] == "red"
+    assert "inventory unavailable" in checks["route53_bitsota_zone"]["detail"]
+    assert "No Route53 hosted zone" not in checks["route53_bitsota_zone"]["detail"]
+    assert checks["base_sota_apprunner_services"]["status"] == "red"
+    assert "service inventory unavailable" in checks["base_sota_apprunner_services"]["detail"]
+    assert "Missing Base SOTA-specific" not in checks["base_sota_apprunner_services"]["detail"]
+    assert checks["apprunner_github_connection"]["status"] == "red"
+    assert "connection inventory unavailable" in checks["apprunner_github_connection"]["detail"]
+    assert checks["base_sota_ecr_repos"]["status"] == "yellow"
+    assert "repository inventory unavailable" in checks["base_sota_ecr_repos"]["detail"]
+    assert checks["base_sepolia_secret_handles"]["status"] == "red"
+    assert "handle inventory unavailable" in checks["base_sepolia_secret_handles"]["detail"]
+    assert "Missing required" not in checks["base_sepolia_secret_handles"]["detail"]
+    assert checks["apprunner_list_services"]["status"] == "red"
+
+
 def test_inventory_only_records_secret_handles_not_secret_values(tmp_path: Path, monkeypatch) -> None:
     module = _load_module()
     args = _args(tmp_path)
