@@ -120,6 +120,37 @@ cd /home/mekaneeky/repos/SN94-BitSota-live-docs
 handoff from another tailnet computer, but wallet extensions can reject that RPC
 URL. Use `tailscale-https` for a remote MetaMask test.
 
+## Manual MetaMask Fields
+
+If the handoff button cannot add the local network, add it manually:
+
+| Field | Value |
+| --- | --- |
+| Network name | `SOTA Local Base` |
+| RPC URL | Use the printed `Anvil RPC for MetaMask` URL. Same-machine runs use `http://127.0.0.1:8545`. |
+| Chain ID | `31337` |
+| Currency symbol | `ETH` |
+| Block explorer URL | Leave blank. |
+| Imported account | Must match the printed local wallet address. |
+
+If MetaMask already has a conflicting localhost network, delete or edit that
+network before adding `SOTA Local Base`. Do not paste the printed local-only
+private key into the claims UI, docs, support chat, or any website. Import it
+only into a throwaway MetaMask profile for this Anvil demo.
+
+## Expected Local Values
+
+The seeded local tester should see these values:
+
+| Item | Expected value |
+| --- | --- |
+| TAO genesis credit | `1 SOTA` |
+| Synthetic alpha credit | `0.5 SOTA` |
+| Total genesis claim | `1.5 SOTA` |
+| Mined emission claim | `2 SOTA` |
+| Final SOTA balance after both claims | `3.5 SOTA` |
+| Self-validation evidence | `3/3 accepted` from Bob, Charlie, and Dave |
+
 ## Success Checklist
 
 You know the demo is working when you can do these steps:
@@ -138,7 +169,8 @@ You know the demo is working when you can do these steps:
 8. Confirm the mining and self-validation card shows `3/3 accepted` peer
    consensus from the seeded local validators.
 9. Submit the emission claim created by the seeded miner and self-validation flow.
-10. Open the autoresearch dashboard and see the seeded task, submission, and
+10. Confirm the local SOTA balance reaches `3.5 SOTA`.
+11. Open the autoresearch dashboard and see the seeded task, submission, and
    self-validation evidence.
 
 The launcher runs this UI smoke automatically. If you changed code after launch,

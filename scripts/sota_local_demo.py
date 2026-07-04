@@ -1153,6 +1153,8 @@ def _generate_handoff() -> None:
         [
             sys.executable,
             str(DOCS_REPO / "scripts" / "sota_base_tester_handoff.py"),
+            "--environment",
+            "local",
             "--json-out",
             str(HANDOFF_DIR / "handoff.json"),
             "--markdown-out",

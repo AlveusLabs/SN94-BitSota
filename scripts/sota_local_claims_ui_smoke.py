@@ -24,6 +24,10 @@ DEFAULT_REPORT_PATH = RUN_DIR / "ui-smoke" / "report.json"
 DEFAULT_SCREENSHOT_PATH = RUN_DIR / "ui-smoke" / "claims-page.png"
 LANE_ID = "base:sota-local"
 MIN_LOCAL_SELF_VALIDATION_COMMITTEE = 3
+HANDOFF_BASE_SEPOLIA_STATUS_TEXTS = (
+    "Base Sepolia is not ready for a nontechnical MetaMask tester yet.",
+    "Base Sepolia is fully verified, including human MetaMask claim transaction evidence.",
+)
 
 EXPECTED_PAGE_TEXT = (
     "SOTA Local Base claims",
@@ -306,12 +310,12 @@ def validate_handoff_page(targets: dict[str, str], *, request_timeout: float) ->
         "Self-validation",
         "Peer validators",
         "State-changing claim proof",
-        "Base Sepolia",
-        "Base Sepolia is not ready for a nontechnical MetaMask tester yet.",
     )
     missing = [text for text in expected if text not in visible_text]
     if "Local demo ready" not in visible_text and "Local demo blocked" not in visible_text:
         missing.append("Local demo ready or Local demo blocked")
+    if "Base Sepolia" in visible_text and not any(text in visible_text for text in HANDOFF_BASE_SEPOLIA_STATUS_TEXTS):
+        missing.append("Base Sepolia ready or blocked status")
     return [
         _check(
             "tester_handoff_page",

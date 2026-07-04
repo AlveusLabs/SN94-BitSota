@@ -263,6 +263,8 @@ def test_tester_handoff_contains_local_urls_and_warning(tmp_path: Path) -> None:
     assert handoff["local"]["local_only_private_key"].startswith("0x5de411")
     assert handoff["local"]["genesis_claim_amount"] == "1.5 SOTA"
     assert handoff["local"]["emission_claim_amount"] == "2 SOTA"
+    assert handoff["local"]["expected_final_balance"] == "3.5 SOTA"
+    assert handoff["local"]["manual_metamask_fields"]["chain_id"] == "31337"
     assert handoff["local"]["self_validation_status"] == "accepted"
     assert handoff["local"]["self_validation_summary"] == "3/3 accepted"
     assert handoff["testnet"]["immediate_blockers"][0]["name"] == "gas_deployer"
@@ -284,6 +286,9 @@ def test_tester_handoff_contains_local_urls_and_warning(tmp_path: Path) -> None:
     assert "archived pre-reset evidence" in markdown
     assert "Genesis claim amount: 1.5 SOTA" in markdown
     assert "Mined emission claim amount: 2 SOTA" in markdown
+    assert "Expected final local SOTA balance after both claims: 3.5 SOTA" in markdown
+    assert "Manual MetaMask Network Fields" in markdown
+    assert "Block explorer URL: leave blank" in markdown
     assert "Peer validators: Bob" in markdown
     assert "Base Sepolia infrastructure is not ready" in markdown
     assert "Immediate Base Sepolia Blockers" in markdown
@@ -307,6 +312,8 @@ def test_tester_handoff_contains_local_urls_and_warning(tmp_path: Path) -> None:
     assert "Self-validation" in html
     assert "Peer validators" in html
     assert "State-changing claim proof" in html
+    assert "Expected final balance" in html
+    assert "Manual MetaMask Network Fields" in html
     assert "Immediate Base Sepolia Blockers" in html
     assert "gas_deployer" in html
     assert "Base Sepolia Funding Targets" in html
@@ -450,10 +457,12 @@ def test_tester_handoff_marks_testnet_ready_for_claim_tester_when_only_tx_eviden
     assert handoff["testnet"]["genesis_claim_amount"] == "1.5 SOTA"
     assert handoff["testnet"]["emission_claim_amount"] == "2 SOTA"
     assert "Base Sepolia is ready for a MetaMask claim tester" in markdown
+    assert "operator-provided seeded Base Sepolia test wallet" in markdown
     assert "Remaining Evidence Gate" in markdown
     assert "BASE_SEPOLIA_GENESIS_TX_HASH" in markdown
     assert "Refresh Release/Handoff After Evidence" in markdown
     assert "https://claims.example.test/claims" in html
+    assert "Testnet wallet access" in html
     assert "Copy testnet wallet" in html
     assert "Remaining Evidence Gate" in html
 
@@ -550,7 +559,10 @@ def test_tester_handoff_default_outputs_refresh_local_served_copy(tmp_path: Path
     assert (local_handoff_dir / "handoff.json").exists()
     assert (local_handoff_dir / "handoff.md").exists()
     assert (local_handoff_dir / "index.html").exists()
-    assert "Local demo blocked" in (local_handoff_dir / "index.html").read_text(encoding="utf-8")
+    local_html = (local_handoff_dir / "index.html").read_text(encoding="utf-8")
+    assert "Local demo blocked" in local_html
+    assert "local demo only" in local_html
+    assert "Base Sepolia" not in local_html
 
 
 def test_tester_handoff_can_mirror_local_with_explicit_outputs(tmp_path: Path, monkeypatch) -> None:
@@ -581,4 +593,6 @@ def test_tester_handoff_can_mirror_local_with_explicit_outputs(tmp_path: Path, m
     assert exit_code == 0
     assert args.html_out.exists()
     assert (local_handoff_dir / "index.html").exists()
-    assert "Local demo blocked" in (local_handoff_dir / "index.html").read_text(encoding="utf-8")
+    local_html = (local_handoff_dir / "index.html").read_text(encoding="utf-8")
+    assert "Local demo blocked" in local_html
+    assert "Base Sepolia" not in local_html

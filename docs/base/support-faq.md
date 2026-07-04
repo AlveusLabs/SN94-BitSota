@@ -20,7 +20,10 @@ user, control a user's wallet, promise a payout date, or silently reverse a
 confirmed chain transaction.
 
 Never share a seed phrase, private key, mnemonic, wallet file, RPC token, or
-admin token with support or with any website.
+admin token with support or with any website. The local demo may print a
+deterministic Anvil private key; that key is imported only into a throwaway
+MetaMask profile for the local chain and must not be pasted into the claims UI,
+docs, support chat, or any public page.
 
 ## Claim Types
 

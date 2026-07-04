@@ -30,14 +30,14 @@ Reader-visible status:
 | New-user explanation | Added. |
 | Bittensor migration explanation | Added. |
 | Support FAQ and triage wording | Drafted for Base Sepolia review. |
-| Public deployment instructions | Not published yet. |
+| Base Sepolia seeded E2E evidence | Verified against deployed contracts and public services. |
+| Fresh Base Sepolia tester run | Requires operator-provided wallet access or a fresh seeded root cycle. |
 | Mainnet claim instructions | Not published yet. |
 
 Remaining launch gaps:
 
-- Base Sepolia or Base mainnet deployment manifest;
+- Base mainnet deployment manifest;
 - multisig or timelock ownership transfer evidence;
-- live Base claims/indexer service;
-- monitoring;
-- funded browser wallet smoke;
+- production monitoring and rollback drill evidence;
+- fresh public test wallet seeding path;
 - external audit and fuzz-expansion evidence.

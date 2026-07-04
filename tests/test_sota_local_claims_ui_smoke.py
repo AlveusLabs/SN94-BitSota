@@ -122,6 +122,41 @@ def test_validate_handoff_page_accepts_required_copy(monkeypatch) -> None:
     assert checks[0]["status"] == "green"
 
 
+def test_validate_handoff_page_accepts_verified_testnet_copy(monkeypatch) -> None:
+    module = _load_module()
+    monkeypatch.setattr(
+        module,
+        "_http_text",
+        lambda url, timeout: (
+            "SOTA Base Tester Handoff Local demo ready Local Demo Local-only private key "
+            "Add SOTA Local Base network Open claims UI Mined emission claim Self-validation "
+            "Peer validators State-changing claim proof Base Sepolia "
+            "Base Sepolia is fully verified, including human MetaMask claim transaction evidence."
+        ),
+    )
+
+    checks = module.validate_handoff_page({"handoff": "http://127.0.0.1:9003/"}, request_timeout=1)
+
+    assert checks[0]["status"] == "green"
+
+
+def test_validate_handoff_page_accepts_local_only_copy(monkeypatch) -> None:
+    module = _load_module()
+    monkeypatch.setattr(
+        module,
+        "_http_text",
+        lambda url, timeout: (
+            "SOTA Base Tester Handoff Local demo ready Local Demo Local-only private key "
+            "Add SOTA Local Base network Open claims UI Mined emission claim Self-validation "
+            "Peer validators State-changing claim proof"
+        ),
+    )
+
+    checks = module.validate_handoff_page({"handoff": "http://127.0.0.1:9003/"}, request_timeout=1)
+
+    assert checks[0]["status"] == "green"
+
+
 def test_validate_tester_share_accepts_tailscale_https_rpc() -> None:
     module = _load_module()
     state = _state()

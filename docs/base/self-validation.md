@@ -45,6 +45,11 @@ Then open the printed website URL and look for the seeded miner emission claim.
 That claim should show validation evidence before the wallet can submit the
 local claim transaction.
 
+The seeded local committee is Bob, Charlie, and Dave. A passing demo shows
+`3/3 accepted` for Alice's mined emission before the emission claim is
+available. This is local autoresearch evidence, not Bittensor validator
+weighting or Yuma consensus.
+
 ## Important Constraint
 
 Scoring must not punish exceptional true performers just because they are far

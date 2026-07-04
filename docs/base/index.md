@@ -126,9 +126,10 @@ Bittensor, Base Sepolia, or Base mainnet.
 </div>
 
 <div class="bitsota-callout">
-  <strong>Public deployment:</strong> Base Sepolia and Base mainnet deployment
-  details are not public launch instructions until the testnet preflight gate
-  is green against real deployed contracts and public service URLs.
+  <strong>Base Sepolia:</strong> seeded testnet evidence is green against real
+  deployed contracts and public service URLs. The seeded wallet has already
+  claimed the current roots; another first-time test needs an operator-provided
+  test wallet or a fresh seeded root cycle. This is not a Base mainnet launch.
 </div>
 
 ## Keep Reading

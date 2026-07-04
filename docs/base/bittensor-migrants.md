@@ -21,7 +21,21 @@
 ./scripts/sota_local_demo.py launch</code></pre>
 </div>
 
-The launcher prints the website, backend, indexer, local EVM, and docs URLs.
+The launcher prints the website, backend, indexer, local EVM, docs, and
+`Tester handoff` URLs.
+
+## Run Checklist For Migrants
+
+1. Open the printed `Tester handoff` URL.
+2. Import the printed local EVM key into a throwaway MetaMask profile.
+3. Use the printed old coldkey only for the genesis lookup. Do not import a
+   Bittensor wallet seed into MetaMask.
+4. Add the local network with chain ID `31337`.
+5. Claim genesis SOTA from the seeded TAO plus alpha accounting credit.
+6. Load the mined emission, confirm `3/3 accepted` self-validation, then claim
+   the emission.
+7. Ignore hotkeys, netuid, UID, Yuma weights, and alpha emissions for this
+   Base-settled flow.
 
 ## What Changes
 

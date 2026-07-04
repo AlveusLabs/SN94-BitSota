@@ -120,6 +120,11 @@ def _local_section(state: dict[str, Any], release: dict[str, Any], local_report:
         local_status = str(local_report.get("status") or ("green" if local_ok else "red"))
     chain_id = int(state.get("chain_id") or 31337)
     emission_amount = emission_onchain.get("amount") or emission_root.get("total_amount_units") or 0
+    genesis_amount = int(genesis.get("amount") or 0)
+    emission_amount_int = int(emission_amount or 0)
+    rpc_url = str(urls.get("anvil_rpc") or "")
+    share_mode = str(sharing.get("mode") or "")
+    same_machine_only = share_mode == "localhost"
     return {
         "ready": local_ok,
         "status": local_status,
@@ -144,16 +149,25 @@ def _local_section(state: dict[str, Any], release: dict[str, Any], local_report:
         "claims_ui_url": urls.get("claims_ui") or "",
         "docs_url": urls.get("docs") or "",
         "autoresearch_dashboard_url": urls.get("autoresearch_dashboard") or "",
-        "anvil_rpc_url": urls.get("anvil_rpc") or "",
-        "share_mode": sharing.get("mode") or "",
+        "anvil_rpc_url": rpc_url,
+        "share_mode": share_mode,
         "share_status": sharing.get("status") or "",
         "share_warning": sharing.get("warning") or "",
+        "same_machine_only": same_machine_only,
         "wallet_rpc_browser_safe": bool(sharing.get("wallet_rpc_browser_safe")),
         "tailscale_dns_name": sharing.get("tailscale_dns_name") or "",
         "chain_id": chain_id,
         "chain_id_hex": hex(chain_id),
         "network_name": "SOTA Local Base",
         "native_currency_symbol": "ETH",
+        "manual_metamask_fields": {
+            "network_name": "SOTA Local Base",
+            "rpc_url": rpc_url,
+            "chain_id": str(chain_id),
+            "currency_symbol": "ETH",
+            "block_explorer_url": "",
+            "expected_imported_address": accounts.get("alice_reward") or genesis.get("reward_address") or "",
+        },
         "wallet_address": accounts.get("alice_reward") or genesis.get("reward_address") or "",
         "local_only_private_key": LOCAL_PRIVATE_KEY,
         "old_coldkey": genesis.get("old_coldkey") or "",
@@ -161,6 +175,7 @@ def _local_section(state: dict[str, Any], release: dict[str, Any], local_report:
         "genesis_tao_credit": _format_sota_units(genesis.get("tao_credit")),
         "genesis_alpha_credit": _format_sota_units(genesis.get("alpha_synthetic_credit")),
         "emission_claim_amount": _format_sota_units(emission_amount),
+        "expected_final_balance": _format_sota_units(genesis_amount + emission_amount_int),
         "self_validation_status": consensus.get("status") or "",
         "self_validation_accepted_count": int(consensus.get("accepted_count") or 0),
         "self_validation_committee_count": int(consensus.get("committee_count") or consensus.get("committee_size") or 0),
@@ -171,6 +186,7 @@ def _local_section(state: dict[str, Any], release: dict[str, Any], local_report:
         ),
         "peer_validators": peer_validators,
         "expected_flow": [
+            "If share mode is localhost, use MetaMask on this same computer. Remote MetaMask needs Tailscale HTTPS.",
             "Import the local-only private key into a throwaway MetaMask profile.",
             "Click Add SOTA Local Base network, or add the Anvil RPC URL manually with chain id 31337.",
             "Open the claims UI URL and connect the imported wallet.",
@@ -183,7 +199,7 @@ def _local_section(state: dict[str, Any], release: dict[str, Any], local_report:
         "manual_evidence_checklist": [
             "Record the genesis claim transaction hash shown after MetaMask confirms.",
             "Record the mined emission claim transaction hash shown after MetaMask confirms.",
-            "Confirm both claims show claimed or an increased SOTA balance in the claims UI.",
+            "Confirm both claims show claimed or the SOTA balance reaches the expected final local balance.",
             "Run the local claim transaction evidence verifier with both hashes.",
         ],
         "local_tx_evidence_command": (
@@ -300,11 +316,12 @@ def _testnet_section(release: dict[str, Any], testnet_dir: Path = TESTNET_RUN_DI
         f"--release-status {testnet_dir / 'base-sota-release-status.json'} --mirror-local"
     )
     claim_gate = next((dict(gate) for gate in testnet_gates if dict(gate).get("name") == CLAIM_TX_EVIDENCE_GATE), {})
+    release_ready = bool(release.get("testnet_ok"))
     return {
         "ready": claim_tester_ready,
-        "release_ready": bool(release.get("testnet_ok")),
+        "release_ready": release_ready,
         "status": "green" if claim_tester_ready else "red",
-        "release_status": "green" if release.get("testnet_ok") else "red",
+        "release_status": "green" if release_ready else "red",
         "claims_ui_url": claims_ui_url,
         "claims_api_url": claims_api_url,
         "readiness_url": readiness_url,
@@ -321,6 +338,12 @@ def _testnet_section(release: dict[str, Any], testnet_dir: Path = TESTNET_RUN_DI
         "claim_tx_evidence_status": str(claim_gate.get("status") or "missing"),
         "claim_tx_evidence_command": evidence_command,
         "post_evidence_refresh_command": post_evidence_refresh_command,
+        "wallet_access_note": (
+            "The seeded Base Sepolia wallet is operator-controlled and has already claimed the current roots. "
+            "A new nontechnical claim test needs an operator-provided test wallet or a fresh seeded root cycle."
+            if release_ready
+            else "The seeded Base Sepolia wallet must be provided out of band by an operator; this handoff never prints a testnet private key."
+        ),
         "gates": [
             {
                 "name": dict(gate).get("name"),
@@ -344,12 +367,19 @@ def _testnet_section(release: dict[str, Any], testnet_dir: Path = TESTNET_RUN_DI
         "faucet_sources": faucet_sources,
         "tester_message": (
             "Base Sepolia is fully verified, including human MetaMask claim transaction evidence."
-            if release.get("testnet_ok")
+            if release_ready
             else "Base Sepolia is ready for a MetaMask claim tester; full release turns green after the two claim transaction hashes verify."
             if claim_tester_ready
             else "Base Sepolia infrastructure is not ready for a nontechnical MetaMask tester yet."
         ),
         "expected_flow_when_ready": [
+            "Review the existing Base Sepolia claim transaction evidence report; the seeded wallet has already claimed the current roots.",
+            "Open the public Base Sepolia claims URL only to inspect the already-claimed state for the seeded test wallet.",
+            "For another first-time claim, ask the operator to seed a fresh test wallet/root cycle and provide wallet access out of band.",
+        ]
+        if release_ready
+        else [
+            "Only run this with an operator-provided seeded Base Sepolia test wallet. This handoff provides the address for evidence, not a private key.",
             "Open the public Base Sepolia claims URL.",
             "Connect the seeded test MetaMask wallet.",
             "Switch MetaMask to Base Sepolia.",
@@ -371,6 +401,14 @@ def build_handoff(args: argparse.Namespace) -> dict[str, Any]:
     state = _load_json(args.state)
     release = _load_json(args.release_status)
     local_report = _load_json(args.local_report)
+    warnings = [
+        "Use the printed local-only private key only on the local Anvil network.",
+        "Never paste a real seed phrase or production private key into the local demo.",
+    ]
+    if args.environment in {"testnet", "both"}:
+        warnings.append(
+            "Do not invite a Base Sepolia tester while infrastructure gates are red; claim transaction evidence is the tester action that completes full verification."
+        )
     payload: dict[str, Any] = {
         "schema": "sota-base-tester-handoff/v1",
         "generated_at": datetime.now(timezone.utc).isoformat(),
@@ -389,11 +427,7 @@ def build_handoff(args: argparse.Namespace) -> dict[str, Any]:
             "testnet_ok": release.get("testnet_ok"),
             "summary": release.get("summary") or {},
         },
-        "warnings": [
-            "Use the printed local-only private key only on the local Anvil network.",
-            "Never paste a real seed phrase or production private key into the local demo.",
-            "Do not invite a Base Sepolia tester while infrastructure gates are red; claim transaction evidence is the tester action that completes full verification.",
-        ],
+        "warnings": warnings,
     }
     if args.environment in {"local", "both"}:
         payload["local"] = _local_section(state, release, local_report)
@@ -430,10 +464,13 @@ def render_markdown(handoff: dict[str, Any]) -> str:
         lines.append(f"- Tailscale preflight: {tailscale_preflight.get('status') or 'unknown'}")
         if tailscale_preflight.get("path"):
             lines.append(f"- Tailscale preflight report: {tailscale_preflight.get('path')}")
-    testnet = handoff.get("testnet") if isinstance(handoff.get("testnet"), dict) else {}
-    lines.append(f"- Base Sepolia claim test ready: {str(dict(testnet).get('ready')).lower() if testnet else 'unknown'}")
-    lines.append(f"- Base Sepolia full release ready: {str(release.get('testnet_ok')).lower()}")
-    lines.append(f"- Full local + Base Sepolia status: {release.get('status')}")
+    testnet = handoff.get("testnet") if isinstance(handoff.get("testnet"), dict) else None
+    if testnet:
+        lines.append(f"- Base Sepolia claim test ready: {str(dict(testnet).get('ready')).lower()}")
+        lines.append(f"- Base Sepolia full release ready: {str(release.get('testnet_ok')).lower()}")
+        lines.append(f"- Full local + Base Sepolia status: {release.get('status')}")
+    else:
+        lines.append("- Handoff scope: local demo only")
     lines.append(f"- Gate summary: {_summary_text(dict(release.get('summary') or {}))}")
     lines.append("")
     lines.append("## Safety")
@@ -445,6 +482,9 @@ def render_markdown(handoff: dict[str, Any]) -> str:
     if isinstance(local, dict):
         lines.append("## Local Demo")
         lines.append("")
+        if local.get("same_machine_only"):
+            lines.append("> Same-machine only for this run: open the claims UI and MetaMask on this computer. Remote MetaMask needs Tailscale HTTPS.")
+            lines.append("")
         lines.append(f"- Ready: {str(local.get('ready')).lower()}")
         lines.append(f"- Status: {local.get('status')}")
         lines.append(f"- UI smoke: {local.get('smoke_status')} ({_summary_text(dict(local.get('smoke_summary') or {}))})")
@@ -463,11 +503,13 @@ def render_markdown(handoff: dict[str, Any]) -> str:
         lines.append(f"- MetaMask chain ID: {local.get('chain_id')}")
         lines.append(f"- Wallet address: {local.get('wallet_address')}")
         lines.append(f"- Local-only private key: `{local.get('local_only_private_key')}`")
+        lines.append("- Local-only key rule: import this Anvil key into MetaMask only; never paste it into the claims UI, support chat, or a public page.")
         lines.append(f"- Old coldkey lookup: `{local.get('old_coldkey')}`")
         lines.append(f"- Genesis claim amount: {local.get('genesis_claim_amount')}")
         lines.append(f"- TAO credit in genesis claim: {local.get('genesis_tao_credit')}")
         lines.append(f"- Alpha liquidation credit in genesis claim: {local.get('genesis_alpha_credit')}")
         lines.append(f"- Mined emission claim amount: {local.get('emission_claim_amount')}")
+        lines.append(f"- Expected final local SOTA balance after both claims: {local.get('expected_final_balance')}")
         lines.append(f"- Self-validation: {local.get('self_validation_status')} ({local.get('self_validation_summary')})")
         validators = [
             f"{dict(item).get('name')} `{dict(item).get('hotkey')}`"
@@ -476,6 +518,17 @@ def render_markdown(handoff: dict[str, Any]) -> str:
         ]
         if validators:
             lines.append(f"- Peer validators: {', '.join(validators)}")
+        lines.append("")
+        lines.append("### Manual MetaMask Network Fields")
+        lines.append("")
+        fields = dict(local.get("manual_metamask_fields") or {})
+        lines.append(f"- Network name: {fields.get('network_name') or local.get('network_name')}")
+        lines.append(f"- RPC URL: {fields.get('rpc_url') or local.get('anvil_rpc_url')}")
+        lines.append(f"- Chain ID: {fields.get('chain_id') or local.get('chain_id')}")
+        lines.append(f"- Currency symbol: {fields.get('currency_symbol') or local.get('native_currency_symbol')}")
+        lines.append("- Block explorer URL: leave blank")
+        lines.append(f"- Expected imported account: {fields.get('expected_imported_address') or local.get('wallet_address')}")
+        lines.append("- If MetaMask already has a conflicting localhost network, delete or edit that network before adding SOTA Local Base.")
         lines.append("")
         lines.append("### Local Steps")
         lines.append("")
@@ -492,7 +545,7 @@ def render_markdown(handoff: dict[str, Any]) -> str:
             lines.append(str(local.get("local_tx_evidence_command")))
             lines.append("```")
         lines.append("")
-    if isinstance(testnet, dict):
+    if testnet:
         lines.append("## Base Sepolia")
         lines.append("")
         lines.append(f"- Claim test ready: {str(testnet.get('ready')).lower()}")
@@ -500,6 +553,8 @@ def render_markdown(handoff: dict[str, Any]) -> str:
         lines.append(f"- Claim test status: {testnet.get('status')}")
         lines.append(f"- Release status: {testnet.get('release_status')}")
         lines.append(f"- Tester message: {testnet.get('tester_message')}")
+        if testnet.get("wallet_access_note"):
+            lines.append(f"- Wallet access note: {testnet.get('wallet_access_note')}")
         if testnet.get("claims_ui_url"):
             lines.append(f"- Claims UI: {testnet.get('claims_ui_url')}")
         if testnet.get("claims_api_url"):
@@ -651,6 +706,7 @@ def render_html(handoff: dict[str, Any]) -> str:
         "button.secondary,.button.secondary{background:white;color:#13282f}",
         ".action-status{min-height:24px;color:#5b6770;font-size:14px}",
         ".flow{border:1px solid #b7e4c7;background:#f0fdf4;border-radius:6px;padding:16px;margin:16px 0}",
+        ".warning{border-color:#f4c56a;background:#fffbeb}",
         "code{word-break:break-all;background:#edf5f5;border-radius:5px;padding:2px 5px}",
         "ol,ul{padding-left:22px}",
         "@media(max-width:860px){main{padding:20px}.grid,.summary,.audience,.journey{grid-template-columns:1fr}h1{font-size:32px}}",
@@ -670,8 +726,18 @@ def render_html(handoff: dict[str, Any]) -> str:
         f'<div class="card"><div class="label">Local MetaMask ready</div><div class="value">{escape(str(release.get("local_wallet_ok")).lower())}</div></div>',
         f'<div class="card"><div class="label">Remote Tailscale MetaMask ready</div><div class="value">{escape(str(release.get("local_remote_wallet_ok")).lower())}</div></div>',
         f'<div class="card"><div class="label">Tailscale preflight</div><div class="value">{escape(str(dict(release.get("local_tailscale_preflight") or {}).get("status") or "unknown"))}</div></div>',
-        f'<div class="card"><div class="label">Base Sepolia claim test ready</div><div class="value">{escape(str(dict(testnet or {}).get("ready")).lower() if testnet else "unknown")}</div></div>',
-        f'<div class="card"><div class="label">Base Sepolia full release ready</div><div class="value">{escape(str(release.get("testnet_ok")).lower())}</div></div>',
+    ]
+    if testnet:
+        blocks.extend(
+            [
+                f'<div class="card"><div class="label">Base Sepolia claim test ready</div><div class="value">{escape(str(dict(testnet or {}).get("ready")).lower())}</div></div>',
+                f'<div class="card"><div class="label">Base Sepolia full release ready</div><div class="value">{escape(str(release.get("testnet_ok")).lower())}</div></div>',
+            ]
+        )
+    else:
+        blocks.append('<div class="card"><div class="label">Handoff scope</div><div class="value">local demo only</div></div>')
+    blocks.extend(
+        [
         "</section>",
         '<section class="audience">',
         "<div><strong>I am new</strong><span>Follow Local Steps and use only the printed local-only MetaMask account. You do not need TAO, Base ETH, or a Bittensor wallet.</span></div>",
@@ -680,8 +746,18 @@ def render_html(handoff: dict[str, Any]) -> str:
         "</section>",
         "<h2>Safety</h2>",
         f"<ul>{_html_list([str(item) for item in handoff.get('warnings') or []])}</ul>",
-    ]
+        ]
+    )
     if local:
+        if local.get("same_machine_only"):
+            blocks.extend(
+                [
+                    '<div class="flow warning">',
+                    "<h3>Same-machine MetaMask only for this run</h3>",
+                    "<p>Open the claims UI and MetaMask on this computer. Remote MetaMask needs Tailscale HTTPS before the RPC URL is browser-safe from another machine.</p>",
+                    "</div>",
+                ]
+            )
         blocks.extend(
             [
                 "<h2>Local Demo</h2>",
@@ -702,6 +778,7 @@ def render_html(handoff: dict[str, Any]) -> str:
                 f'<div class="card"><div class="label">Genesis SOTA claim</div><div class="value">{escape(str(local.get("genesis_claim_amount")))}</div></div>',
                 f'<div class="card"><div class="label">TAO + alpha accounting</div><div class="value">{escape(str(local.get("genesis_tao_credit")))} + {escape(str(local.get("genesis_alpha_credit")))}</div></div>',
                 f'<div class="card"><div class="label">Mined emission claim</div><div class="value">{escape(str(local.get("emission_claim_amount")))}</div></div>',
+                f'<div class="card"><div class="label">Expected final balance</div><div class="value">{escape(str(local.get("expected_final_balance")))}</div></div>',
                 f'<div class="card"><div class="label">Self-validation</div><div class="value">{escape(str(local.get("self_validation_status") or "unknown"))} ({escape(str(local.get("self_validation_summary") or "0/0 accepted"))})</div></div>',
                 f'<div class="card"><div class="label">Peer validators</div><div class="value">{escape(", ".join(str(dict(item).get("name") or "validator") for item in local.get("peer_validators") or [] if isinstance(item, dict)) or "Not loaded")}</div></div>',
                 "</section>",
@@ -718,8 +795,23 @@ def render_html(handoff: dict[str, Any]) -> str:
                 "<li>Verify the emission is backed by accepted peer self-validation evidence from other local users before claiming.</li>",
                 "</ul>",
                 "</div>",
+                '<div class="flow warning">',
+                "<h3>Local-only key rule</h3>",
+                "<p>Import the printed Anvil key into MetaMask only. Do not paste it into the claims UI, a support chat, or any public page.</p>",
+                "</div>",
             ]
         )
+        fields = dict(local.get("manual_metamask_fields") or {})
+        field_lines = [
+            f"Network name: {fields.get('network_name') or local.get('network_name')}",
+            f"RPC URL: {fields.get('rpc_url') or local.get('anvil_rpc_url')}",
+            f"Chain ID: {fields.get('chain_id') or local.get('chain_id')}",
+            f"Currency symbol: {fields.get('currency_symbol') or local.get('native_currency_symbol')}",
+            "Block explorer URL: leave blank",
+            f"Expected imported account: {fields.get('expected_imported_address') or local.get('wallet_address')}",
+            "If MetaMask already has a conflicting localhost network, delete or edit that network before adding SOTA Local Base.",
+        ]
+        blocks.extend(["<h3>Manual MetaMask Network Fields</h3>", f"<ul>{_html_list([str(item) for item in field_lines])}</ul>"])
         if local.get("share_warning"):
             blocks.extend(
                 [
@@ -768,6 +860,7 @@ def render_html(handoff: dict[str, Any]) -> str:
             [
                 "<h2>Base Sepolia</h2>",
                 f"<p>{escape(str(testnet.get('tester_message')))}</p>",
+                f'<div class="flow warning"><h3>Testnet wallet access</h3><p>{escape(str(testnet.get("wallet_access_note") or ""))}</p></div>',
                 '<section class="grid">',
                 f'<div class="card"><div class="label">Claim test ready</div><div class="value">{escape(str(testnet.get("ready")).lower())}</div></div>',
                 f'<div class="card"><div class="label">Full release ready</div><div class="value">{escape(str(testnet.get("release_ready")).lower())}</div></div>',
@@ -960,21 +1053,26 @@ def main(argv: list[str] | None = None) -> int:
     )
     local_mirror: dict[str, str] | None = None
     if (default_outputs or args.mirror_local) and args.environment in {"local", "both"}:
+        mirror_args = argparse.Namespace(**vars(args))
+        mirror_args.environment = "local"
+        mirror_handoff = build_handoff(mirror_args)
+        mirror_markdown_text = render_markdown(mirror_handoff)
+        mirror_html_text = render_html(mirror_handoff)
         mirror_json = LOCAL_HANDOFF_DIR / "handoff.json"
-        mirror_markdown = LOCAL_HANDOFF_DIR / "handoff.md"
-        mirror_html = LOCAL_HANDOFF_DIR / "index.html"
+        mirror_markdown_path = LOCAL_HANDOFF_DIR / "handoff.md"
+        mirror_html_path = LOCAL_HANDOFF_DIR / "index.html"
         _write_handoff_artifacts(
-            handoff=handoff,
-            markdown=markdown,
-            html=html,
+            handoff=mirror_handoff,
+            markdown=mirror_markdown_text,
+            html=mirror_html_text,
             json_out=mirror_json,
-            markdown_out=mirror_markdown,
-            html_out=mirror_html,
+            markdown_out=mirror_markdown_path,
+            html_out=mirror_html_path,
         )
         local_mirror = {
             "json": str(mirror_json),
-            "markdown": str(mirror_markdown),
-            "html": str(mirror_html),
+            "markdown": str(mirror_markdown_path),
+            "html": str(mirror_html_path),
         }
     if args.print_markdown:
         print(markdown, end="")
