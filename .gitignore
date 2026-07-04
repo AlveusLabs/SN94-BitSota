@@ -10,6 +10,7 @@ dist_new/
 venv/
 *.pyc
 .venv/
+.venv-docs/
 site/
 .mkdocs_cache/
 

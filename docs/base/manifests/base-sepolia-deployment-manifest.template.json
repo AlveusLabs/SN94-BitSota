@@ -1,0 +1,324 @@
+{
+  "manifest_schema_version": "sota-base-sepolia-deployment-manifest/v1",
+  "environment": "base-sepolia",
+  "status": "template",
+  "chain": {
+    "chain_id": 84532,
+    "chain_name": "base-sepolia",
+    "network_display_name": "Base Sepolia",
+    "block_explorer_url": "https://sepolia.basescan.org",
+    "public_browser_rpc_url": "https://sepolia.base.org",
+    "rpc_secret_handle_ref": "base_sepolia_rpc"
+  },
+  "source": {
+    "docs": {
+      "repo": "SN94-BitSota-live-docs",
+      "branch": null,
+      "commit_sha": null
+    },
+    "contracts": {
+      "repo": "Pool",
+      "path": "contracts/sota-base",
+      "branch": null,
+      "commit_sha": null
+    },
+    "claims_ui": {
+      "repo": "bitsota_website",
+      "branch": null,
+      "commit_sha": null
+    },
+    "indexer_api": {
+      "repo": null,
+      "branch": null,
+      "commit_sha": null
+    },
+    "attestation_tools": {
+      "repo": "Pool",
+      "paths": [
+        "scripts/base_claim_attestation.py",
+        "scripts/foundation_attestation.py",
+        "scripts/deploy_sota_base.py"
+      ],
+      "branch": null,
+      "commit_sha": null
+    }
+  },
+  "abi_bundle": {
+    "version": "sota-base-abi-v1",
+    "source_path": "/home/mekaneeky/repos/Pool/contracts/sota-base/abi",
+    "artifact_sha256": null,
+    "generated_from_contracts_commit_sha": null
+  },
+  "deployer": {
+    "address": null,
+    "signer_secret_handle_ref": "base_sepolia_deployer_private_key",
+    "gas_funding_tx_url": null
+  },
+  "roles": {
+    "owner": {
+      "address": null,
+      "custody": "TODO:multisig-or-timelock",
+      "secret_handle_ref": null
+    },
+    "pending_owner": {
+      "address": null,
+      "custody": null,
+      "secret_handle_ref": null
+    },
+    "supply_authority": {
+      "address": null,
+      "secret_handle_ref": null
+    },
+    "emission_authority": {
+      "address": null,
+      "secret_handle_ref": null
+    },
+    "root_publisher": {
+      "address": null,
+      "secret_handle_ref": "base_sepolia_root_publisher_signer"
+    },
+    "pause_guardian": {
+      "address": null,
+      "secret_handle_ref": null
+    },
+    "vault_releasers": [
+      "genesis_distributor",
+      "emission_distributor"
+    ]
+  },
+  "contracts": {
+    "sota_token": {
+      "name": "SOTAToken",
+      "address": null,
+      "deployment_tx_hash": null,
+      "deployment_block": null,
+      "constructor_args_hash": null,
+      "source_verification_url": null,
+      "abi_path": "SOTAToken.json",
+      "required_by": [
+        "claims_ui",
+        "indexer_api",
+        "monitoring"
+      ]
+    },
+    "vault": {
+      "name": "SOTAVault",
+      "address": null,
+      "deployment_tx_hash": null,
+      "deployment_block": null,
+      "constructor_args_hash": null,
+      "source_verification_url": null,
+      "abi_path": "SOTAVault.json",
+      "required_by": [
+        "claims_ui",
+        "indexer_api",
+        "monitoring"
+      ]
+    },
+    "root_registry": {
+      "name": "SOTARootRegistry",
+      "address": null,
+      "deployment_tx_hash": null,
+      "deployment_block": null,
+      "constructor_args_hash": null,
+      "source_verification_url": null,
+      "abi_path": "SOTARootRegistry.json",
+      "required_by": [
+        "claims_ui",
+        "indexer_api",
+        "root_publisher",
+        "attestation_builder",
+        "monitoring"
+      ]
+    },
+    "lane_registry": {
+      "name": "SOTALaneRegistry",
+      "address": null,
+      "deployment_tx_hash": null,
+      "deployment_block": null,
+      "constructor_args_hash": null,
+      "source_verification_url": null,
+      "abi_path": "SOTALaneRegistry.json",
+      "required_by": [
+        "claims_ui",
+        "indexer_api",
+        "attestation_builder",
+        "monitoring"
+      ]
+    },
+    "genesis_distributor": {
+      "name": "GenesisClaimDistributor",
+      "address": null,
+      "deployment_tx_hash": null,
+      "deployment_block": null,
+      "constructor_args_hash": null,
+      "source_verification_url": null,
+      "abi_path": "GenesisClaimDistributor.json",
+      "required_by": [
+        "claims_ui",
+        "indexer_api",
+        "monitoring"
+      ]
+    },
+    "emission_distributor": {
+      "name": "EmissionClaimDistributor",
+      "address": null,
+      "deployment_tx_hash": null,
+      "deployment_block": null,
+      "constructor_args_hash": null,
+      "source_verification_url": null,
+      "abi_path": "EmissionClaimDistributor.json",
+      "required_by": [
+        "claims_ui",
+        "indexer_api",
+        "monitoring"
+      ]
+    }
+  },
+  "services": {
+    "claims_ui": {
+      "owner": "full_stack_product_engineer",
+      "public_url": null,
+      "health_url": null,
+      "source_branch": null,
+      "commit_sha": null,
+      "consumes_manifest_version": "sota-base-sepolia-deployment-manifest/v1",
+      "browser_safe_env": {
+        "NEXT_PUBLIC_SOTA_ENVIRONMENT": "base-sepolia",
+        "NEXT_PUBLIC_SOTA_BASE_CHAIN_ID": "84532",
+        "NEXT_PUBLIC_SOTA_BASE_CHAIN_NAME": "base-sepolia",
+        "NEXT_PUBLIC_SOTA_BASE_EXPLORER_URL": "https://sepolia.basescan.org"
+      },
+      "secret_handle_refs": []
+    },
+    "indexer_api": {
+      "owner": "sre_devops_engineer",
+      "public_base_url": null,
+      "health_url": null,
+      "source_branch": null,
+      "commit_sha": null,
+      "sync_from_block": null,
+      "routes": {
+        "health": "/health",
+        "eligibility": "/api/base-sota/eligibility/{account}",
+        "proof": "/api/base-sota/proof/{claim_type}/{account}",
+        "claim_status": "/api/base-sota/claims/{account}/status",
+        "root_status": "/api/base-sota/roots",
+        "transaction_builder": "/api/base-sota/claims/{claim_type}/{account}/tx"
+      },
+      "secret_handle_refs": [
+        "base_sepolia_rpc",
+        "base_sepolia_indexer_database_url",
+        "base_sepolia_indexer_admin_token"
+      ]
+    },
+    "root_publisher": {
+      "owner": "sre_devops_engineer",
+      "service_url": null,
+      "health_url": null,
+      "source_branch": null,
+      "commit_sha": null,
+      "publishes_to_contract": "root_registry",
+      "secret_handle_refs": [
+        "base_sepolia_rpc",
+        "base_sepolia_root_publisher_signer"
+      ],
+      "input_artifacts": {
+        "genesis_claim_manifest_path": null,
+        "emission_claim_manifest_path": null,
+        "attestation_path": null
+      }
+    },
+    "attestation_builder": {
+      "owner": "smart_contract_security_engineer",
+      "service_url": null,
+      "source_branch": null,
+      "commit_sha": null,
+      "tool_paths": [
+        "Pool/scripts/base_claim_attestation.py",
+        "Pool/scripts/foundation_attestation.py"
+      ],
+      "outputs": [
+        "genesis claim manifest",
+        "emission claim manifest",
+        "root attestation"
+      ],
+      "secret_handle_refs": []
+    },
+    "monitoring": {
+      "owner": "sre_devops_engineer",
+      "dashboard_url": null,
+      "alert_policy_url": null,
+      "log_group_or_sink": null,
+      "source_branch": null,
+      "commit_sha": null,
+      "checks": [
+        "claims UI availability",
+        "indexer API health",
+        "RPC failure rate",
+        "index lag",
+        "root publisher success/failure",
+        "contract pause state",
+        "claim transaction failures"
+      ],
+      "secret_handle_refs": [
+        "base_sepolia_monitoring_api_key"
+      ]
+    }
+  },
+  "browser_safe": {
+    "environment": "base-sepolia",
+    "chain_id": 84532,
+    "chain_name": "base-sepolia",
+    "network_display_name": "Base Sepolia",
+    "block_explorer_url": "https://sepolia.basescan.org",
+    "public_browser_rpc_url": "https://sepolia.base.org",
+    "abi_bundle_version": "sota-base-abi-v1",
+    "contract_addresses": {
+      "sota_token": null,
+      "vault": null,
+      "root_registry": null,
+      "lane_registry": null,
+      "genesis_distributor": null,
+      "emission_distributor": null
+    },
+    "service_urls": {
+      "claims_ui": null,
+      "indexer_api": null
+    }
+  },
+  "secret_handles": {
+    "base_sepolia_rpc": "TODO:secret-handle:base-sepolia-rpc",
+    "base_sepolia_deployer_private_key": "TODO:secret-handle:base-sepolia-deployer-private-key",
+    "base_sepolia_root_publisher_signer": "TODO:secret-handle:base-sepolia-root-publisher-signer",
+    "base_sepolia_indexer_database_url": "TODO:secret-handle:base-sepolia-indexer-database-url",
+    "base_sepolia_indexer_admin_token": "TODO:secret-handle:base-sepolia-indexer-admin-token",
+    "base_sepolia_monitoring_api_key": "TODO:secret-handle:base-sepolia-monitoring-api-key"
+  },
+  "rollback": {
+    "owner": "sre_devops_engineer",
+    "pause_owner_role": "pause_guardian",
+    "rollback_plan_url": null,
+    "last_known_good_manifest_url": null,
+    "minimum_actions": [
+      "pause root registry or distributors if unsafe",
+      "stop root publisher writes",
+      "preserve service logs and transaction hashes",
+      "restore previous manifest-consuming service config",
+      "verify indexer/API and claims UI against the restored manifest"
+    ]
+  },
+  "evidence_links": {
+    "deployment_run": null,
+    "contract_security_review": null,
+    "source_verification": null,
+    "indexer_api_health": null,
+    "claims_ui_smoke": null,
+    "monitoring_dashboard": null,
+    "rollback_drill": null
+  },
+  "notes": [
+    "Template only. Replace nulls with Base Sepolia testnet evidence after deployment.",
+    "Do not add private keys, mnemonics, RPC tokens, admin token values, or Base mainnet addresses."
+  ]
+}

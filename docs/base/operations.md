@@ -1,0 +1,628 @@
+# Operator Readiness
+
+This is the local and testnet readiness runbook for Base SOTA. It is not a
+public launch announcement, not a Base mainnet runbook, and not production
+Bittensor evidence.
+
+Use plain environment names in every note:
+
+| Environment | What it means | What it proves |
+| --- | --- | --- |
+| Local demo | A local EVM, local accounts, local indexer/API, local backend, local website, and local docs. | The product loop is understandable and works on one machine. |
+| Base Sepolia testnet | Public Base testnet with test ETH, deployed test contracts, public test service config, and test-only roots. | The public-network wiring works without real claims or mainnet value. |
+| Base mainnet | Real Base network and production SOTA claims. | Not covered by this page until the operator records mainnet evidence and approval. |
+
+SN402/Bittensor test evidence is useful background, but it is not enough for
+Base SOTA testnet readiness. Base Sepolia needs its own contracts, manifest,
+API/indexer wiring, browser wallet smoke, and rollback evidence. Monitoring is
+recommended observability, not a blocker for the nontechnical claims/mining
+test path.
+
+## Local Demo Gate
+
+Before any public testnet or mainnet instructions are published, the local demo
+must run from one command:
+
+```bash
+cd /home/mekaneeky/repos/SN94-BitSota-live-docs
+./scripts/sota_local_demo.py launch
+```
+
+The launcher must start the local EVM, indexer, autoresearch backend, website,
+and docs. It must seed demo users, run miners through self-validation, and
+print the URLs a reviewer should open.
+
+Success means a reviewer can:
+
+1. Open the printed website URL.
+2. Import the printed local-only wallet into a throwaway MetaMask profile.
+3. Add the printed Anvil RPC as the wallet network.
+4. View a genesis claim and understand why the account is eligible.
+5. Submit a local genesis claim transaction.
+6. View an emission claim created after self-validation.
+7. Submit a local emission claim transaction.
+8. Confirm the local SOTA balance changed after each claim.
+
+Stop the demo when review is finished:
+
+```bash
+cd /home/mekaneeky/repos/SN94-BitSota-live-docs
+./scripts/sota_local_demo.py stop
+```
+
+Save evidence that a nontechnical reviewer can read later:
+
+- the ready URL block printed by the launcher;
+- the local wallet address and old coldkey shown by the launcher;
+- screenshots or notes for before/after local SOTA balances;
+- the autoresearch dashboard showing the seeded task, submission, and
+  self-validation evidence;
+- the command output for any failure.
+
+## Readiness Colors
+
+Use these labels when summarizing status:
+
+| Label | Meaning |
+| --- | --- |
+| Green | A reviewer can repeat the step from the documented command and the expected result is visible. |
+| Yellow | The step works only with developer help, fixture data, optional monitoring gaps, or a manual workaround. |
+| Red | The step is missing, unsafe, unverifiable, or pointed at the wrong environment. |
+
+Do not call testnet ready while any required Base Sepolia gate is red. Yellow
+items need an owner, a deadline, and a written risk.
+
+## One Status Command
+
+Use the aggregate status command when you need the honest current answer across
+local demo and Base Sepolia readiness:
+
+```bash
+cd /home/mekaneeky/repos/SN94-BitSota-live-docs
+python3 scripts/sota_base_release_status.py \
+  --report-out /home/mekaneeky/repos/.sota-base-testnet/base-sota-release-status.json \
+  --allow-blocked
+```
+
+This command reads the local UI smoke report, the local state-changing claim
+proof report, Base Sepolia operator report, blocker report, public
+browser-smoke report, and claim transaction evidence report. It does not deploy
+contracts, sign messages, broadcast transactions, or touch production
+Bittensor. Green means the required gates are green. Red means at least one
+required gate still blocks nontechnical testing.
+
+For a local-only check:
+
+```bash
+python3 scripts/sota_base_release_status.py --local-only
+```
+
+Generate a nontechnical tester handoff from the current reports:
+
+```bash
+python3 scripts/sota_base_tester_handoff.py \
+  --json-out /home/mekaneeky/repos/.sota-base-testnet/base-sota-tester-handoff.json \
+  --markdown-out /home/mekaneeky/repos/.sota-base-testnet/base-sota-tester-handoff.md
+```
+
+The Markdown handoff includes the live local URLs, local-only MetaMask key,
+Anvil RPC settings, old coldkey lookup, local claim proof status, Base Sepolia
+gate status, and the next blocked action. Use `--environment local` when
+preparing a local-only tester sheet. Use `--environment testnet` only after the
+Base Sepolia gates are green; that mode omits the local-only private key.
+When no custom output paths are supplied and the handoff includes local
+content, the generator also refreshes the served local copy at
+`/home/mekaneeky/repos/.sota-base-local/handoff/index.html`.
+
+When the local launcher starts with website and docs enabled, it also serves
+the generated local handoff at the printed `Tester handoff` URL on port `9003`.
+
+## Base Sepolia Testnet Gates
+
+Publish Base Sepolia instructions only after each gate has evidence:
+
+| Gate | Required evidence |
+| --- | --- |
+| Local demo | One-command local run passes and the reviewer evidence above is saved. |
+| Deployment manifest | One manifest names `base-sepolia`, chain ID, public RPC label, secret handles, source branches, commit SHAs, contract addresses, ABI bundle, service URLs, owners, and rollback owner. Use `docs/base/manifests/base-sepolia-deployment-manifest.template.json` until a deployed Base Sepolia manifest replaces it. |
+| Contracts | SOTA token, vault, root registry, lane registry, genesis distributor, and emission distributor are deployed to Base Sepolia with constructor args and source verification links. |
+| Roles and custody | Owner, publisher, releaser, pause guardian, and multisig or timelock records are written using public addresses and secret handles only. |
+| Claim/root artifacts | Test-only genesis and emission root artifacts are built from the Base Sepolia manifest and accepted autoresearch self-validation evidence, then finalized with emitted on-chain root IDs before indexer import. |
+| Indexer/API | Testnet API reads from the manifest, catches up contract events, ingests public claim artifacts, and serves eligibility, proof, claim status, root status, and unsigned claim calldata routes. |
+| Claims website | Website is configured for Base Sepolia, shows split genesis/emission claims, and labels the network as testnet. |
+| Browser wallet smoke | A funded test wallet can switch to Base Sepolia, submit a test claim, and produce an explorer transaction hash or a recorded revert. |
+| Root lifecycle | Test-only genesis and emission roots can be built, validated, published, indexed, read back, and challenged or paused when appropriate. |
+| Observability | Operators can see service health, RPC failures, index lag, failed claim transactions, API errors, signer actions, root publication, and pause state. |
+| Recovery | Operators know how to pause, stop writers, preserve logs and transaction hashes, correct config, redeploy if needed, and verify recovery. |
+| Support wording | Public wording explains testnet claims without promising payout timing, reversals, exchange distribution, audit completion, or mainnet launch. |
+| QA gate | QA records pass/fail/blocker status for every gate and decides whether the final staged end-to-end test can run. |
+
+## Base Sepolia Blocker Gate
+
+Before running deployment, ask the read-only blocker gate what still prevents a
+nontechnical browser-wallet test. It checks AWS identity, service DNS, Base
+Sepolia RPC chain ID, the generated deployment artifacts, the service
+deployment pack, the source-based App Runner pack, and the public readiness
+file. It does not deploy contracts, sign messages, broadcast transactions, or
+touch production Bittensor.
+
+```bash
+cd /home/mekaneeky/repos/SN94-BitSota-live-docs
+python3 scripts/sota_base_testnet_blockers.py \
+  --aws-profile moonrocklab-frankfurt \
+  --report-out /home/mekaneeky/repos/.sota-base-testnet/base-sota-testnet-blockers.json \
+  --allow-blocked
+```
+
+Use the generated JSON report as the current blocker list. Green means the
+operator can continue to the guarded rehearsal and browser-wallet smoke. Red
+means do not invite a nontechnical tester yet. The default host checks are:
+
+- `claims-test.bitsota.com`
+- `claims-api-test.bitsota.com`
+- `coordinator-test.bitsota.com`
+- `attestation-test.bitsota.com`
+- `root-publisher-test.bitsota.com`
+
+Override a host only when the public testnet URL plan changes:
+
+```bash
+python3 scripts/sota_base_testnet_blockers.py \
+  --host claims_ui=https://new-claims-test.example.com \
+  --host claims_api=https://new-claims-api-test.example.com \
+  --allow-blocked
+```
+
+The end-to-end operator command forwards its configured service URLs into both
+the blocker gate and AWS inventory. If `bitsota.com` DNS is not delegated yet,
+use direct public HTTPS service URLs, including App Runner URLs. This only
+removes the custom-DNS dependency; browser smoke still has to prove the
+services are configured for Base Sepolia, expose real claim artifacts, and
+return unsigned Base Sepolia claim transactions.
+
+## Base Sepolia AWS Inventory
+
+Run the read-only AWS inventory after authenticating with the approved testnet
+profile. It checks whether the account has explicit Base SOTA App Runner
+services, a `bitsota.com` Route53 hosted zone, optional Base SOTA/claims ECR
+repositories, and Base Sepolia/Base SOTA secret handles. It records secret names
+and ARNs only; it never reads secret values.
+
+```bash
+cd /home/mekaneeky/repos/SN94-BitSota-live-docs
+python3 scripts/sota_base_testnet_aws_inventory.py \
+  --aws-profile moonrocklab-frankfurt \
+  --out /home/mekaneeky/repos/.sota-base-testnet/base-sota-testnet-aws-inventory.json \
+  --allow-blocked
+```
+
+Green means the public AWS side is named and discoverable. Red means do not
+invite a nontechnical tester to the Base Sepolia path yet. Yellow only appears
+for optional ECR repository discovery when the deployment plan might use source
+deploys instead of containers.
+
+## Source App Runner Pack
+
+Use source-based App Runner first. It uses the existing App Runner GitHub
+connection and does not require an App Runner ECR access role. The service pack
+writes templates under `.sota-base-testnet/apprunner/`; render them into
+AWS-ready inputs with:
+
+```bash
+cd /home/mekaneeky/repos/SN94-BitSota-live-docs
+python3 scripts/sota_base_testnet_apprunner_source_pack.py \
+  --aws-profile moonrocklab-frankfurt \
+  --region eu-central-1 \
+  --allow-blocked
+```
+
+This writes `.sota-base-testnet/base-sota-testnet-apprunner-source-pack.json`
+and rendered create-service inputs under `.sota-base-testnet/apprunner-source/`.
+The rendered files replace `SOTA_APPRUNNER_CONNECTION_ARN` with the approved
+App Runner GitHub connection and set `AppRunnerReadSecrets` as the runtime
+instance role for services that read Secrets Manager handles. Green means the
+rendered files are ready for `aws apprunner create-service`. Yellow means the
+current local service code has not been committed and pushed to the configured
+GitHub branches yet. In that case, read the report's `source_publication`
+section; it lists the dirty paths and the deployment-relevant subset for each
+service so operators can publish only the Base SOTA service changes.
+
+The ECR/container pack is optional. Use it only if an existing App Runner ECR
+access role ARN is provided and `iam:PassRole` works for that role.
+
+## Base Sepolia Operator Run
+
+Use the operator command when you want the whole public testnet path attempted
+in order. It generates the service pack, source App Runner pack, blocker report,
+AWS inventory, deployment manifest/env from a compact deployment or fresh deploy, seed
+claim/root artifacts from real autoresearch evidence, root-publish
+requests/results, finalized claim artifacts, optional indexer import, browser
+smoke, and release status.
+
+Read-only/current-blocker run:
+
+```bash
+cd /home/mekaneeky/repos/SN94-BitSota-live-docs
+python3 scripts/sota_base_testnet_operator.py \
+  --aws-profile moonrocklab-frankfurt \
+  --allow-blocked
+```
+
+Full operator run with an existing compact Base Sepolia contract deployment:
+
+```bash
+python3 scripts/sota_base_testnet_operator.py \
+  --aws-profile moonrocklab-frankfurt \
+  --deployment /secure/artifacts/base-sepolia-compact-deployment.json \
+  --emission-evidence /secure/artifacts/base-sota-emission-evidence.json \
+  --test-wallet-address "$SOTA_TEST_WALLET_ADDRESS" \
+  --test-old-coldkey "$SOTA_TEST_OLD_COLDKEY" \
+  --default-lane-id "$NEXT_PUBLIC_SOTA_DEFAULT_LANE_ID" \
+  --build-website \
+  --allow-blocked
+```
+
+Full operator run that deploys contracts from an approved AWS Secrets Manager
+handle:
+
+```bash
+python3 scripts/sota_base_testnet_operator.py \
+  --aws-profile moonrocklab-frankfurt \
+  --deploy \
+  --private-key-secret-id "$SOTA_DEPLOYER_PRIVATE_KEY_SECRET_ID" \
+  --emission-evidence /secure/artifacts/base-sota-emission-evidence.json \
+  --test-wallet-address "$SOTA_TEST_WALLET_ADDRESS" \
+  --test-old-coldkey "$SOTA_TEST_OLD_COLDKEY" \
+  --default-lane-id "$NEXT_PUBLIC_SOTA_DEFAULT_LANE_ID" \
+  --build-website \
+  --allow-blocked
+```
+
+The operator loads that secret into the child process as
+`SOTA_DEPLOYER_PRIVATE_KEY` and redacts the child command in its report. The
+secret may be a raw private key string or a JSON object with
+`SOTA_DEPLOYER_PRIVATE_KEY`, `private_key`, `deployer_private_key`, or the key
+named by `--private-key-secret-json-key`.
+
+To execute the state-changing parts after review, add:
+
+```bash
+--broadcast-roots \
+--root-publisher-private-key-secret-id "$SOTA_ROOT_PUBLISHER_PRIVATE_KEY_SECRET_ID" \
+--import-artifacts
+```
+
+`--broadcast-roots` requires `SOTA_ROOT_PUBLISHER_PRIVATE_KEY` in the process
+environment or `--root-publisher-private-key-secret-id` pointing at an approved
+AWS Secrets Manager handle. `--import-artifacts` posts finalized genesis and
+emission claim artifacts into the configured testnet claims API. The operator
+report is written to `base-sota-testnet-operator-run.json`; it stays red or
+yellow until every generated report is green, both roots have emitted on-chain
+root IDs, the claim artifacts are imported, browser smoke is green, and
+MetaMask claim transaction evidence is recorded.
+
+## Base Sepolia Service Pack
+
+Generate the service pack before assigning public testnet infrastructure work.
+It writes one JSON/Markdown/HTML bundle with the service list, repo/cwd,
+build/run commands, DNS hosts, ports, health URLs, public env keys, secret
+handle references, dependencies, and Base-Sepolia-only safeguards.
+
+```bash
+cd /home/mekaneeky/repos/SN94-BitSota-live-docs
+python3 scripts/sota_base_testnet_service_pack.py \
+  --json-out /home/mekaneeky/repos/.sota-base-testnet/base-sota-testnet-service-pack.json \
+  --markdown-out /home/mekaneeky/repos/.sota-base-testnet/base-sota-testnet-service-pack.md \
+  --html-out /home/mekaneeky/repos/.sota-base-testnet/base-sota-testnet-service-pack.html
+```
+
+When a filled deployment manifest exists, pass it explicitly:
+
+```bash
+python3 scripts/sota_base_testnet_service_pack.py \
+  --manifest /secure/artifacts/base-sepolia-deployment-manifest.json \
+  --env-file /secure/artifacts/base-sota.env.testnet \
+  --claims-ui https://claims-test.bitsota.com \
+  --claims-api https://claims-api-test.bitsota.com \
+  --coordinator https://coordinator-test.bitsota.com \
+  --attestation https://attestation-test.bitsota.com \
+  --root-publisher https://root-publisher-test.bitsota.com \
+  --claim-artifacts https://claims-test.bitsota.com/base-sota-testnet-seed-artifacts-finalized.json \
+  --monitoring https://monitoring-test.bitsota.com \
+  --readiness-url https://claims-test.bitsota.com/base-sota-testnet-readiness.json
+```
+
+The service pack is read-only. It does not deploy services, sign transactions,
+publish roots, broadcast transactions, or touch production Bittensor/Base
+mainnet. The blocker gate now requires
+`base-sota-testnet-service-pack.json` and treats `deployment_ready=false` as a
+red testnet blocker. Before the deployment manifest and env file exist, the
+pack is expected to stay yellow and the blocker gate is expected to stay red.
+
+## Base Sepolia Seed Claim Artifacts
+
+Testnet claims have a two-phase artifact path. First build root artifacts and
+pending claim templates from the deployed manifest plus real autoresearch
+emission evidence:
+
+```bash
+cd /home/mekaneeky/repos/SN94-BitSota-live-docs
+python3 scripts/sota_base_testnet_seed_artifacts.py build \
+  --manifest /secure/artifacts/base-sepolia-deployment-manifest.json \
+  --emission-evidence /secure/artifacts/base-sota-emission-evidence.json \
+  --test-wallet-address "$SOTA_TEST_WALLET_ADDRESS" \
+  --test-old-coldkey "$SOTA_TEST_OLD_COLDKEY" \
+  --lane-id "$NEXT_PUBLIC_SOTA_DEFAULT_LANE_ID" \
+  --out-dir /secure/artifacts/base-sepolia-rehearsal
+```
+
+The builder recomputes emission leaves, proofs, totals, and the Merkle root. It
+refuses emission evidence unless each claim has accepted self-validation
+consensus with the configured committee minimums. It does not sign, publish, or
+broadcast.
+
+Next publish the generated genesis and emission root artifacts using the root
+publisher. The build report prints dry-run and broadcast commands. After both
+broadcasts succeed, finalize the claim artifacts with the emitted on-chain root
+IDs:
+
+```bash
+python3 scripts/sota_base_testnet_seed_artifacts.py finalize \
+  --build-report /secure/artifacts/base-sepolia-rehearsal/base-sota-testnet-seed-artifacts.json \
+  --genesis-publish-result /secure/artifacts/base-sepolia-rehearsal/base-sota-testnet-genesis-root-publish-result.json \
+  --emission-publish-result /secure/artifacts/base-sepolia-rehearsal/base-sota-testnet-emission-root-publish-result.json \
+  --out-dir /secure/artifacts/base-sepolia-rehearsal
+```
+
+The finalized report prints the exact `curl` commands for importing
+`base-sota-testnet-genesis-claim-artifact.json` and
+`base-sota-testnet-emission-claim-artifact.json` into the claims indexer. Do not
+import the pending templates; they intentionally lack root IDs.
+
+## Base Sepolia Root Publisher
+
+Root publication must use the guarded wrapper, not an ad hoc Web3 shell. The
+wrapper builds a dry-run publish transaction by default:
+
+```bash
+cd /home/mekaneeky/repos/SN94-BitSota-live-docs
+python3 scripts/sota_base_publish_root.py \
+  --manifest /secure/artifacts/base-sepolia-deployment-manifest.json \
+  --root-artifact /secure/artifacts/base-sepolia-root-artifact.json \
+  --kind emission \
+  --nonce "$SOTA_ROOT_NONCE" \
+  --out /secure/artifacts/base-sepolia-root-publish-request.json
+```
+
+It refuses Base mainnet chain ID `8453`, requires nonzero Merkle root, budget,
+policy hash, attestation hash, and nonce, and writes calldata without signing.
+To broadcast on Base Sepolia, load `SOTA_ROOT_PUBLISHER_PRIVATE_KEY` from the
+approved secret store and pass `--broadcast`. Do not put that private key in
+the manifest, env file, service pack, docs, Linear, or shell history. A
+successful broadcast decodes the `RootPublished` event and records the emitted
+`root_id`; use that result when finalizing claim artifacts.
+
+## Base Sepolia Preflight
+
+Run the read-only preflight before asking a reviewer to open the Base Sepolia
+claims page. It checks the manifest shape, chain ID, RPC, deployed contract
+addresses, service URLs, browser public env, and public test-wallet funding.
+It does not broadcast transactions, sign messages, deploy contracts, or touch
+production Bittensor.
+
+The preferred operator path is the guarded rehearsal script. With an existing
+compact deployment artifact:
+
+```bash
+cd /home/mekaneeky/repos/SN94-BitSota-live-docs
+python3 scripts/sota_base_testnet_rehearsal.py \
+  --deployment /secure/artifacts/base-sepolia-compact-deployment.json \
+  --artifacts-dir /secure/artifacts/base-sepolia-rehearsal \
+  --claims-ui-url https://claims-test.bitsota.com \
+  --claims-ui-health-url https://claims-test.bitsota.com/health \
+  --indexer-api-url https://claims-api-test.bitsota.com \
+  --indexer-api-health-url https://claims-api-test.bitsota.com/health \
+  --root-publisher-url https://root-publisher-test.bitsota.com \
+  --root-publisher-health-url https://root-publisher-test.bitsota.com/health \
+  --attestation-builder-url https://attestation-test.bitsota.com \
+  --attestation-builder-health-url https://attestation-test.bitsota.com/health \
+  --monitoring-url https://monitoring-test.bitsota.com \
+  --autoresearch-api-url https://coordinator-test.bitsota.com \
+  --test-wallet-address "$SOTA_TEST_WALLET_ADDRESS" \
+  --test-old-coldkey "$SOTA_TEST_OLD_COLDKEY" \
+  --build-website
+```
+
+To have the rehearsal script deploy the contracts first, add `--deploy` and
+load `SOTA_DEPLOYER_PRIVATE_KEY` from the approved testnet secret store in the
+process environment. The script refuses Base mainnet RPC chain ID `8453` and
+does not print the private key.
+
+```bash
+cd /home/mekaneeky/repos/SN94-BitSota-live-docs
+python3 scripts/sota_base_testnet_rehearsal.py \
+  --deploy \
+  --artifacts-dir /secure/artifacts/base-sepolia-rehearsal \
+  --claims-ui-url https://claims-test.bitsota.com \
+  --indexer-api-url https://claims-api-test.bitsota.com \
+  --root-publisher-url https://root-publisher-test.bitsota.com \
+  --attestation-builder-url https://attestation-test.bitsota.com \
+  --monitoring-url https://monitoring-test.bitsota.com \
+  --autoresearch-api-url https://coordinator-test.bitsota.com \
+  --test-wallet-address "$SOTA_TEST_WALLET_ADDRESS" \
+  --test-old-coldkey "$SOTA_TEST_OLD_COLDKEY"
+```
+
+The rehearsal writes:
+
+- `base-sepolia-compact-deployment.json`, when `--deploy` is used;
+- `base-sepolia-deployment-manifest.json`;
+- `base-sota.env.testnet`;
+- `base-sota-testnet-readiness.json`;
+- an optional JSON report when `--report-out` is supplied.
+
+Publish `base-sota-testnet-readiness.json` at the URL used by
+`NEXT_PUBLIC_SOTA_READINESS_URL`. The claims website reads this public file and
+shows the tester whether Base Sepolia is ready for browser-wallet smoke. The
+file contains preflight status and public check details only; it must not
+contain private keys, RPC tokens, admin tokens, database URLs, or raw secret
+values.
+
+After the contract deploy helper writes its compact deployment output, convert
+that output into the full operations manifest and public/service env file:
+
+```bash
+cd /home/mekaneeky/repos/SN94-BitSota-live-docs
+python3 scripts/sota_base_testnet_manifest.py \
+  --template docs/base/manifests/base-sepolia-deployment-manifest.template.json \
+  --deployment /secure/artifacts/base-sepolia-compact-deployment.json \
+  --manifest-out /secure/artifacts/base-sepolia-deployment-manifest.json \
+  --env-out /secure/artifacts/base-sota.env.testnet \
+  --claims-ui-url https://claims-test.bitsota.com \
+  --indexer-api-url https://claims-api-test.bitsota.com \
+  --root-publisher-url https://root-publisher-test.bitsota.com \
+  --attestation-builder-url https://attestation-test.bitsota.com \
+  --monitoring-url https://monitoring-test.bitsota.com \
+  --autoresearch-api-url https://coordinator-test.bitsota.com \
+  --test-wallet-address "$SOTA_TEST_WALLET_ADDRESS" \
+  --test-old-coldkey "$SOTA_TEST_OLD_COLDKEY"
+```
+
+This adapter only writes public addresses, public URLs, and secret-handle
+references inherited from the template. Do not put deployer private keys,
+mnemonics, RPC tokens, admin tokens, or database URLs into the generated env
+file.
+
+```bash
+cd /home/mekaneeky/repos/SN94-BitSota-live-docs
+python3 scripts/sota_base_testnet_preflight.py \
+  /secure/artifacts/base-sepolia-deployment-manifest.json \
+  --env-file /secure/artifacts/base-sota.env.testnet
+```
+
+The template is expected to be red until real Base Sepolia contracts and
+services are deployed. A reviewer-ready testnet run needs this command to be
+green against the filled deployment manifest and real testnet env. Yellow means
+the check was skipped or needs operator evidence. Red means do not invite a
+nontechnical tester yet.
+
+## Base Sepolia Browser Smoke
+
+After the blocker report and preflight are green, run the read-only public
+browser smoke before handing the testnet to a nontechnical MetaMask tester. It
+loads the public claims page, requires Base Sepolia UI copy and readiness
+wording, checks the public claims API/indexer, verifies the seeded old
+coldkey/test-wallet genesis claim, verifies the seeded self-validated emission
+claim, checks unsigned claim calldata for both claim types, and confirms
+autoresearch self-validation evidence is public.
+
+```bash
+cd /home/mekaneeky/repos/SN94-BitSota-live-docs
+python3 scripts/sota_base_testnet_browser_smoke.py \
+  --report-out /secure/artifacts/base-sepolia-rehearsal/base-sota-testnet-browser-smoke.json
+```
+
+The script is read-only. It does not deploy contracts, sign messages, broadcast
+transactions, or touch production Bittensor. A green report means the public UI
+and APIs are ready for the human MetaMask step: connect the seeded test wallet,
+submit the genesis claim, then submit the mined-emission claim. Red means do
+not invite a nontechnical tester yet.
+
+The generated testnet env must include:
+
+- `SOTA_TEST_WALLET_ADDRESS`
+- `SOTA_TEST_OLD_COLDKEY`
+- `SOTA_TEST_EPOCH`
+- `NEXT_PUBLIC_SOTA_DEFAULT_LANE_ID`
+
+## Base Sepolia Claim Transaction Evidence
+
+After the public browser-smoke report is green, ask the human tester to connect
+the seeded MetaMask wallet, switch to Base Sepolia, submit the genesis claim,
+then submit the mined-emission claim. Record both transaction hashes.
+
+Verify those hashes with the read-only evidence verifier:
+
+```bash
+cd /home/mekaneeky/repos/SN94-BitSota-live-docs
+python3 scripts/sota_base_claim_tx_evidence.py \
+  --environment testnet \
+  --genesis-tx "$SOTA_TESTNET_GENESIS_CLAIM_TX" \
+  --emission-tx "$SOTA_TESTNET_EMISSION_CLAIM_TX" \
+  --report-out /secure/artifacts/base-sepolia-rehearsal/base-sota-claim-tx-evidence.json
+```
+
+The verifier reads the generated manifest/env, queries the configured Base
+Sepolia RPC, and checks:
+
+- both transactions succeeded;
+- both transactions came from the seeded test wallet;
+- genesis targeted `GenesisClaimDistributor`;
+- emission targeted `EmissionClaimDistributor`;
+- both transactions used the expected claim function selector;
+- both distributors emitted the expected claim event and `ClaimRecorded`;
+- the SOTA token emitted a positive `Transfer` to the tester wallet;
+- the vault emitted `SOTAReleased` to the tester wallet;
+- the tester wallet has a positive SOTA balance after the claims.
+
+The verifier does not deploy contracts, sign messages, broadcast transactions,
+or touch production Bittensor. A green
+`base-sota-claim-tx-evidence.json` is the machine-readable proof that the human
+MetaMask claim flow completed.
+
+For dry documentation review without network access:
+
+```bash
+python3 scripts/sota_base_testnet_preflight.py <manifest.json> \
+  --env-file <base-sota.env.testnet> \
+  --offline \
+  --allow-blocked
+```
+
+## Evidence Record Template
+
+Use this shape for every deployment or readiness note:
+
+```text
+Environment: local-demo or base-sepolia
+Service or contract:
+Owner:
+Source repo:
+Source branch:
+Commit SHA:
+Manifest path/version:
+Public URL or explorer link:
+Raw service URL, if approved for test evidence:
+Chain ID:
+Contract address, if applicable:
+Secret handles used:
+Health check or transaction hash:
+Rollback or pause owner:
+Known blockers:
+Next update:
+```
+
+Never include private keys, seed phrases, RPC tokens, admin tokens, deployer
+secret values, or unapproved production raw URLs in the evidence record.
+
+## Do Not Publish Yet
+
+Do not publish public instructions that claim any of the following until the
+operator records evidence:
+
+- Base Sepolia deployment is live;
+- Base mainnet deployment is live;
+- production SOTA claims are open;
+- a contract audit is complete;
+- a reward, payout, or claim date is guaranteed.
+
+## Escalation
+
+| Topic | Owner path |
+| --- | --- |
+| Local demo launcher, website, or URL printing | Full-stack product engineering |
+| Backend seeding, validation evidence, or claim roots | Autoresearch backend engineering |
+| Contract deployment, ownership, pausing, or audit scope | Smart contract security engineering and SRE |
+| Indexer/API deployment, health checks, rollback, or optional monitoring | SRE / DevOps engineering |
+| Public docs wording and release readiness | Technical docs / product release |
+| Final QA evidence and staged end-to-end approval | QA / release engineering |

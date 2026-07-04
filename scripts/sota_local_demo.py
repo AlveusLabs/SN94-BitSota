@@ -1,0 +1,1132 @@
+#!/usr/bin/env python3
+from __future__ import annotations
+
+import argparse
+import json
+import os
+from pathlib import Path
+import shutil
+import signal
+import socket
+import subprocess
+import sys
+import time
+from typing import Any
+from urllib.error import HTTPError, URLError
+from urllib.request import Request, urlopen
+
+from eth_account import Account
+from eth_abi import encode
+from eth_utils import keccak
+from substrateinterface import Keypair
+from web3 import Web3
+
+
+REPOS = Path("/home/mekaneeky/repos")
+DOCS_REPO = Path(__file__).resolve().parents[1]
+POOL_REPO = REPOS / "Pool"
+CONTRACTS_REPO = POOL_REPO / "contracts" / "sota-base"
+COMMUNITY_REPO = REPOS / "94-agent-community"
+AUTORESEARCH_REPO = REPOS / "autoresearch-bittensor"
+WEBSITE_REPO = REPOS / "bitsota_website"
+RUN_DIR = REPOS / ".sota-base-local"
+TESTNET_RUN_DIR = REPOS / ".sota-base-testnet"
+LOG_DIR = RUN_DIR / "logs"
+HANDOFF_DIR = RUN_DIR / "handoff"
+STATE_PATH = RUN_DIR / "state.json"
+PIDS_PATH = RUN_DIR / "pids.json"
+
+ANVIL_HOST = "0.0.0.0"
+ANVIL_RPC_LOCAL = "http://127.0.0.1:8545"
+CHAIN_ID = 31337
+ONE_SOTA = 10**18
+SERVICE_PORTS = {
+    "anvil": 8545,
+    "autoresearch": 8000,
+    "indexer": 8010,
+    "website": 3000,
+    "docs": 9002,
+    "handoff": 9003,
+}
+ADMIN_TOKEN = "local-admin"
+LANE_ID = "base:sota-local"
+DEMO_MNEMONIC = "test test test test test test test test test test test junk"
+ANVIL_PRIVATE_KEYS = {
+    "owner": "0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80",
+    "publisher": "0x59c6995e998f97a5a0044966f0945389dc9e86dae88c7a8412f4603b6b78690d",
+    "alice_reward": "0x5de4111afa1a4b94908f83103eb1f1706367c2e68ca870fc3fb9a804cdab365a",
+    "miner": "0x7c852118294e51e653712a81e05800f419141751be58f605c371e15141b007a6",
+}
+DEMO_VALIDATOR_URIS = ("//Bob", "//Charlie", "//Dave")
+DEMO_SELF_VALIDATION_COMMITTEE_SIZE = len(DEMO_VALIDATOR_URIS)
+
+
+def _print(message: str) -> None:
+    print(message, flush=True)
+
+
+def _python(repo: Path) -> str:
+    venv_python = repo / ".venv" / "bin" / "python"
+    return str(venv_python if venv_python.exists() else sys.executable)
+
+
+def _tailscale_ip() -> str | None:
+    binary = shutil.which("tailscale")
+    if not binary:
+        return None
+    try:
+        output = subprocess.check_output([binary, "ip", "-4"], text=True, stderr=subprocess.DEVNULL, timeout=2)
+    except Exception:
+        return None
+    for line in output.splitlines():
+        text = line.strip()
+        if text:
+            return text
+    return None
+
+
+def _primary_host() -> str:
+    return _tailscale_ip() or "127.0.0.1"
+
+
+def _json_default(value: Any) -> Any:
+    if isinstance(value, (bytes, bytearray)):
+        return "0x" + bytes(value).hex()
+    hex_method = getattr(value, "hex", None)
+    if callable(hex_method):
+        text = hex_method()
+        return text if str(text).startswith("0x") else f"0x{text}"
+    return str(value)
+
+
+def _load_json(path: Path) -> dict[str, Any]:
+    if not path.exists():
+        return {}
+    return json.loads(path.read_text(encoding="utf-8"))
+
+
+def _write_json(path: Path, payload: dict[str, Any]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(payload, indent=2, sort_keys=True, default=_json_default) + "\n", encoding="utf-8")
+
+
+def _request_json(
+    method: str,
+    url: str,
+    payload: dict[str, Any] | None = None,
+    headers: dict[str, str] | None = None,
+    timeout: float = 20.0,
+) -> Any:
+    data = None
+    request_headers = dict(headers or {})
+    if payload is not None:
+        data = json.dumps(payload).encode("utf-8")
+        request_headers.setdefault("Content-Type", "application/json")
+    request_headers.setdefault("Accept", "application/json")
+    request = Request(url, data=data, headers=request_headers, method=method)
+    try:
+        with urlopen(request, timeout=timeout) as response:
+            body = response.read()
+    except HTTPError as exc:
+        body = exc.read().decode("utf-8", errors="replace")
+        raise RuntimeError(f"{method} {url} failed with HTTP {exc.code}: {body}") from exc
+    if not body:
+        return {}
+    return json.loads(body.decode("utf-8"))
+
+
+def _wait_http(url: str, timeout_seconds: float = 60.0) -> None:
+    deadline = time.time() + timeout_seconds
+    while time.time() < deadline:
+        try:
+            with urlopen(url, timeout=2) as response:
+                if response.status < 500:
+                    return
+        except (URLError, TimeoutError, ConnectionError):
+            time.sleep(0.5)
+    raise RuntimeError(f"timed out waiting for {url}")
+
+
+def _wait_rpc(timeout_seconds: float = 60.0) -> Web3:
+    w3 = Web3(Web3.HTTPProvider(ANVIL_RPC_LOCAL))
+    deadline = time.time() + timeout_seconds
+    while time.time() < deadline:
+        try:
+            if w3.is_connected():
+                _ = w3.eth.block_number
+                return w3
+        except Exception:
+            time.sleep(0.5)
+    raise RuntimeError(f"timed out waiting for {ANVIL_RPC_LOCAL}")
+
+
+def _is_port_open(host: str, port: int) -> bool:
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+        sock.settimeout(0.25)
+        return sock.connect_ex((host, port)) == 0
+
+
+def _port_owner(port: int) -> str | None:
+    try:
+        result = subprocess.run(
+            ["ss", "-ltnp", "sport", "=", f":{port}"],
+            check=False,
+            capture_output=True,
+            text=True,
+            timeout=2,
+        )
+    except Exception:
+        return None
+    lines = [line.strip() for line in result.stdout.splitlines() if line.strip()]
+    return lines[-1] if len(lines) > 1 else None
+
+
+def _port_in_use_error(port: int) -> RuntimeError:
+    owner = _port_owner(port)
+    suffix = f"; current listener: {owner}" if owner else ""
+    return RuntimeError(f"port {port} is already in use{suffix}")
+
+
+def _wait_for_port_closed(port: int, *, timeout_seconds: float = 10.0) -> None:
+    deadline = time.monotonic() + timeout_seconds
+    while time.monotonic() < deadline:
+        if not _is_port_open("127.0.0.1", port):
+            return
+        time.sleep(0.2)
+    owner = _port_owner(port)
+    suffix = f"; current listener: {owner}" if owner else ""
+    raise RuntimeError(f"port {port} is still in use after shutdown{suffix}")
+
+
+def stop_stack() -> None:
+    pids = _load_json(PIDS_PATH)
+    for name, pid in list(pids.items()):
+        try:
+            os.killpg(int(pid), signal.SIGTERM)
+            _print(f"stopped {name} pid={pid}")
+        except ProcessLookupError:
+            pass
+        except Exception as exc:
+            _print(f"could not stop {name} pid={pid}: {exc}")
+    for name in pids:
+        port = SERVICE_PORTS.get(name)
+        if port is not None:
+            _wait_for_port_closed(port)
+    PIDS_PATH.unlink(missing_ok=True)
+
+
+def _reset_runtime_state() -> None:
+    for path in (
+        RUN_DIR / "indexer.sqlite3",
+        RUN_DIR / "indexer.sqlite3-shm",
+        RUN_DIR / "indexer.sqlite3-wal",
+        RUN_DIR / "autoresearch.sqlite3",
+        RUN_DIR / "autoresearch.sqlite3-shm",
+        RUN_DIR / "autoresearch.sqlite3-wal",
+        STATE_PATH,
+    ):
+        path.unlink(missing_ok=True)
+    if HANDOFF_DIR.exists():
+        shutil.rmtree(HANDOFF_DIR)
+    task_repo = RUN_DIR / "task-repo"
+    if task_repo.exists():
+        shutil.rmtree(task_repo)
+
+
+def _start_process(name: str, args: list[str], *, cwd: Path, env: dict[str, str] | None = None) -> subprocess.Popen:
+    LOG_DIR.mkdir(parents=True, exist_ok=True)
+    log_path = LOG_DIR / f"{name}.log"
+    log = log_path.open("ab")
+    process_env = os.environ.copy()
+    if env:
+        process_env.update(env)
+    process = subprocess.Popen(
+        args,
+        cwd=str(cwd),
+        env=process_env,
+        stdout=log,
+        stderr=subprocess.STDOUT,
+        start_new_session=True,
+    )
+    pids = _load_json(PIDS_PATH)
+    pids[name] = process.pid
+    _write_json(PIDS_PATH, pids)
+    _print(f"started {name} pid={process.pid} log={log_path}")
+    return process
+
+
+def _artifact(name: str) -> dict[str, Any]:
+    path = CONTRACTS_REPO / "out" / f"{name}.sol" / f"{name}.json"
+    if not path.exists():
+        subprocess.check_call([str(Path.home() / ".foundry" / "bin" / "forge"), "build"], cwd=CONTRACTS_REPO)
+    return json.loads(path.read_text(encoding="utf-8"))
+
+
+def _bytecode(artifact: dict[str, Any]) -> str:
+    value = artifact["bytecode"]
+    return value["object"] if isinstance(value, dict) else value
+
+
+def _deploy(w3: Web3, name: str, *args: Any, sender: str) -> Any:
+    artifact = _artifact(name)
+    contract = w3.eth.contract(abi=artifact["abi"], bytecode=_bytecode(artifact))
+    tx_hash = contract.constructor(*args).transact({"from": sender})
+    receipt = w3.eth.wait_for_transaction_receipt(tx_hash)
+    if receipt.contractAddress is None:
+        raise RuntimeError(f"{name} deployment did not return a contract address")
+    return w3.eth.contract(address=receipt.contractAddress, abi=artifact["abi"])
+
+
+def _bytes32_text(label: str) -> bytes:
+    return keccak(text=label)
+
+
+def _hex32(value: bytes | str) -> str:
+    if isinstance(value, str):
+        return value if value.startswith("0x") else f"0x{value}"
+    return "0x" + value.hex()
+
+
+def _demo_validator_keypairs() -> list[tuple[str, Keypair]]:
+    return [(uri.removeprefix("//"), Keypair.create_from_uri(uri)) for uri in DEMO_VALIDATOR_URIS]
+
+
+def _root_pair(left: str, right: str) -> str:
+    left_b = bytes.fromhex(left.removeprefix("0x"))
+    right_b = bytes.fromhex(right.removeprefix("0x"))
+    first, second = sorted((left_b, right_b))
+    return "0x" + keccak(first + second).hex()
+
+
+def _publish_root(
+    w3: Web3,
+    registry: Any,
+    *,
+    publisher: str,
+    kind: int,
+    merkle_root: str,
+    budget_cap: int,
+    policy_hash: str,
+    attestation_hash: str,
+    nonce: str,
+) -> str:
+    args = (
+        int(kind),
+        bytes.fromhex(merkle_root.removeprefix("0x")),
+        int(budget_cap),
+        bytes.fromhex(policy_hash.removeprefix("0x")),
+        bytes.fromhex(attestation_hash.removeprefix("0x")),
+        bytes.fromhex(nonce.removeprefix("0x")),
+    )
+    root_id = registry.functions.publishRoot(*args).call({"from": publisher})
+    tx_hash = registry.functions.publishRoot(*args).transact({"from": publisher})
+    w3.eth.wait_for_transaction_receipt(tx_hash)
+    return _hex32(root_id)
+
+
+def deploy_contracts() -> dict[str, Any]:
+    w3 = _wait_rpc()
+    accounts = w3.eth.accounts
+    owner, publisher, alice_reward = accounts[0], accounts[1], accounts[2]
+    token = _deploy(w3, "SOTAToken", owner, owner, owner, sender=owner)
+    vault = _deploy(w3, "SOTAVault", token.address, owner, sender=owner)
+    root_registry = _deploy(w3, "SOTARootRegistry", owner, sender=owner)
+    lane_registry = _deploy(w3, "SOTALaneRegistry", owner, sender=owner)
+    genesis = _deploy(w3, "GenesisClaimDistributor", root_registry.address, vault.address, owner, sender=owner)
+    emission = _deploy(
+        w3,
+        "EmissionClaimDistributor",
+        root_registry.address,
+        lane_registry.address,
+        vault.address,
+        owner,
+        sender=owner,
+    )
+    root_registry.functions.setRootPublisher(publisher, True).transact({"from": owner})
+    vault.functions.setReleaser(genesis.address, True).transact({"from": owner})
+    vault.functions.setReleaser(emission.address, True).transact({"from": owner})
+    token.functions.mintSupply(vault.address, 1_000_000 * ONE_SOTA).transact({"from": owner})
+    return {
+        "chain_id": w3.eth.chain_id,
+        "accounts": {
+            "owner": owner,
+            "publisher": publisher,
+            "alice_reward": alice_reward,
+            "miner": Account.from_key(ANVIL_PRIVATE_KEYS["miner"]).address,
+        },
+        "contracts": {
+            "sota_token": token.address,
+            "vault": vault.address,
+            "root_registry": root_registry.address,
+            "lane_registry": lane_registry.address,
+            "genesis_distributor": genesis.address,
+            "emission_distributor": emission.address,
+        },
+    }
+
+
+def _contract(w3: Web3, name: str, address: str) -> Any:
+    return w3.eth.contract(address=Web3.to_checksum_address(address), abi=_artifact(name)["abi"])
+
+
+def seed_genesis_onchain_and_indexer(state: dict[str, Any]) -> dict[str, Any]:
+    w3 = _wait_rpc()
+    contracts = state["contracts"]
+    accounts = state["accounts"]
+    root_registry = _contract(w3, "SOTARootRegistry", contracts["root_registry"])
+    genesis = _contract(w3, "GenesisClaimDistributor", contracts["genesis_distributor"])
+    old_coldkey = Keypair.create_from_uri("//Alice").ss58_address
+    reward_address = Web3.to_checksum_address(accounts["alice_reward"])
+    tao_credit = ONE_SOTA
+    alpha_credit = ONE_SOTA // 2
+    amount = tao_credit + alpha_credit
+    allocation_hash = _hex32(
+        keccak(
+            encode(
+                ["string", "string", "address", "uint256", "uint256"],
+                ["SOTA_LOCAL_GENESIS", old_coldkey, reward_address, tao_credit, alpha_credit],
+            )
+        )
+    )
+    leaf = _hex32(genesis.functions.leafFor(reward_address, amount, bytes.fromhex(allocation_hash[2:])).call())
+    policy_hash = _hex32(_bytes32_text("local-genesis-policy-v1"))
+    attestation_hash = _hex32(_bytes32_text("local-genesis-attestation-v1"))
+    root_id = _publish_root(
+        w3,
+        root_registry,
+        publisher=accounts["publisher"],
+        kind=1,
+        merkle_root=leaf,
+        budget_cap=amount,
+        policy_hash=policy_hash,
+        attestation_hash=attestation_hash,
+        nonce=_hex32(_bytes32_text("local-genesis-root-v1")),
+    )
+    _request_json(
+        "POST",
+        "http://127.0.0.1:8010/api/v1/base/index/artifact",
+        {
+            "subnet": {
+                "id": "genesis",
+                "title": "SOTA genesis fork claim",
+                "owner": accounts["owner"],
+                "budget": amount,
+                "metadata_uri": "local://sota/genesis",
+                "token": "SOTA",
+            },
+            "root": {
+                "root_id": root_id,
+                "subnet_id": "genesis",
+                "epoch": 0,
+                "root": leaf,
+                "total_amount": amount,
+                "budget": amount,
+                "status": "finalized",
+                "validation_status": "accepted",
+            },
+            "allocations": [
+                {
+                    "kind": "genesis",
+                    "index": 0,
+                    "account": reward_address,
+                    "amount": amount,
+                    "allocation_hash": allocation_hash,
+                    "old_coldkey": old_coldkey,
+                    "reward_address": reward_address,
+                    "tao_credit": tao_credit,
+                    "alpha_synthetic_credit": alpha_credit,
+                    "leaf": leaf,
+                    "proof": [],
+                }
+            ],
+        },
+    )
+    state["genesis"] = {
+        "old_coldkey": old_coldkey,
+        "reward_address": reward_address,
+        "tao_credit": tao_credit,
+        "alpha_synthetic_credit": alpha_credit,
+        "amount": amount,
+        "allocation_hash": allocation_hash,
+        "leaf": leaf,
+        "root_id": root_id,
+    }
+    _write_json(STATE_PATH, state)
+    return state
+
+
+def _signed_headers(keypair: Keypair, method: str, path: str, body: dict[str, Any] | None = None) -> dict[str, str]:
+    sys.path.insert(0, str(AUTORESEARCH_REPO / "src"))
+    from autoresearch_bittensor.auth.hotkey import sign_request
+
+    headers = sign_request(keypair=keypair, method=method, path=path, body=body).as_headers()
+    headers["Content-Type"] = "application/json"
+    return headers
+
+
+def _attach_evm_authorization(
+    body: dict[str, Any],
+    *,
+    claim_id: str,
+    task_id: str,
+    miner_private_key: str,
+    reward_private_key: str,
+) -> dict[str, Any]:
+    sys.path.insert(0, str(AUTORESEARCH_REPO / "src"))
+    from autoresearch_bittensor.auth.evm import (
+        build_reward_delegation_payload,
+        build_submission_authorization_payload,
+        build_submission_content_hash,
+        sign_payload,
+    )
+
+    miner_address = Account.from_key(miner_private_key).address
+    reward_address = Account.from_key(reward_private_key).address
+    content_hash = build_submission_content_hash(
+        claim_id=claim_id,
+        base_ref=str(body["base_ref"]),
+        patch=str(body.get("patch") or ""),
+        summary=str(body.get("summary") or ""),
+        proposed_idea=body.get("proposed_idea"),
+        implemented_submission_id=body.get("implemented_submission_id"),
+        artifact_uri=body.get("artifact_uri"),
+        artifact_sha256=body.get("artifact_sha256"),
+        artifact_size_bytes=body.get("artifact_size_bytes"),
+        claimed_metrics=dict(body.get("claimed_metrics") or {}),
+    )
+    nonce = f"{LANE_ID}:{claim_id}"
+    body.update(
+        {
+            "evm_miner_address": miner_address,
+            "reward_address": reward_address,
+            "nonce": nonce,
+            "competition_id": task_id,
+            "subnet_id": LANE_ID,
+            "artifact_hash": content_hash,
+        }
+    )
+    authorization_payload = build_submission_authorization_payload(
+        miner_address=miner_address,
+        reward_address=reward_address,
+        nonce=nonce,
+        competition_id=task_id,
+        subnet_id=LANE_ID,
+        claim_id=claim_id,
+        artifact_hash=content_hash,
+        content_hash=content_hash,
+    )
+    body["signature"] = sign_payload(private_key=miner_private_key, payload=authorization_payload)
+    delegation_payload = build_reward_delegation_payload(
+        miner_address=miner_address,
+        reward_address=reward_address,
+        nonce=nonce,
+        competition_id=task_id,
+        subnet_id=LANE_ID,
+    )
+    body["reward_signature"] = sign_payload(private_key=reward_private_key, payload=delegation_payload)
+    return body
+
+
+def _create_local_task_repo() -> Path:
+    repo_dir = RUN_DIR / "task-repo"
+    if repo_dir.exists():
+        shutil.rmtree(repo_dir)
+    repo_dir.mkdir(parents=True)
+    (repo_dir / "train.py").write_text(
+        "score = 0.90\nprint({'heldout_ppl': score})\n",
+        encoding="utf-8",
+    )
+    (repo_dir / "README.md").write_text(
+        "# Local SOTA binary frontier\n\nOffline demo task shaped like the binary frontier competition.\n",
+        encoding="utf-8",
+    )
+    subprocess.check_call(["git", "init"], cwd=repo_dir, stdout=subprocess.DEVNULL)
+    subprocess.check_call(["git", "config", "user.email", "sota-local@example.invalid"], cwd=repo_dir)
+    subprocess.check_call(["git", "config", "user.name", "SOTA Local Demo"], cwd=repo_dir)
+    subprocess.check_call(["git", "add", "."], cwd=repo_dir, stdout=subprocess.DEVNULL)
+    subprocess.check_call(["git", "commit", "-m", "seed local task"], cwd=repo_dir, stdout=subprocess.DEVNULL)
+    return repo_dir
+
+
+def seed_autoresearch_and_emission(state: dict[str, Any]) -> dict[str, Any]:
+    alice = Keypair.create_from_uri("//Alice")
+    validators = _demo_validator_keypairs()
+    validator_hotkeys = [keypair.ss58_address for _, keypair in validators]
+    repo_dir = _create_local_task_repo()
+    task_body = {
+        "slug": "sota-local-binary-frontier",
+        "title": "SOTA Local Binary Frontier",
+        "brief": "Local Base fork demo task: improve a tiny binary-style frontier score and pass self-validation.",
+        "repository": str(repo_dir),
+        "base_ref": "HEAD",
+        "setup_command": None,
+        "benchmark_command": "python3 train.py",
+        "allowed_patch_paths": ["train.py"],
+        "metric_name": "heldout_ppl",
+        "metric_direction": "minimize",
+        "competition_mode": "self_validation",
+        "min_peer_evaluations": DEMO_SELF_VALIDATION_COMMITTEE_SIZE,
+        "self_validation_policy": {
+            "committee_size": DEMO_SELF_VALIDATION_COMMITTEE_SIZE,
+            "committee_hotkeys": validator_hotkeys,
+            "approval_threshold": 0.5,
+            "min_effective_committee_size": float(DEMO_SELF_VALIDATION_COMMITTEE_SIZE),
+            "max_approval_concentration": 1.0,
+            "new_identity_weight": 1.0,
+            "reputation_gain": 0.0,
+            "max_reputation_weight": 1.0,
+            "slash_tolerance": 0.05,
+            "min_improvement": 0.0,
+            "sortition_seed": "sota-local-demo",
+        },
+        "time_budget_seconds": 900,
+    }
+    task = _request_json(
+        "POST",
+        "http://127.0.0.1:8000/api/v1/tasks",
+        task_body,
+        headers={"X-Admin-Token": ADMIN_TOKEN},
+    )
+    subnet_body = {
+        "id": LANE_ID,
+        "title": "SOTA local frontier lane",
+        "task_slugs": [task["slug"]],
+        "budget_units_per_epoch": 2 * ONE_SOTA,
+        "reward_policy": {
+            "version": 1,
+            "source": "accepted_submissions",
+            "allocation": "equal_per_accepted_submission",
+        },
+        "active": True,
+        "base_registry_chain_id": CHAIN_ID,
+        "base_registry_address": state["contracts"]["lane_registry"],
+        "base_registry_subnet_key": "sota-foundation/local-binary-frontier",
+        "metadata": {"demo": True, "fork": "sota-base"},
+    }
+    subnet = _request_json(
+        "POST",
+        "http://127.0.0.1:8000/api/v1/sota/subnets",
+        subnet_body,
+        headers={"X-Admin-Token": ADMIN_TOKEN},
+    )
+    claim_body = {"claim_description": "local SOTA binary frontier mining claim"}
+    claim_path = f"/api/v1/tasks/{task['id']}/claim"
+    claim = _request_json(
+        "POST",
+        f"http://127.0.0.1:8000{claim_path}",
+        claim_body,
+        headers=_signed_headers(alice, "POST", claim_path, claim_body),
+    )
+    submission_body = {
+        "claim_id": claim["id"],
+        "base_ref": "HEAD",
+        "patch": "diff --git a/train.py b/train.py\n--- a/train.py\n+++ b/train.py\n@@\n-score = 0.90\n+score = 0.82\n",
+        "summary": "Lower local heldout PPL with a deterministic binary-frontier patch.",
+        "claimed_metrics": {"heldout_ppl": 0.82},
+    }
+    _attach_evm_authorization(
+        submission_body,
+        claim_id=claim["id"],
+        task_id=task["id"],
+        miner_private_key=ANVIL_PRIVATE_KEYS["miner"],
+        reward_private_key=ANVIL_PRIVATE_KEYS["alice_reward"],
+    )
+    submission = _request_json(
+        "POST",
+        "http://127.0.0.1:8000/api/v1/submissions",
+        submission_body,
+        headers=_signed_headers(alice, "POST", "/api/v1/submissions", submission_body),
+    )
+    evaluation_body = {
+        "status": "accepted",
+        "observed_metrics": {"heldout_ppl": 0.82},
+        "notes": "local committee accepts deterministic frontier improvement",
+    }
+    evaluation_path = f"/api/v1/submissions/{submission['id']}/peer-evaluate"
+    evaluations = []
+    for name, validator in validators:
+        body = {
+            **evaluation_body,
+            "notes": f"{name} accepts deterministic frontier improvement in the local multi-user committee",
+        }
+        evaluations.append(
+            _request_json(
+                "POST",
+                f"http://127.0.0.1:8000{evaluation_path}",
+                body,
+                headers=_signed_headers(validator, "POST", evaluation_path, body),
+            )
+        )
+    consensus = _request_json(
+        "GET",
+        f"http://127.0.0.1:8000/api/v1/submissions/{submission['id']}/peer-consensus",
+    )
+    if int(consensus.get("committee_count") or 0) < DEMO_SELF_VALIDATION_COMMITTEE_SIZE:
+        raise RuntimeError(f"local self-validation committee too small: {consensus}")
+    if int(consensus.get("accepted_count") or 0) < DEMO_SELF_VALIDATION_COMMITTEE_SIZE:
+        raise RuntimeError(f"local self-validation did not collect all accepted peer evaluations: {consensus}")
+    root = _request_json(
+        "POST",
+        f"http://127.0.0.1:8000/api/v1/sota/subnets/{LANE_ID}/epochs/1/root",
+        {"include_proofs": True},
+        headers={"X-Admin-Token": ADMIN_TOKEN},
+    )
+    evidence = _request_json("GET", f"http://127.0.0.1:8000/api/v1/sota/subnets/{LANE_ID}/epochs/1/evidence")
+    state["autoresearch"] = {
+        "task": task,
+        "subnet": subnet,
+        "claim": claim,
+        "submission": submission,
+        "evaluations": evaluations,
+        "consensus": consensus,
+        "emission_root": root,
+        "evidence": evidence,
+        "participants": {
+            "miner": {"name": "Alice", "hotkey": alice.ss58_address},
+            "validators": [
+                {"name": name, "hotkey": keypair.ss58_address}
+                for name, keypair in validators
+            ],
+        },
+    }
+    _write_json(STATE_PATH, state)
+    return state
+
+
+def publish_emission_onchain_and_indexer(state: dict[str, Any]) -> dict[str, Any]:
+    w3 = _wait_rpc()
+    contracts = state["contracts"]
+    accounts = state["accounts"]
+    root_registry = _contract(w3, "SOTARootRegistry", contracts["root_registry"])
+    lane_registry = _contract(w3, "SOTALaneRegistry", contracts["lane_registry"])
+    evidence = state["autoresearch"]["evidence"]["bundle"]
+    root = state["autoresearch"]["emission_root"]
+    offchain_lane_id = evidence["subnet"]["offchain_lane_id"]
+    policy_hash = root["policy_hash"]
+    attestation_hash = "0x" + str(root["evidence_hash"]).removeprefix("0x")[:64]
+    if int(attestation_hash, 16) == 0:
+        attestation_hash = _hex32(_bytes32_text("local-emission-attestation"))
+    lane_registry.functions.setLane(
+        bytes.fromhex(offchain_lane_id[2:]),
+        int(root["total_amount_units"]),
+        True,
+        bytes.fromhex(policy_hash[2:]),
+    ).transact({"from": accounts["owner"]})
+    root_id = _publish_root(
+        w3,
+        root_registry,
+        publisher=accounts["publisher"],
+        kind=2,
+        merkle_root=root["root"],
+        budget_cap=int(root["total_amount_units"]),
+        policy_hash=policy_hash,
+        attestation_hash=attestation_hash,
+        nonce=_hex32(_bytes32_text("local-emission-root-v1")),
+    )
+    artifact = {
+        "subnet": {
+            **dict(evidence.get("subnet") or {}),
+            "id": LANE_ID,
+            "title": "SOTA local binary frontier",
+            "owner": accounts["owner"],
+            "metadata_uri": "local://sota/lane/binary-frontier",
+            "token": "SOTA",
+        },
+        "root": {
+            "root_id": root_id,
+            "subnet_id": LANE_ID,
+            "epoch": int(root["epoch"]),
+            "root": root["root"],
+            "total_amount_units": int(root["total_amount_units"]),
+            "budget": int(root["total_amount_units"]),
+            "status": "finalized",
+            "validation_status": "accepted",
+        },
+        "claim_list": evidence["claim_list"],
+        "leaves": evidence["leaves"],
+    }
+    _request_json("POST", "http://127.0.0.1:8010/api/v1/base/index/artifact", artifact)
+    state["emission_onchain"] = {
+        "root_id": root_id,
+        "offchain_lane_id": offchain_lane_id,
+        "amount": int(root["total_amount_units"]),
+    }
+    _write_json(STATE_PATH, state)
+    return state
+
+
+def _start_anvil() -> None:
+    if _is_port_open("127.0.0.1", 8545):
+        raise _port_in_use_error(8545)
+    anvil = str(Path.home() / ".foundry" / "bin" / "anvil")
+    _start_process(
+        "anvil",
+        [
+            anvil,
+            "--host",
+            ANVIL_HOST,
+            "--port",
+            "8545",
+            "--chain-id",
+            str(CHAIN_ID),
+            "--mnemonic",
+            DEMO_MNEMONIC,
+        ],
+        cwd=RUN_DIR,
+    )
+    _wait_rpc()
+
+
+def _start_indexer(state: dict[str, Any]) -> None:
+    if _is_port_open("127.0.0.1", 8010):
+        raise _port_in_use_error(8010)
+    env = {
+        "PYTHONUNBUFFERED": "1",
+        "PYTHONPATH": str(COMMUNITY_REPO),
+        "SOTA_BASE_INDEXER_DB": str(RUN_DIR / "indexer.sqlite3"),
+        "SOTA_BASE_CHAIN_ID": str(CHAIN_ID),
+        "SOTA_BASE_RPC_URL": ANVIL_RPC_LOCAL,
+        "SOTA_BASE_SYNC_FROM_BLOCK": "0",
+        "SOTA_BASE_CONTRACTS_ABI_DIR": str(CONTRACTS_REPO / "abi"),
+        "SOTA_ROOT_REGISTRY_ADDRESS": state["contracts"]["root_registry"],
+        "SOTA_LANE_REGISTRY_ADDRESS": state["contracts"]["lane_registry"],
+        "SOTA_GENESIS_DISTRIBUTOR_ADDRESS": state["contracts"]["genesis_distributor"],
+        "SOTA_EMISSION_DISTRIBUTOR_ADDRESS": state["contracts"]["emission_distributor"],
+        "SOTA_BASE_CORS_ORIGINS": "http://127.0.0.1:3000,http://localhost:3000",
+    }
+    _start_process(
+        "indexer",
+        [
+            _python(COMMUNITY_REPO),
+            "-m",
+            "uvicorn",
+            "experiments.base_protocol_design.sota_base_indexer.api:create_app",
+            "--factory",
+            "--host",
+            "0.0.0.0",
+            "--port",
+            "8010",
+        ],
+        cwd=COMMUNITY_REPO,
+        env=env,
+    )
+    _wait_http("http://127.0.0.1:8010/health")
+
+
+def _start_autoresearch() -> None:
+    if _is_port_open("127.0.0.1", 8000):
+        raise _port_in_use_error(8000)
+    validator_hotkeys = ",".join(keypair.ss58_address for _, keypair in _demo_validator_keypairs())
+    env = {
+        "PYTHONUNBUFFERED": "1",
+        "PYTHONPATH": str(AUTORESEARCH_REPO / "src"),
+        "DATABASE_URL": f"sqlite:///{RUN_DIR / 'autoresearch.sqlite3'}",
+        "ADMIN_TOKEN": ADMIN_TOKEN,
+        "AUTH_MAX_AGE_SECONDS": "300",
+        "MINER_AUTH_STAKE_GATE_ENABLED": "0",
+        "SOTA_DEFAULT_LANE_ID": LANE_ID,
+        "VALIDATOR_HOTKEYS": validator_hotkeys,
+        "VALIDATOR_LEGACY_VERIFY_ENABLED": "0",
+        "BOOTSTRAP_BUILTIN_COMPETITIONS_ON_STARTUP": "0",
+        "CLAIM_RATE_LIMIT_COUNT": "100",
+        "SUBMISSION_RATE_LIMIT_COUNT": "100",
+        "VALIDATOR_ALLOW_LOCAL_ARTIFACT_URIS": "1",
+        "VALIDATOR_ALLOW_UNSAFE_HOST_MODE": "1",
+        "VALIDATOR_SANDBOX_MODE": "host",
+    }
+    _start_process(
+        "autoresearch",
+        [
+            _python(AUTORESEARCH_REPO),
+            "-m",
+            "uvicorn",
+            "autoresearch_bittensor.api.app:create_app",
+            "--factory",
+            "--host",
+            "0.0.0.0",
+            "--port",
+            "8000",
+        ],
+        cwd=AUTORESEARCH_REPO,
+        env=env,
+    )
+    _wait_http("http://127.0.0.1:8000/readyz")
+
+
+def _start_website(state: dict[str, Any], host: str) -> None:
+    if _is_port_open("127.0.0.1", 3000):
+        raise _port_in_use_error(3000)
+    env = {
+        "NEXT_PUBLIC_SOTA_CLAIMS_API_URL": "http://127.0.0.1:8010",
+        "NEXT_PUBLIC_SOTA_BASE_CHAIN_ID": str(CHAIN_ID),
+        "NEXT_PUBLIC_SOTA_BASE_CHAIN_NAME": "SOTA Local Base",
+        "NEXT_PUBLIC_SOTA_BASE_RPC_URL": f"http://{host}:8545",
+        "NEXT_PUBLIC_SOTA_BASE_EXPLORER_URL": f"http://{host}:8545",
+        "NEXT_PUBLIC_SOTA_ENVIRONMENT": "local",
+        "NEXT_PUBLIC_SOTA_DEMO_ENABLED": "true",
+        "NEXT_PUBLIC_SOTA_DEMO_EVM_ADDRESS": state["accounts"]["alice_reward"],
+        "NEXT_PUBLIC_SOTA_DEMO_OLD_COLDKEY": state["genesis"]["old_coldkey"],
+        "NEXT_PUBLIC_SOTA_DEFAULT_LANE_ID": LANE_ID,
+        "NEXT_PUBLIC_SOTA_AUTORESEARCH_API_URL": "http://127.0.0.1:8000",
+        "NEXT_PUBLIC_SOTA_TOKEN_ADDRESS": state["contracts"]["sota_token"],
+        "NEXT_PUBLIC_SOTA_GENESIS_DISTRIBUTOR_ADDRESS": state["contracts"]["genesis_distributor"],
+        "NEXT_PUBLIC_SOTA_EMISSION_DISTRIBUTOR_ADDRESS": state["contracts"]["emission_distributor"],
+    }
+    _start_process("website", ["corepack", "pnpm", "dev", "-p", "3000", "-H", "0.0.0.0"], cwd=WEBSITE_REPO, env=env)
+    _wait_http("http://127.0.0.1:3000/claims", timeout_seconds=120)
+
+
+def _start_docs() -> None:
+    if _is_port_open("127.0.0.1", 9002):
+        _print("docs port 9002 is already open; using the existing docs server")
+        return
+    python = str(DOCS_REPO / ".venv-docs" / "bin" / "python")
+    if not Path(python).exists():
+        python = sys.executable
+    _start_process(
+        "docs",
+        [python, "-m", "mkdocs", "serve", "-a", "0.0.0.0:9002"],
+        cwd=DOCS_REPO,
+    )
+    _wait_http("http://127.0.0.1:9002/base/", timeout_seconds=120)
+
+
+def _run_local_ui_smoke_report() -> None:
+    subprocess.run(
+        [
+            sys.executable,
+            str(DOCS_REPO / "scripts" / "sota_local_claims_ui_smoke.py"),
+            "--report-out",
+            str(RUN_DIR / "ui-smoke" / "report.json"),
+            "--skip-screenshot",
+        ],
+        cwd=DOCS_REPO,
+        check=True,
+        text=True,
+        capture_output=True,
+    )
+
+
+def _generate_release_status_report() -> None:
+    subprocess.run(
+        [
+            sys.executable,
+            str(DOCS_REPO / "scripts" / "sota_base_release_status.py"),
+            "--report-out",
+            str(TESTNET_RUN_DIR / "base-sota-release-status.json"),
+            "--allow-blocked",
+        ],
+        cwd=DOCS_REPO,
+        check=True,
+        text=True,
+        capture_output=True,
+    )
+
+
+def _generate_handoff() -> None:
+    HANDOFF_DIR.mkdir(parents=True, exist_ok=True)
+    subprocess.run(
+        [
+            sys.executable,
+            str(DOCS_REPO / "scripts" / "sota_base_tester_handoff.py"),
+            "--json-out",
+            str(HANDOFF_DIR / "handoff.json"),
+            "--markdown-out",
+            str(HANDOFF_DIR / "handoff.md"),
+            "--html-out",
+            str(HANDOFF_DIR / "index.html"),
+        ],
+        cwd=DOCS_REPO,
+        check=True,
+        text=True,
+        capture_output=True,
+    )
+
+
+def _start_handoff() -> None:
+    if _is_port_open("127.0.0.1", 9003):
+        raise _port_in_use_error(9003)
+    _start_process(
+        "handoff",
+        [
+            sys.executable,
+            "-m",
+            "http.server",
+            "9003",
+            "--bind",
+            "0.0.0.0",
+            "--directory",
+            str(HANDOFF_DIR),
+        ],
+        cwd=RUN_DIR,
+    )
+    _wait_http("http://127.0.0.1:9003/", timeout_seconds=30)
+
+
+def start_stack(*, website: bool = True, docs: bool = True, hold: bool = True) -> dict[str, Any]:
+    RUN_DIR.mkdir(parents=True, exist_ok=True)
+    stop_stack()
+    _reset_runtime_state()
+    _start_anvil()
+    state = deploy_contracts()
+    _write_json(STATE_PATH, state)
+    _start_indexer(state)
+    state = seed_genesis_onchain_and_indexer(state)
+    _start_autoresearch()
+    state = seed_autoresearch_and_emission(state)
+    state = publish_emission_onchain_and_indexer(state)
+    host = _primary_host()
+    state["urls"] = {
+        "claims_ui": f"http://{host}:3000/claims",
+        "autoresearch_dashboard": f"http://{host}:8000/dashboard",
+        "indexer_health": f"http://{host}:8010/health",
+        "docs": f"http://{host}:9002/base/",
+        "anvil_rpc": f"http://{host}:8545",
+    }
+    if website:
+        _start_website(state, host)
+    if docs:
+        _start_docs()
+    if website and docs:
+        _write_json(STATE_PATH, state)
+        _run_local_ui_smoke_report()
+        _generate_release_status_report()
+        _generate_handoff()
+        _start_handoff()
+        state["urls"]["handoff"] = f"http://{host}:9003/"
+    _write_json(STATE_PATH, state)
+    if website and docs:
+        _run_local_ui_smoke_report()
+        _generate_release_status_report()
+        _generate_handoff()
+    print_summary(state)
+    if hold:
+        try:
+            while True:
+                time.sleep(3600)
+        except KeyboardInterrupt:
+            stop_stack()
+    return state
+
+
+def print_summary(state: dict[str, Any]) -> None:
+    urls = state.get("urls", {})
+    _print("\nSOTA Base local demo is ready.")
+    _print(f"Claims UI: {urls.get('claims_ui', 'http://127.0.0.1:3000/claims')}")
+    _print(f"Autoresearch dashboard: {urls.get('autoresearch_dashboard', 'http://127.0.0.1:8000/dashboard')}")
+    _print(f"Docs: {urls.get('docs', 'http://127.0.0.1:9002/base/')}")
+    if urls.get("handoff"):
+        _print(f"Tester handoff: {urls['handoff']}")
+    _print(f"Anvil RPC for MetaMask: {urls.get('anvil_rpc', ANVIL_RPC_LOCAL)}")
+    _print("\nImport this local-only account in MetaMask:")
+    _print(f"Private key: {ANVIL_PRIVATE_KEYS['alice_reward']}")
+    _print(f"Address: {state['accounts']['alice_reward']}")
+    _print(f"Old coldkey for genesis lookup: {state['genesis']['old_coldkey']}")
+    _print("\nThe seeded miner submission has self-validation consensus:")
+    _print(json.dumps(state["autoresearch"]["consensus"], indent=2, sort_keys=True))
+    validators = [item["name"] for item in state["autoresearch"].get("participants", {}).get("validators", [])]
+    if validators:
+        _print(f"Peer validators: {', '.join(validators)}")
+
+
+def smoke() -> None:
+    try:
+        state = start_stack(website=False, docs=False, hold=False)
+        alice = state["accounts"]["alice_reward"]
+        eligibility = _request_json("GET", f"http://127.0.0.1:8010/api/v1/base/eligibility/{alice}")
+        if not eligibility.get("eligible"):
+            raise RuntimeError("expected Alice to be eligible")
+        genesis_tx = _request_json(
+            "POST",
+            "http://127.0.0.1:8010/api/v1/base/claims/transaction",
+            {"program": "genesis", "rewardAddress": alice},
+        )
+        emission_tx = _request_json(
+            "POST",
+            "http://127.0.0.1:8010/api/v1/base/claims/transaction",
+            {"program": "emission", "evmAddress": alice},
+        )
+        if not genesis_tx["transaction"]["data"].startswith("0x"):
+            raise RuntimeError("missing genesis calldata")
+        if not emission_tx["transaction"]["data"].startswith("0x"):
+            raise RuntimeError("missing emission calldata")
+        w3 = _wait_rpc()
+        token = _contract(w3, "SOTAToken", state["contracts"]["sota_token"])
+        alice_checksum = Web3.to_checksum_address(alice)
+        expected_balance = int(state["genesis"]["amount"]) + int(state["emission_onchain"]["amount"])
+        consensus = dict(state["autoresearch"]["consensus"])
+        if int(consensus.get("committee_count") or 0) < DEMO_SELF_VALIDATION_COMMITTEE_SIZE:
+            raise RuntimeError(f"expected multi-user self-validation committee: {consensus}")
+        if int(consensus.get("accepted_count") or 0) < DEMO_SELF_VALIDATION_COMMITTEE_SIZE:
+            raise RuntimeError(f"expected all local peer validators to accept: {consensus}")
+        for tx in (genesis_tx["transaction"], emission_tx["transaction"]):
+            tx_hash = w3.eth.send_transaction(
+                {
+                    "from": alice_checksum,
+                    "to": Web3.to_checksum_address(tx["to"]),
+                    "data": tx["data"],
+                    "value": int(str(tx.get("value") or "0x0"), 16),
+                }
+            )
+            receipt = w3.eth.wait_for_transaction_receipt(tx_hash)
+            if receipt.status != 1:
+                raise RuntimeError(f"claim transaction reverted: {tx_hash.hex()}")
+        _request_json("POST", "http://127.0.0.1:8010/api/v1/base/index/sync")
+        claimed = _request_json("GET", f"http://127.0.0.1:8010/api/v1/base/eligibility/{alice}")
+        if claimed.get("claim_state", {}).get("status") != "claimed":
+            raise RuntimeError(f"expected claimed indexer status, got {claimed.get('claim_state')}")
+        balance = int(token.functions.balanceOf(alice_checksum).call())
+        if balance != expected_balance:
+            raise RuntimeError(f"expected SOTA balance {expected_balance}, got {balance}")
+        consensus = state["autoresearch"]["consensus"]
+        if consensus.get("status") != "accepted":
+            raise RuntimeError(f"expected accepted self-validation consensus, got {consensus}")
+        _print("local smoke passed")
+    finally:
+        stop_stack()
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(description="Run the local SOTA Base fork demo stack.")
+    sub = parser.add_subparsers(dest="command", required=True)
+    sub.add_parser("launch", help="start the full local tester stack, run readiness checks, and return")
+    start = sub.add_parser("start", help="start the full local stack and keep it running")
+    start.add_argument("--no-website", action="store_true", help="skip Next.js claims UI")
+    start.add_argument("--no-docs", action="store_true", help="skip MkDocs")
+    start.add_argument("--detach", action="store_true", help="start the full stack and return after readiness checks")
+    sub.add_parser("stop", help="stop processes started by this launcher")
+    sub.add_parser("status", help="print the last demo state")
+    sub.add_parser("smoke", help="run a noninteractive local E2E smoke and stop")
+    ui_smoke = sub.add_parser("ui-smoke", help="verify the running claims UI, proxy APIs, and self-validation evidence")
+    ui_smoke.add_argument("--skip-screenshot", action="store_true", help="skip optional Firefox screenshot")
+    ui_smoke.add_argument("--report-out", type=Path, default=RUN_DIR / "ui-smoke" / "report.json")
+    args = parser.parse_args()
+    if args.command == "stop":
+        stop_stack()
+        return 0
+    if args.command == "status":
+        state = _load_json(STATE_PATH)
+        if not state:
+            raise SystemExit("no local SOTA Base state found")
+        print_summary(state)
+        return 0
+    if args.command == "smoke":
+        smoke()
+        return 0
+    if args.command == "ui-smoke":
+        smoke_script = DOCS_REPO / "scripts" / "sota_local_claims_ui_smoke.py"
+        command = [sys.executable, str(smoke_script), "--report-out", str(args.report_out)]
+        if args.skip_screenshot:
+            command.append("--skip-screenshot")
+        return subprocess.call(command, cwd=DOCS_REPO)
+    if args.command == "launch":
+        start_stack(website=True, docs=True, hold=False)
+        return 0
+    if args.command == "start":
+        start_stack(website=not args.no_website, docs=not args.no_docs, hold=not args.detach)
+        return 0
+    return 1
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

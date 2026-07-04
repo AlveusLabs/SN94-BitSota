@@ -1,0 +1,284 @@
+from __future__ import annotations
+
+import argparse
+import importlib.util
+import json
+from pathlib import Path
+import sys
+
+
+REPO = Path(__file__).resolve().parents[1]
+SCRIPT = REPO / "scripts" / "sota_base_tester_handoff.py"
+
+
+def _load_module():
+    spec = importlib.util.spec_from_file_location("sota_base_tester_handoff", SCRIPT)
+    assert spec and spec.loader
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = module
+    spec.loader.exec_module(module)
+    return module
+
+
+def _write_json(path: Path, payload: dict) -> Path:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    return path
+
+
+def _args(tmp_path: Path, *, environment: str = "both"):
+    return argparse.Namespace(
+        environment=environment,
+        state=tmp_path / "state.json",
+        local_report=tmp_path / "local-report.json",
+        release_status=tmp_path / "release-status.json",
+        json_out=tmp_path / "handoff.json",
+        markdown_out=tmp_path / "handoff.md",
+        html_out=tmp_path / "handoff.html",
+        print_markdown=False,
+    )
+
+
+def _write_inputs(args: argparse.Namespace) -> None:
+    claim_proof_report = args.local_report.parent / "local-claim-proof.json"
+    _write_json(
+        args.state,
+        {
+            "chain_id": 31337,
+            "urls": {
+                "claims_ui": "http://100.0.0.1:3000/claims",
+                "docs": "http://100.0.0.1:9002/base/",
+                "autoresearch_dashboard": "http://100.0.0.1:8000/dashboard",
+                "anvil_rpc": "http://100.0.0.1:8545",
+            },
+            "accounts": {"alice_reward": "0x3C44CdDdB6a900fa2b585dd299e03d12FA4293BC"},
+            "genesis": {
+                "old_coldkey": "5GrwvaEF5zXb26Fz9rcQpDWS57CtERHpNehXCPcNoHGKutQY",
+                "tao_credit": 1000000000000000000,
+                "alpha_synthetic_credit": 500000000000000000,
+                "amount": 1500000000000000000,
+            },
+            "emission_onchain": {"amount": 2000000000000000000},
+            "autoresearch": {
+                "consensus": {
+                    "status": "accepted",
+                    "accepted_count": 3,
+                    "committee_count": 3,
+                    "committee_size": 3,
+                },
+                "emission_root": {"total_amount_units": 2000000000000000000},
+                "participants": {
+                    "validators": [
+                        {"name": "Bob", "hotkey": "5FHneW46xGXgs5mUiveU4sbTyGBzmstT88xwZtWK7q95dYbF"},
+                        {"name": "Charlie", "hotkey": "5GrwvaEF5zXb26Fz9rcQpDWS57CtERHpNehXCPcNoHGKutQY"},
+                        {"name": "Dave", "hotkey": "5DAAnrj7VHTznn2T6V2HxWjZqZPspK7r4sSm3FvdDEAjZykT"},
+                    ]
+                },
+            },
+        },
+    )
+    _write_json(
+        args.local_report,
+        {
+            "schema": "sota-local-claims-ui-smoke/v1",
+            "ok": True,
+            "status": "green",
+            "summary": {"green": 13, "yellow": 1, "red": 0},
+        },
+    )
+    _write_json(
+        args.release_status,
+        {
+            "schema": "sota-base-release-status/v1",
+            "ok": False,
+            "status": "red",
+            "local_ok": True,
+            "testnet_ok": False,
+            "summary": {"green": 2, "yellow": 0, "red": 3},
+            "gates": [
+                {
+                    "name": "local_demo",
+                    "phase": "local",
+                    "status": "green",
+                    "summary": {"green": 13, "yellow": 1, "red": 0},
+                    "path": "/tmp/local-report.json",
+                },
+                {
+                    "name": "local_claim_proof",
+                    "phase": "local",
+                    "status": "green",
+                    "summary": {"green": 8, "yellow": 0, "red": 0},
+                    "path": str(claim_proof_report),
+                },
+                {
+                    "name": "testnet_blockers",
+                    "phase": "base_sepolia",
+                    "status": "red",
+                    "summary": {"green": 1, "yellow": 0, "red": 12},
+                    "path": "/tmp/blockers.json",
+                },
+            ],
+            "blocked_gates": [
+                {
+                    "name": "testnet_blockers",
+                    "phase": "base_sepolia",
+                    "status": "red",
+                    "next_action": "Clear AWS/DNS blockers.",
+                }
+            ],
+        },
+    )
+    _write_json(
+        claim_proof_report,
+        {
+            "schema": "sota-local-claim-proof/v1",
+            "ok": True,
+            "status": "green",
+            "summary": {"green": 8, "yellow": 0, "red": 0},
+            "reset_after": True,
+        },
+    )
+
+
+def test_tester_handoff_contains_local_urls_and_warning(tmp_path: Path) -> None:
+    module = _load_module()
+    args = _args(tmp_path)
+    _write_inputs(args)
+
+    handoff = module.build_handoff(args)
+    markdown = module.render_markdown(handoff)
+    html = module.render_html(handoff)
+
+    assert handoff["schema"] == "sota-base-tester-handoff/v1"
+    assert handoff["local"]["ready"] is True
+    assert handoff["local"]["status"] == "green"
+    assert handoff["local"]["claims_ui_url"] == "http://100.0.0.1:3000/claims"
+    assert handoff["local"]["chain_id_hex"] == "0x7a69"
+    assert [item["name"] for item in handoff["local"]["local_gates"]] == ["local_demo", "local_claim_proof"]
+    assert handoff["local"]["smoke_status"] == "green"
+    assert handoff["local"]["claim_proof_status"] == "green"
+    assert handoff["local"]["claim_proof_report"] == str(args.local_report.parent / "local-claim-proof.json")
+    assert "archived pre-reset evidence" in handoff["local"]["claim_proof_scope"]
+    assert handoff["local"]["local_only_private_key"].startswith("0x5de411")
+    assert handoff["local"]["genesis_claim_amount"] == "1.5 SOTA"
+    assert handoff["local"]["emission_claim_amount"] == "2 SOTA"
+    assert handoff["local"]["self_validation_status"] == "accepted"
+    assert handoff["local"]["self_validation_summary"] == "3/3 accepted"
+    assert [item["name"] for item in handoff["local"]["peer_validators"]] == ["Bob", "Charlie", "Dave"]
+    assert "Never paste a real seed phrase" in markdown
+    assert "Local-only private key" in markdown
+    assert "State-changing claim proof: green" in markdown
+    assert f"Claim proof report: {args.local_report.parent / 'local-claim-proof.json'}" in markdown
+    assert "archived pre-reset evidence" in markdown
+    assert "Genesis claim amount: 1.5 SOTA" in markdown
+    assert "Mined emission claim amount: 2 SOTA" in markdown
+    assert "Peer validators: Bob" in markdown
+    assert "Base Sepolia is not ready" in markdown
+    assert "<title>SOTA Base Tester Handoff</title>" in html
+    assert "Local demo ready" in html
+    assert "Aggregate status: red" not in html
+    assert "http://100.0.0.1:3000/claims" in html
+    assert "Add SOTA Local Base network" in html
+    assert "Copy local-only key" in html
+    assert "Open autoresearch dashboard" in html
+    assert "wallet_addEthereumChain" in html
+    assert "Self-validation" in html
+    assert "Peer validators" in html
+    assert "State-changing claim proof" in html
+    assert str(args.local_report.parent / "local-claim-proof.json") in html
+    assert "archived pre-reset evidence" in html
+
+
+def test_tester_handoff_testnet_only_omits_local_private_key(tmp_path: Path) -> None:
+    module = _load_module()
+    args = _args(tmp_path, environment="testnet")
+    _write_inputs(args)
+
+    handoff = module.build_handoff(args)
+    markdown = module.render_markdown(handoff)
+
+    assert "local" not in handoff
+    assert "testnet" in handoff
+    assert module.LOCAL_PRIVATE_KEY not in markdown
+    assert handoff["testnet"]["blocked_gates"][0]["name"] == "testnet_blockers"
+
+
+def test_tester_handoff_local_not_ready_when_claim_proof_gate_is_red(tmp_path: Path) -> None:
+    module = _load_module()
+    args = _args(tmp_path, environment="local")
+    _write_inputs(args)
+    release = json.loads(args.release_status.read_text(encoding="utf-8"))
+    release["local_ok"] = False
+    release["summary"] = {"green": 1, "yellow": 0, "red": 1}
+    for gate in release["gates"]:
+        if gate["name"] == "local_claim_proof":
+            gate["status"] = "red"
+            gate["summary"] = {"green": 0, "yellow": 0, "red": 1}
+    _write_json(args.release_status, release)
+
+    handoff = module.build_handoff(args)
+
+    assert handoff["local"]["ready"] is False
+    assert handoff["local"]["status"] == "red"
+    assert handoff["local"]["smoke_status"] == "green"
+    assert handoff["local"]["claim_proof_status"] == "red"
+
+
+def test_tester_handoff_main_writes_json_and_markdown(tmp_path: Path) -> None:
+    module = _load_module()
+    args = _args(tmp_path)
+    _write_inputs(args)
+
+    exit_code = module.main(
+        [
+            "--state",
+            str(args.state),
+            "--local-report",
+            str(args.local_report),
+            "--release-status",
+            str(args.release_status),
+            "--json-out",
+            str(args.json_out),
+            "--markdown-out",
+            str(args.markdown_out),
+            "--html-out",
+            str(args.html_out),
+        ]
+    )
+
+    assert exit_code == 0
+    assert args.json_out.exists()
+    assert args.markdown_out.exists()
+    assert args.html_out.exists()
+    assert "SOTA Base Tester Handoff" in args.markdown_out.read_text(encoding="utf-8")
+    assert "SOTA Base Tester Handoff" in args.html_out.read_text(encoding="utf-8")
+
+
+def test_tester_handoff_default_outputs_refresh_local_served_copy(tmp_path: Path, monkeypatch) -> None:
+    module = _load_module()
+    args = _args(tmp_path)
+    _write_inputs(args)
+    local_handoff_dir = tmp_path / ".sota-base-local" / "handoff"
+    testnet_dir = tmp_path / ".sota-base-testnet"
+    monkeypatch.setattr(module, "LOCAL_HANDOFF_DIR", local_handoff_dir)
+    monkeypatch.setattr(module, "TESTNET_RUN_DIR", testnet_dir)
+
+    exit_code = module.main(
+        [
+            "--state",
+            str(args.state),
+            "--local-report",
+            str(args.local_report),
+            "--release-status",
+            str(args.release_status),
+        ]
+    )
+
+    assert exit_code == 0
+    assert (testnet_dir / "base-sota-tester-handoff.json").exists()
+    assert (testnet_dir / "base-sota-tester-handoff.md").exists()
+    assert (testnet_dir / "base-sota-tester-handoff.html").exists()
+    assert (local_handoff_dir / "handoff.json").exists()
+    assert (local_handoff_dir / "handoff.md").exists()
+    assert (local_handoff_dir / "index.html").exists()
+    assert "Local demo ready" in (local_handoff_dir / "index.html").read_text(encoding="utf-8")

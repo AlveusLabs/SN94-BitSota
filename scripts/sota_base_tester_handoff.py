@@ -1,0 +1,619 @@
+#!/usr/bin/env python3
+from __future__ import annotations
+
+import argparse
+from datetime import datetime, timezone
+from html import escape
+import json
+from pathlib import Path
+from typing import Any
+
+
+REPOS = Path("/home/mekaneeky/repos")
+LOCAL_RUN_DIR = REPOS / ".sota-base-local"
+TESTNET_RUN_DIR = REPOS / ".sota-base-testnet"
+LOCAL_HANDOFF_DIR = LOCAL_RUN_DIR / "handoff"
+LOCAL_PRIVATE_KEY = "0x5de4111afa1a4b94908f83103eb1f1706367c2e68ca870fc3fb9a804cdab365a"
+
+
+def _load_json(path: Path) -> dict[str, Any]:
+    if not path.exists():
+        return {}
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    if not isinstance(payload, dict):
+        raise ValueError(f"{path} must contain a JSON object")
+    return payload
+
+
+def _summary_text(summary: dict[str, Any] | None) -> str:
+    summary = summary or {}
+    return f"{int(summary.get('green') or 0)} green / {int(summary.get('yellow') or 0)} yellow / {int(summary.get('red') or 0)} red"
+
+
+def _status_rank(status: str) -> int:
+    return {"green": 0, "yellow": 1, "red": 2}.get(status, 2)
+
+
+def _worst_status(statuses: list[str]) -> str:
+    if not statuses:
+        return "unknown"
+    return max(statuses, key=_status_rank)
+
+
+def _format_sota_units(value: Any) -> str:
+    try:
+        raw = int(value or 0)
+    except (TypeError, ValueError):
+        raw = 0
+    whole, fraction = divmod(raw, 10**18)
+    if fraction == 0:
+        return f"{whole} SOTA"
+    fraction_text = str(fraction).rjust(18, "0").rstrip("0")
+    return f"{whole}.{fraction_text} SOTA"
+
+
+def _local_section(state: dict[str, Any], release: dict[str, Any], local_report: dict[str, Any]) -> dict[str, Any]:
+    urls = dict(state.get("urls") or {})
+    genesis = dict(state.get("genesis") or {})
+    accounts = dict(state.get("accounts") or {})
+    autoresearch = dict(state.get("autoresearch") or {})
+    consensus = dict(autoresearch.get("consensus") or {})
+    participants = dict(autoresearch.get("participants") or {})
+    peer_validators = [
+        {
+            "name": str(dict(item).get("name") or "validator"),
+            "hotkey": str(dict(item).get("hotkey") or ""),
+        }
+        for item in list(participants.get("validators") or [])
+        if isinstance(item, dict)
+    ]
+    emission_root = dict(autoresearch.get("emission_root") or {})
+    emission_onchain = dict(state.get("emission_onchain") or {})
+    local_gates = [
+        dict(gate)
+        for gate in list(release.get("gates") or [])
+        if isinstance(gate, dict) and dict(gate).get("phase") == "local"
+    ]
+    smoke_gate = next((gate for gate in local_gates if gate.get("name") == "local_demo"), {})
+    claim_proof_gate = next((gate for gate in local_gates if gate.get("name") == "local_claim_proof"), {})
+    claim_proof_payload = {}
+    if claim_proof_gate.get("path"):
+        claim_proof_payload = _load_json(Path(str(claim_proof_gate.get("path"))))
+    claim_proof_reset_after = bool(claim_proof_payload.get("reset_after"))
+    claim_proof_scope = (
+        "archived pre-reset evidence; the current local stack was reset for the next tester"
+        if claim_proof_reset_after
+        else "current local stack evidence"
+    )
+    local_ok = bool(release.get("local_ok")) if release else bool(local_report.get("ok"))
+    local_status = _worst_status([str(gate.get("status") or "red") for gate in local_gates])
+    if not local_gates:
+        local_status = str(local_report.get("status") or ("green" if local_ok else "red"))
+    chain_id = int(state.get("chain_id") or 31337)
+    emission_amount = emission_onchain.get("amount") or emission_root.get("total_amount_units") or 0
+    return {
+        "ready": local_ok,
+        "status": local_status,
+        "summary": local_report.get("summary") or {},
+        "local_gates": [
+            {
+                "name": gate.get("name"),
+                "status": gate.get("status"),
+                "summary": gate.get("summary") or {},
+                "path": gate.get("path"),
+            }
+            for gate in local_gates
+        ],
+        "smoke_status": smoke_gate.get("status") or local_report.get("status") or "unknown",
+        "smoke_summary": smoke_gate.get("summary") or local_report.get("summary") or {},
+        "smoke_report": smoke_gate.get("path") or "",
+        "claim_proof_status": claim_proof_gate.get("status") or "missing",
+        "claim_proof_summary": claim_proof_gate.get("summary") or {},
+        "claim_proof_report": claim_proof_gate.get("path") or str(LOCAL_RUN_DIR / "claim-proof" / "latest.json"),
+        "claim_proof_scope": claim_proof_scope,
+        "claim_proof_reset_after": claim_proof_reset_after,
+        "claims_ui_url": urls.get("claims_ui") or "",
+        "docs_url": urls.get("docs") or "",
+        "autoresearch_dashboard_url": urls.get("autoresearch_dashboard") or "",
+        "anvil_rpc_url": urls.get("anvil_rpc") or "",
+        "chain_id": chain_id,
+        "chain_id_hex": hex(chain_id),
+        "network_name": "SOTA Local Base",
+        "native_currency_symbol": "ETH",
+        "wallet_address": accounts.get("alice_reward") or genesis.get("reward_address") or "",
+        "local_only_private_key": LOCAL_PRIVATE_KEY,
+        "old_coldkey": genesis.get("old_coldkey") or "",
+        "genesis_claim_amount": _format_sota_units(genesis.get("amount")),
+        "genesis_tao_credit": _format_sota_units(genesis.get("tao_credit")),
+        "genesis_alpha_credit": _format_sota_units(genesis.get("alpha_synthetic_credit")),
+        "emission_claim_amount": _format_sota_units(emission_amount),
+        "self_validation_status": consensus.get("status") or "",
+        "self_validation_accepted_count": int(consensus.get("accepted_count") or 0),
+        "self_validation_committee_count": int(consensus.get("committee_count") or consensus.get("committee_size") or 0),
+        "self_validation_committee_size": int(consensus.get("committee_size") or 0),
+        "self_validation_summary": (
+            f"{int(consensus.get('accepted_count') or 0)}/"
+            f"{int(consensus.get('committee_count') or consensus.get('committee_size') or 0)} accepted"
+        ),
+        "peer_validators": peer_validators,
+        "expected_flow": [
+            "Import the local-only private key into a throwaway MetaMask profile.",
+            "Click Add SOTA Local Base network, or add the Anvil RPC URL manually with chain id 31337.",
+            "Open the claims UI URL and connect the imported wallet.",
+            "Confirm the Local readiness panel is green.",
+            "Click Load genesis claim, then Claim. This claims local SOTA based on seeded TAO plus alpha accounting credit; TAO and alpha are not transferred.",
+            "Click Load mined emission and confirm Mining and self-validation shows accepted consensus from the other local peer validators.",
+            "Click Claim for the mined emission.",
+            "Confirm the SOTA balance increases after each claim.",
+        ],
+        "manual_evidence_checklist": [
+            "Record the genesis claim transaction hash shown after MetaMask confirms.",
+            "Record the mined emission claim transaction hash shown after MetaMask confirms.",
+            "Confirm both claims show claimed or an increased SOTA balance in the claims UI.",
+            "Run the local claim transaction evidence verifier with both hashes.",
+        ],
+        "local_tx_evidence_command": (
+            "python3 scripts/sota_base_claim_tx_evidence.py --environment local "
+            "--state /home/mekaneeky/repos/.sota-base-local/state.json "
+            '--genesis-tx "$LOCAL_GENESIS_TX_HASH" '
+            '--emission-tx "$LOCAL_EMISSION_TX_HASH" '
+            "--report-out /home/mekaneeky/repos/.sota-base-local/claim-proof/manual-claim-tx-evidence.json"
+        ),
+    }
+
+
+def _testnet_section(release: dict[str, Any]) -> dict[str, Any]:
+    gates = list(release.get("gates") or [])
+    blocked = list(release.get("blocked_gates") or [])
+    testnet_gates = [gate for gate in gates if dict(gate).get("phase") == "base_sepolia"]
+    return {
+        "ready": bool(release.get("testnet_ok")),
+        "status": "green" if release.get("testnet_ok") else "red",
+        "gates": [
+            {
+                "name": dict(gate).get("name"),
+                "status": dict(gate).get("status"),
+                "summary": dict(gate).get("summary") or {},
+                "path": dict(gate).get("path"),
+            }
+            for gate in testnet_gates
+        ],
+        "blocked_gates": [
+            {
+                "name": dict(gate).get("name"),
+                "status": dict(gate).get("status"),
+                "next_action": dict(gate).get("next_action"),
+            }
+            for gate in blocked
+            if dict(gate).get("phase") == "base_sepolia"
+        ],
+        "tester_message": (
+            "Base Sepolia is ready for a nontechnical MetaMask tester."
+            if release.get("testnet_ok")
+            else "Base Sepolia is not ready for a nontechnical MetaMask tester yet."
+        ),
+        "expected_flow_when_ready": [
+            "Open the public Base Sepolia claims URL from the readiness artifact.",
+            "Connect the seeded test MetaMask wallet.",
+            "Switch MetaMask to Base Sepolia.",
+            "Submit the genesis claim and record the transaction hash.",
+            "Submit the mined emission claim and record the transaction hash.",
+            "Run the claim transaction evidence verifier against both hashes.",
+        ],
+    }
+
+
+def build_handoff(args: argparse.Namespace) -> dict[str, Any]:
+    state = _load_json(args.state)
+    release = _load_json(args.release_status)
+    local_report = _load_json(args.local_report)
+    payload: dict[str, Any] = {
+        "schema": "sota-base-tester-handoff/v1",
+        "generated_at": datetime.now(timezone.utc).isoformat(),
+        "environment": args.environment,
+        "release_status_path": str(args.release_status),
+        "release_status": {
+            "ok": bool(release.get("ok")),
+            "status": str(release.get("status") or "unknown"),
+            "local_ok": bool(release.get("local_ok")),
+            "testnet_ok": release.get("testnet_ok"),
+            "summary": release.get("summary") or {},
+        },
+        "warnings": [
+            "Use the printed local-only private key only on the local Anvil network.",
+            "Never paste a real seed phrase or production private key into the local demo.",
+            "Do not invite a Base Sepolia tester while any Base Sepolia gate is red.",
+        ],
+    }
+    if args.environment in {"local", "both"}:
+        payload["local"] = _local_section(state, release, local_report)
+    if args.environment in {"testnet", "both"}:
+        payload["testnet"] = _testnet_section(release)
+    return payload
+
+
+def render_markdown(handoff: dict[str, Any]) -> str:
+    lines: list[str] = []
+    release = dict(handoff.get("release_status") or {})
+    lines.append("# SOTA Base Tester Handoff")
+    lines.append("")
+    lines.append(f"Generated: {handoff.get('generated_at')}")
+    lines.append("")
+    lines.append("## Overall Status")
+    lines.append("")
+    lines.append(f"- Local ready: {str(release.get('local_ok')).lower()}")
+    lines.append(f"- Base Sepolia ready: {str(release.get('testnet_ok')).lower()}")
+    lines.append(f"- Full local + Base Sepolia status: {release.get('status')}")
+    lines.append(f"- Gate summary: {_summary_text(dict(release.get('summary') or {}))}")
+    lines.append("")
+    lines.append("## Safety")
+    lines.append("")
+    for warning in handoff.get("warnings") or []:
+        lines.append(f"- {warning}")
+    lines.append("")
+    local = handoff.get("local")
+    if isinstance(local, dict):
+        lines.append("## Local Demo")
+        lines.append("")
+        lines.append(f"- Ready: {str(local.get('ready')).lower()}")
+        lines.append(f"- Status: {local.get('status')}")
+        lines.append(f"- UI smoke: {local.get('smoke_status')} ({_summary_text(dict(local.get('smoke_summary') or {}))})")
+        lines.append(f"- State-changing claim proof: {local.get('claim_proof_status')} ({_summary_text(dict(local.get('claim_proof_summary') or {}))}); {local.get('claim_proof_scope')}")
+        lines.append(f"- Claim proof report: {local.get('claim_proof_report')}")
+        lines.append(f"- Claims UI: {local.get('claims_ui_url')}")
+        lines.append(f"- Docs: {local.get('docs_url')}")
+        lines.append(f"- Autoresearch dashboard: {local.get('autoresearch_dashboard_url')}")
+        lines.append(f"- MetaMask RPC URL: {local.get('anvil_rpc_url')}")
+        lines.append(f"- MetaMask chain ID: {local.get('chain_id')}")
+        lines.append(f"- Wallet address: {local.get('wallet_address')}")
+        lines.append(f"- Local-only private key: `{local.get('local_only_private_key')}`")
+        lines.append(f"- Old coldkey lookup: `{local.get('old_coldkey')}`")
+        lines.append(f"- Genesis claim amount: {local.get('genesis_claim_amount')}")
+        lines.append(f"- TAO credit in genesis claim: {local.get('genesis_tao_credit')}")
+        lines.append(f"- Alpha liquidation credit in genesis claim: {local.get('genesis_alpha_credit')}")
+        lines.append(f"- Mined emission claim amount: {local.get('emission_claim_amount')}")
+        lines.append(f"- Self-validation: {local.get('self_validation_status')} ({local.get('self_validation_summary')})")
+        validators = [
+            f"{dict(item).get('name')} `{dict(item).get('hotkey')}`"
+            for item in local.get("peer_validators") or []
+            if isinstance(item, dict)
+        ]
+        if validators:
+            lines.append(f"- Peer validators: {', '.join(validators)}")
+        lines.append("")
+        lines.append("### Local Steps")
+        lines.append("")
+        for index, step in enumerate(local.get("expected_flow") or [], start=1):
+            lines.append(f"{index}. {step}")
+        lines.append("")
+        lines.append("### Local MetaMask Evidence To Record")
+        lines.append("")
+        for item in local.get("manual_evidence_checklist") or []:
+            lines.append(f"- {item}")
+        if local.get("local_tx_evidence_command"):
+            lines.append("")
+            lines.append("```bash")
+            lines.append(str(local.get("local_tx_evidence_command")))
+            lines.append("```")
+        lines.append("")
+    testnet = handoff.get("testnet")
+    if isinstance(testnet, dict):
+        lines.append("## Base Sepolia")
+        lines.append("")
+        lines.append(f"- Ready: {str(testnet.get('ready')).lower()}")
+        lines.append(f"- Status: {testnet.get('status')}")
+        lines.append(f"- Tester message: {testnet.get('tester_message')}")
+        lines.append("")
+        lines.append("### Gates")
+        lines.append("")
+        gates = testnet.get("gates") or []
+        if gates:
+            for gate in gates:
+                gate = dict(gate)
+                lines.append(f"- {gate.get('name')}: {gate.get('status')} ({_summary_text(dict(gate.get('summary') or {}))})")
+        else:
+            lines.append("- No Base Sepolia gate reports found.")
+        blocked = testnet.get("blocked_gates") or []
+        if blocked:
+            lines.append("")
+            lines.append("### Blocked Gates")
+            lines.append("")
+            for gate in blocked:
+                gate = dict(gate)
+                lines.append(f"- {gate.get('name')}: {gate.get('next_action')}")
+        lines.append("")
+        lines.append("### Testnet Steps When Ready")
+        lines.append("")
+        for index, step in enumerate(testnet.get("expected_flow_when_ready") or [], start=1):
+            lines.append(f"{index}. {step}")
+        lines.append("")
+    return "\n".join(lines).rstrip() + "\n"
+
+
+def _html_list(items: list[str]) -> str:
+    return "\n".join(f"<li>{escape(str(item))}</li>" for item in items)
+
+
+def _json_for_script(value: Any) -> str:
+    return json.dumps(value, sort_keys=True).replace("</", "<\\/")
+
+
+def render_html(handoff: dict[str, Any]) -> str:
+    release = dict(handoff.get("release_status") or {})
+    local = handoff.get("local") if isinstance(handoff.get("local"), dict) else None
+    testnet = handoff.get("testnet") if isinstance(handoff.get("testnet"), dict) else None
+    if local:
+        primary_status_class = "ok" if local.get("ready") else "blocked"
+        primary_status_text = "Local demo ready" if local.get("ready") else "Local demo blocked"
+    else:
+        primary_status_class = "ok" if release.get("ok") else "blocked"
+        primary_status_text = f"Aggregate status: {release.get('status')}"
+    blocks: list[str] = [
+        "<!doctype html>",
+        '<html lang="en">',
+        "<head>",
+        '<meta charset="utf-8">',
+        '<meta name="viewport" content="width=device-width, initial-scale=1">',
+        "<title>SOTA Base Tester Handoff</title>",
+        "<style>",
+        ":root{font-family:Inter,ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;color:#13282f;background:#f4f8f8}",
+        "body{margin:0;line-height:1.55;background:#f4f8f8}",
+        "main{max-width:1120px;margin:0 auto;padding:28px}",
+        ".hero{border-bottom:1px solid #cfd9dd;padding:28px 0 24px;margin-bottom:20px}",
+        ".kicker{font-family:ui-monospace,SFMono-Regular,Consolas,monospace;font-size:12px;font-weight:800;text-transform:uppercase;color:#5b6770;letter-spacing:0}",
+        "h1{max-width:840px;font-size:46px;line-height:1.04;margin:8px 0 10px;letter-spacing:0}",
+        ".lede{max-width:780px;margin:0;color:#5b6770;font-size:17px}",
+        "h2{font-size:22px;margin:32px 0 12px}",
+        "h3{font-size:16px;margin:24px 0 8px}",
+        ".status{display:inline-flex;border-radius:6px;padding:6px 10px;font-weight:700}",
+        ".ok{background:#dcfce7;color:#166534}",
+        ".blocked{background:#fee2e2;color:#991b1b}",
+        ".grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}",
+        ".summary{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;margin:18px 0 0}",
+        ".card{border:1px solid #cfd9dd;background:white;border-radius:8px;padding:16px;box-shadow:0 1px 0 rgba(19,40,47,.05)}",
+        ".label{font-size:12px;text-transform:uppercase;color:#5b6770;font-weight:700}",
+        ".value{word-break:break-word;font-family:ui-monospace,SFMono-Regular,Consolas,monospace}",
+        ".audience{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:1px;border:1px solid #cfd9dd;background:#cfd9dd;border-radius:8px;overflow:hidden;margin:18px 0}",
+        ".audience div{background:white;padding:16px;min-height:110px}",
+        ".audience strong{display:block;font-size:16px}",
+        ".audience span{display:block;margin-top:8px;color:#5b6770}",
+        ".journey{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:1px;border:1px solid #cfd9dd;background:#cfd9dd;border-radius:8px;overflow:hidden;margin:16px 0}",
+        ".journey div{background:white;padding:16px;min-height:104px}",
+        ".journey b{display:block;font-family:ui-monospace,SFMono-Regular,Consolas,monospace;color:#b45309;font-size:12px;text-transform:uppercase}",
+        ".journey span{display:block;margin-top:8px;color:#5b6770}",
+        ".actions{display:flex;flex-wrap:wrap;gap:10px;margin:16px 0}",
+        "button,.button{appearance:none;border:1px solid #13282f;background:#13282f;color:white;border-radius:6px;padding:10px 12px;font-weight:700;text-decoration:none;cursor:pointer}",
+        "button.secondary,.button.secondary{background:white;color:#13282f}",
+        ".action-status{min-height:24px;color:#5b6770;font-size:14px}",
+        ".flow{border:1px solid #b7e4c7;background:#f0fdf4;border-radius:6px;padding:16px;margin:16px 0}",
+        "code{word-break:break-all;background:#edf5f5;border-radius:5px;padding:2px 5px}",
+        "ol,ul{padding-left:22px}",
+        "@media(max-width:860px){main{padding:20px}.grid,.summary,.audience,.journey{grid-template-columns:1fr}h1{font-size:32px}}",
+        "</style>",
+        "</head>",
+        "<body><main>",
+        '<section class="hero">',
+        '<div class="kicker">SOTA Base local tester</div>',
+        "<h1>SOTA Base Tester Handoff</h1>",
+        '<p class="lede">Use this page to run the local fork demo from a normal browser: add the local Base network, import the local-only account, claim genesis SOTA, inspect the mined emission, and claim again after self-validation.</p>',
+        f'<p><span class="status {primary_status_class}">{escape(primary_status_text)}</span></p>',
+        f"<p>Generated: {escape(str(handoff.get('generated_at')))}</p>",
+        "</section>",
+        '<section class="summary">',
+        f'<div class="card"><div class="label">Local ready</div><div class="value">{escape(str(release.get("local_ok")).lower())}</div></div>',
+        f'<div class="card"><div class="label">Base Sepolia ready</div><div class="value">{escape(str(release.get("testnet_ok")).lower())}</div></div>',
+        f'<div class="card"><div class="label">Full release status</div><div class="value">{escape(str(release.get("status")))}</div></div>',
+        f'<div class="card"><div class="label">Gate summary</div><div class="value">{escape(_summary_text(dict(release.get("summary") or {})))}</div></div>',
+        "</section>",
+        '<section class="audience">',
+        "<div><strong>I am new</strong><span>Follow Local Steps and use only the printed local-only MetaMask account. You do not need TAO, Base ETH, or a Bittensor wallet.</span></div>",
+        "<div><strong>I am migrating</strong><span>Genesis shows TAO 1:1 plus synthetic alpha accounting credit. Mining uses an EVM identity and SOTA-only emissions.</span></div>",
+        "<div><strong>I am reviewing</strong><span>Check the green UI smoke, state-changing claim proof, self-validation evidence, and local transaction receipts.</span></div>",
+        "</section>",
+        "<h2>Safety</h2>",
+        f"<ul>{_html_list([str(item) for item in handoff.get('warnings') or []])}</ul>",
+    ]
+    if local:
+        blocks.extend(
+            [
+                "<h2>Local Demo</h2>",
+                '<section class="grid">',
+                f'<div class="card"><div class="label">Ready</div><div class="value">{escape(str(local.get("ready")).lower())}</div></div>',
+                f'<div class="card"><div class="label">UI smoke</div><div class="value">{escape(str(local.get("smoke_status") or "unknown"))} ({escape(_summary_text(dict(local.get("smoke_summary") or {})))})</div></div>',
+                f'<div class="card"><div class="label">State-changing claim proof</div><div class="value">{escape(str(local.get("claim_proof_status") or "missing"))} ({escape(_summary_text(dict(local.get("claim_proof_summary") or {})))})<br>{escape(str(local.get("claim_proof_scope") or ""))}</div></div>',
+                f'<div class="card"><div class="label">Claim proof report</div><div class="value">{escape(str(local.get("claim_proof_report") or ""))}</div></div>',
+                f'<div class="card"><div class="label">Claims UI</div><div class="value"><a href="{escape(str(local.get("claims_ui_url")))}">{escape(str(local.get("claims_ui_url")))}</a></div></div>',
+                f'<div class="card"><div class="label">Docs</div><div class="value"><a href="{escape(str(local.get("docs_url")))}">{escape(str(local.get("docs_url")))}</a></div></div>',
+                f'<div class="card"><div class="label">Autoresearch dashboard</div><div class="value"><a href="{escape(str(local.get("autoresearch_dashboard_url")))}">{escape(str(local.get("autoresearch_dashboard_url")))}</a></div></div>',
+                f'<div class="card"><div class="label">MetaMask RPC URL</div><div class="value">{escape(str(local.get("anvil_rpc_url")))}</div></div>',
+                f'<div class="card"><div class="label">MetaMask chain ID</div><div class="value">{escape(str(local.get("chain_id")))}</div></div>',
+                f'<div class="card"><div class="label">Wallet address</div><div class="value">{escape(str(local.get("wallet_address")))}</div></div>',
+                f'<div class="card"><div class="label">Local-only private key</div><div class="value"><code>{escape(str(local.get("local_only_private_key")))}</code></div></div>',
+                f'<div class="card"><div class="label">Old coldkey lookup</div><div class="value"><code>{escape(str(local.get("old_coldkey")))}</code></div></div>',
+                f'<div class="card"><div class="label">Genesis SOTA claim</div><div class="value">{escape(str(local.get("genesis_claim_amount")))}</div></div>',
+                f'<div class="card"><div class="label">TAO + alpha accounting</div><div class="value">{escape(str(local.get("genesis_tao_credit")))} + {escape(str(local.get("genesis_alpha_credit")))}</div></div>',
+                f'<div class="card"><div class="label">Mined emission claim</div><div class="value">{escape(str(local.get("emission_claim_amount")))}</div></div>',
+                f'<div class="card"><div class="label">Self-validation</div><div class="value">{escape(str(local.get("self_validation_status") or "unknown"))} ({escape(str(local.get("self_validation_summary") or "0/0 accepted"))})</div></div>',
+                f'<div class="card"><div class="label">Peer validators</div><div class="value">{escape(", ".join(str(dict(item).get("name") or "validator") for item in local.get("peer_validators") or [] if isinstance(item, dict)) or "Not loaded")}</div></div>',
+                "</section>",
+                '<section class="journey">',
+                f'<div><b>Claim genesis</b><span>{escape(str(local.get("genesis_claim_amount")))} from seeded TAO plus alpha accounting credit.</span></div>',
+                f'<div><b>Mine locally</b><span>Alice miner submission creates a {escape(str(local.get("emission_claim_amount")))} SOTA emission.</span></div>',
+                f'<div><b>Self-validate</b><span>{escape(str(local.get("self_validation_summary") or "0/0 accepted"))} from the local peer committee before claiming.</span></div>',
+                "</section>",
+                '<div class="flow">',
+                "<h3>What this local test covers</h3>",
+                "<ul>",
+                "<li>Claim local SOTA based on seeded local-node TAO plus alpha accounting credit. TAO and alpha are not transferred by this local demo.</li>",
+                "<li>Inspect a mined local SOTA emission generated by the autoresearch backend.</li>",
+                "<li>Verify the emission is backed by accepted peer self-validation evidence from other local users before claiming.</li>",
+                "</ul>",
+                "</div>",
+                '<div class="actions">',
+                '<button id="add-local-network" type="button">Add SOTA Local Base network</button>',
+                '<button id="copy-local-key" class="secondary" type="button">Copy local-only key</button>',
+                '<button id="copy-wallet-address" class="secondary" type="button">Copy wallet address</button>',
+                f'<a class="button secondary" href="{escape(str(local.get("claims_ui_url")))}">Open claims UI</a>',
+                f'<a class="button secondary" href="{escape(str(local.get("autoresearch_dashboard_url")))}">Open autoresearch dashboard</a>',
+                "</div>",
+                '<p id="handoff-action-status" class="action-status" aria-live="polite"></p>',
+                "<h3>Local Steps</h3>",
+                f"<ol>{_html_list([str(item) for item in local.get('expected_flow') or []])}</ol>",
+                "<h3>Local MetaMask Evidence To Record</h3>",
+                f"<ul>{_html_list([str(item) for item in local.get('manual_evidence_checklist') or []])}</ul>",
+                f"<p><code>{escape(str(local.get('local_tx_evidence_command') or ''))}</code></p>",
+            ]
+        )
+    if testnet:
+        gate_lines = []
+        for gate in testnet.get("gates") or []:
+            gate = dict(gate)
+            gate_lines.append(
+                f"{gate.get('name')}: {gate.get('status')} ({_summary_text(dict(gate.get('summary') or {}))})"
+            )
+        blocked_lines = [
+            f"{dict(gate).get('name')}: {dict(gate).get('next_action')}"
+            for gate in testnet.get("blocked_gates") or []
+        ]
+        blocks.extend(
+            [
+                "<h2>Base Sepolia</h2>",
+                f"<p>{escape(str(testnet.get('tester_message')))}</p>",
+                "<h3>Gates</h3>",
+                f"<ul>{_html_list(gate_lines) if gate_lines else '<li>No Base Sepolia gate reports found.</li>'}</ul>",
+            ]
+        )
+        if blocked_lines:
+            blocks.extend(["<h3>Blocked Gates</h3>", f"<ul>{_html_list(blocked_lines)}</ul>"])
+        blocks.extend(
+            [
+                "<h3>Testnet Steps When Ready</h3>",
+                f"<ol>{_html_list([str(item) for item in testnet.get('expected_flow_when_ready') or []])}</ol>",
+            ]
+        )
+    local_script = {}
+    if local:
+        local_script = {
+            "chainId": local.get("chain_id_hex"),
+            "chainName": local.get("network_name"),
+            "rpcUrls": [local.get("anvil_rpc_url")],
+            "nativeCurrency": {
+                "name": "Ether",
+                "symbol": local.get("native_currency_symbol") or "ETH",
+                "decimals": 18,
+            },
+            "walletAddress": local.get("wallet_address"),
+            "localOnlyPrivateKey": local.get("local_only_private_key"),
+        }
+    blocks.extend(
+        [
+            "<script>",
+            f"const localHandoff = {_json_for_script(local_script)};",
+            "const statusNode = document.getElementById('handoff-action-status');",
+            "function setStatus(message){ if(statusNode){ statusNode.textContent = message; } }",
+            "async function copyText(value, label){",
+            "  if(!value){ setStatus(label + ' is missing.'); return; }",
+            "  try {",
+            "    if(navigator.clipboard && window.isSecureContext){ await navigator.clipboard.writeText(value); }",
+            "    else { const textarea = document.createElement('textarea'); textarea.value = value; textarea.setAttribute('readonly', ''); textarea.style.position = 'fixed'; textarea.style.opacity = '0'; document.body.appendChild(textarea); textarea.select(); document.execCommand('copy'); document.body.removeChild(textarea); }",
+            "    setStatus(label + ' copied.');",
+            "  } catch (error) { setStatus(label + ' copy failed. Select the value on the page and copy it manually.'); }",
+            "}",
+            "document.getElementById('copy-local-key')?.addEventListener('click', () => copyText(localHandoff.localOnlyPrivateKey, 'Local-only key'));",
+            "document.getElementById('copy-wallet-address')?.addEventListener('click', () => copyText(localHandoff.walletAddress, 'Wallet address'));",
+            "document.getElementById('add-local-network')?.addEventListener('click', async () => {",
+            "  try {",
+            "    if(!window.ethereum){ setStatus('MetaMask is not available in this browser.'); return; }",
+            "    if(!localHandoff.chainId || !localHandoff.rpcUrls || !localHandoff.rpcUrls[0]){ setStatus('Local network details are missing.'); return; }",
+            "    await window.ethereum.request({ method: 'wallet_addEthereumChain', params: [{ chainId: localHandoff.chainId, chainName: localHandoff.chainName, rpcUrls: localHandoff.rpcUrls, nativeCurrency: localHandoff.nativeCurrency }] });",
+            "    setStatus('SOTA Local Base network added or selected in MetaMask.');",
+            "  } catch (error) { setStatus(error && error.message ? error.message : 'MetaMask network add failed.'); }",
+            "});",
+            "</script>",
+            "</main></body></html>",
+        ]
+    )
+    return "\n".join(blocks)
+
+
+def _write_handoff_artifacts(
+    *,
+    handoff: dict[str, Any],
+    markdown: str,
+    html: str,
+    json_out: Path,
+    markdown_out: Path,
+    html_out: Path,
+) -> None:
+    json_out.parent.mkdir(parents=True, exist_ok=True)
+    markdown_out.parent.mkdir(parents=True, exist_ok=True)
+    html_out.parent.mkdir(parents=True, exist_ok=True)
+    json_out.write_text(json.dumps(handoff, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    markdown_out.write_text(markdown, encoding="utf-8")
+    html_out.write_text(html, encoding="utf-8")
+
+
+def main(argv: list[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(description="Generate a nontechnical SOTA Base tester handoff from live report artifacts.")
+    parser.add_argument("--environment", choices=("local", "testnet", "both"), default="both")
+    parser.add_argument("--state", type=Path, default=LOCAL_RUN_DIR / "state.json")
+    parser.add_argument("--local-report", type=Path, default=LOCAL_RUN_DIR / "ui-smoke" / "report.json")
+    parser.add_argument("--release-status", type=Path, default=TESTNET_RUN_DIR / "base-sota-release-status.json")
+    parser.add_argument("--json-out", type=Path)
+    parser.add_argument("--markdown-out", type=Path)
+    parser.add_argument("--html-out", type=Path)
+    parser.add_argument("--print-markdown", action="store_true")
+    args = parser.parse_args(argv)
+    default_outputs = not (args.json_out or args.markdown_out or args.html_out)
+    args.json_out = args.json_out or TESTNET_RUN_DIR / "base-sota-tester-handoff.json"
+    args.markdown_out = args.markdown_out or TESTNET_RUN_DIR / "base-sota-tester-handoff.md"
+    args.html_out = args.html_out or TESTNET_RUN_DIR / "base-sota-tester-handoff.html"
+    handoff = build_handoff(args)
+    markdown = render_markdown(handoff)
+    html = render_html(handoff)
+    _write_handoff_artifacts(
+        handoff=handoff,
+        markdown=markdown,
+        html=html,
+        json_out=args.json_out,
+        markdown_out=args.markdown_out,
+        html_out=args.html_out,
+    )
+    local_mirror: dict[str, str] | None = None
+    if default_outputs and args.environment in {"local", "both"}:
+        mirror_json = LOCAL_HANDOFF_DIR / "handoff.json"
+        mirror_markdown = LOCAL_HANDOFF_DIR / "handoff.md"
+        mirror_html = LOCAL_HANDOFF_DIR / "index.html"
+        _write_handoff_artifacts(
+            handoff=handoff,
+            markdown=markdown,
+            html=html,
+            json_out=mirror_json,
+            markdown_out=mirror_markdown,
+            html_out=mirror_html,
+        )
+        local_mirror = {
+            "json": str(mirror_json),
+            "markdown": str(mirror_markdown),
+            "html": str(mirror_html),
+        }
+    if args.print_markdown:
+        print(markdown, end="")
+    else:
+        print(
+            json.dumps(
+                {
+                    "ok": True,
+                    "json": str(args.json_out),
+                    "markdown": str(args.markdown_out),
+                    "html": str(args.html_out),
+                    "local_mirror": local_mirror,
+                },
+                sort_keys=True,
+            )
+        )
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

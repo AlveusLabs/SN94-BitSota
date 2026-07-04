@@ -1,5 +1,5 @@
 site_name: BitSota Docs
-site_description: BitSota subnet documentation for autoresearch miners, validators, problem owners, and operators.
+site_description: BitSota and Base SOTA fork documentation for users, miners, validators, migration testers, and operators.
 
 theme:
   name: material
@@ -14,14 +14,14 @@ theme:
     - search.highlight
   palette:
     - scheme: default
-      primary: deep purple
-      accent: indigo
+      primary: teal
+      accent: orange
       toggle:
         icon: material/weather-night
         name: Switch to dark mode
     - scheme: slate
-      primary: deep purple
-      accent: indigo
+      primary: teal
+      accent: orange
       toggle:
         icon: material/weather-sunny
         name: Switch to light mode
@@ -42,6 +42,19 @@ plugins:
             Getting Started: 快速开始
             Architecture: 架构
             Autoresearch: Autoresearch
+            Base SOTA: Base SOTA
+            Start Here: 从这里开始
+            New Users: 新用户
+            Bittensor Migrants: Bittensor 迁移
+            One-Command Demo: 一条命令演示
+            How Base SOTA Works: Base SOTA 工作原理
+            Contracts: 合约
+            Claims And Allocation: Claims 与分配
+            Self-Validation: 自验证
+            Support FAQ: 支持 FAQ
+            Operator Readiness: 操作员就绪
+            Deployment Manifest: 部署清单
+            Project Log: 项目日志
             Architecture Overview: 架构概览
             Live Tasks: 当前任务
             Improve Submissions: 改进提交
@@ -119,6 +132,19 @@ nav:
       - Agent Mining: agent-mining.md
       - Problem Posting Requirements: problem-posting.md
       - Future Roadmap: roadmap.md
+  - Base SOTA:
+      - Start Here: base/index.md
+      - New Users: base/new-users.md
+      - Bittensor Migrants: base/bittensor-migrants.md
+      - One-Command Demo: base/local-e2e.md
+      - How Base SOTA Works: base/architecture.md
+      - Claims And Allocation: base/claims-and-allocation.md
+      - Contracts: base/contracts.md
+      - Self-Validation: base/self-validation.md
+      - Support FAQ: base/support-faq.md
+      - Operator Readiness: base/operations.md
+      - Deployment Manifest: base/deployment-manifest.md
+      - Project Log: base/project-log.md
   - Components:
       - Overview: components/index.md
       - Miner: components/miner.md

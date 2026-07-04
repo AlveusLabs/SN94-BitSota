@@ -1,14 +1,30 @@
 :root {
-  --md-primary-fg-color: #18084a;
-  --md-accent-fg-color: #70edf0;
-  --bitsota-ink: #18084a;
-  --bitsota-muted: #5f5a78;
-  --bitsota-line: #d8d4e8;
-  --bitsota-soft-line: #ebe8f5;
-  --bitsota-bg: #fdfdfd;
+  --md-primary-fg-color: #16313a;
+  --md-accent-fg-color: #0f766e;
+  --bitsota-ink: #13282f;
+  --bitsota-muted: #5b6770;
+  --bitsota-line: #cfd9dd;
+  --bitsota-soft-line: #e9f0f2;
+  --bitsota-bg: #f4f8f8;
   --bitsota-panel: #ffffff;
-  --bitsota-panel-muted: #e4e7ea;
-  --bitsota-accent: #70edf0;
+  --bitsota-panel-muted: #eaf3f2;
+  --bitsota-accent: #14b8a6;
+  --bitsota-warm: #b45309;
+  --bitsota-good: #15803d;
+  --bitsota-bad: #b91c1c;
+  --bitsota-blue: #2563eb;
+}
+
+.md-main {
+  background: var(--bitsota-bg);
+}
+
+.md-content {
+  background: transparent;
+}
+
+.md-typeset {
+  color: var(--bitsota-ink);
 }
 
 .md-typeset .mermaid {
@@ -24,12 +40,18 @@
 }
 
 .md-typeset a {
-  color: var(--bitsota-ink);
+  color: #0f766e;
   font-weight: 700;
+}
+
+.md-typeset a:hover {
+  color: var(--bitsota-warm);
 }
 
 .md-typeset table:not([class]) {
   border: 1px solid var(--bitsota-line);
+  border-radius: 6px;
+  overflow: hidden;
 }
 
 .md-typeset table:not([class]) th {
@@ -42,21 +64,24 @@
 }
 
 .bitsota-hero {
-  margin: 0 0 2rem;
-  padding: 2rem;
-  border: 1px solid var(--bitsota-line);
-  background: var(--bitsota-bg);
+  margin: -0.35rem 0 2rem;
+  padding: 1.75rem 0 2rem;
+  border: 0;
+  border-bottom: 1px solid var(--bitsota-line);
+  background: transparent;
   color: var(--bitsota-ink);
+  border-radius: 0;
 }
 
 .bitsota-hero.compact {
-  padding: 1.5rem;
+  padding: 1.2rem 0 1.55rem;
 }
 
 .bitsota-hero h1 {
   margin: 0;
-  font-size: clamp(2rem, 6vw, 4rem);
-  font-weight: 500;
+  max-width: 58rem;
+  font-size: 3rem;
+  font-weight: 650;
   line-height: 1.08;
   letter-spacing: 0;
 }
@@ -78,7 +103,7 @@
   width: 0.55rem;
   height: 0.55rem;
   background: var(--bitsota-accent);
-  box-shadow: 0.35rem 0.35rem 0 var(--bitsota-ink);
+  box-shadow: 0.35rem 0.35rem 0 var(--bitsota-warm);
 }
 
 .bitsota-lede {
@@ -86,6 +111,7 @@
   margin: 1rem 0 0;
   color: var(--bitsota-muted);
   font-size: 1.05rem;
+  line-height: 1.75;
 }
 
 .bitsota-strip {
@@ -95,6 +121,8 @@
   margin-top: 2rem;
   border: 1px solid var(--bitsota-line);
   background: var(--bitsota-line);
+  border-radius: 6px;
+  overflow: hidden;
 }
 
 .bitsota-strip span {
@@ -110,6 +138,65 @@
   text-align: center;
 }
 
+.bitsota-path-grid {
+  display: grid;
+  grid-template-columns: 1.05fr 0.95fr;
+  gap: 1rem;
+  margin: 1.5rem 0 2rem;
+}
+
+.bitsota-panel {
+  border: 1px solid var(--bitsota-line);
+  border-radius: 8px;
+  background: var(--bitsota-panel);
+  overflow: hidden;
+}
+
+.bitsota-panel > .bitsota-panel-head {
+  border-bottom: 1px solid var(--bitsota-line);
+  padding: 0.95rem 1rem;
+  background: var(--bitsota-panel-muted);
+}
+
+.bitsota-panel h2,
+.bitsota-panel h3 {
+  margin: 0;
+}
+
+.bitsota-panel-body {
+  padding: 1rem;
+}
+
+.bitsota-mini-map {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 1px;
+  border: 1px solid var(--bitsota-line);
+  border-radius: 8px;
+  background: var(--bitsota-line);
+  overflow: hidden;
+}
+
+.bitsota-mini-map span {
+  display: grid;
+  min-height: 5.25rem;
+  align-content: center;
+  gap: 0.25rem;
+  padding: 0.75rem;
+  background: var(--bitsota-panel);
+}
+
+.bitsota-mini-map b {
+  font-family: "JetBrains Mono", "SFMono-Regular", Consolas, monospace;
+  font-size: 0.76rem;
+  color: var(--bitsota-warm);
+}
+
+.bitsota-mini-map small {
+  color: var(--bitsota-muted);
+  font-size: 0.74rem;
+}
+
 .bitsota-card-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -117,6 +204,8 @@
   margin: 1.5rem 0;
   border: 1px solid var(--bitsota-line);
   background: var(--bitsota-line);
+  border-radius: 6px;
+  overflow: hidden;
 }
 
 .bitsota-card {
@@ -144,13 +233,195 @@
   font-weight: 400;
 }
 
+.bitsota-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  margin-top: 1.5rem;
+}
+
+.bitsota-button {
+  display: inline-flex;
+  min-height: 2.5rem;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--bitsota-ink);
+  border-radius: 6px;
+  padding: 0.55rem 0.8rem;
+  background: var(--bitsota-ink);
+  color: #ffffff !important;
+  font-weight: 700;
+  text-decoration: none;
+}
+
+.bitsota-button.secondary {
+  background: var(--bitsota-panel);
+  color: var(--bitsota-ink) !important;
+}
+
+.bitsota-quick-facts {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 0.75rem;
+  margin: 1.25rem 0;
+}
+
+.bitsota-fact {
+  border-top: 3px solid var(--bitsota-accent);
+  border-radius: 6px;
+  padding: 0.85rem;
+  background: var(--bitsota-panel);
+  box-shadow: 0 1px 0 rgba(19, 40, 47, 0.06);
+}
+
+.bitsota-fact:nth-child(2) {
+  border-top-color: var(--bitsota-blue);
+}
+
+.bitsota-fact:nth-child(3) {
+  border-top-color: var(--bitsota-warm);
+}
+
+.bitsota-fact:nth-child(4) {
+  border-top-color: var(--bitsota-good);
+}
+
+.bitsota-fact strong,
+.bitsota-fact span {
+  display: block;
+}
+
+.bitsota-fact strong {
+  color: var(--bitsota-ink);
+}
+
+.bitsota-fact span {
+  margin-top: 0.35rem;
+  color: var(--bitsota-muted);
+}
+
+.bitsota-command {
+  margin: 1.5rem 0;
+  border: 1px solid var(--bitsota-line);
+  border-radius: 6px;
+  background: var(--bitsota-panel);
+  overflow: hidden;
+}
+
+.bitsota-command .title {
+  margin: 0;
+  border-bottom: 1px solid var(--bitsota-line);
+  padding: 0.7rem 0.9rem;
+  background: var(--bitsota-panel-muted);
+  color: var(--bitsota-ink);
+  font-weight: 700;
+}
+
+.bitsota-command pre {
+  margin: 0 !important;
+}
+
+.bitsota-step-list {
+  display: grid;
+  gap: 0.75rem;
+  margin: 1.25rem 0;
+  padding: 0;
+  list-style: none;
+}
+
+.bitsota-step-list li {
+  display: grid;
+  grid-template-columns: 2rem 1fr;
+  gap: 0.75rem;
+  align-items: start;
+  border: 1px solid var(--bitsota-line);
+  border-radius: 8px;
+  padding: 0.8rem;
+  background: var(--bitsota-panel);
+}
+
+.bitsota-step-list b {
+  display: inline-flex;
+  width: 2rem;
+  height: 2rem;
+  align-items: center;
+  justify-content: center;
+  border-radius: 6px;
+  background: var(--bitsota-ink);
+  color: #ffffff;
+}
+
+.bitsota-status-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.75rem;
+  margin: 1.25rem 0;
+}
+
+.bitsota-status {
+  border: 1px solid var(--bitsota-line);
+  border-radius: 8px;
+  padding: 0.9rem;
+  background: var(--bitsota-panel);
+}
+
+.bitsota-status strong,
+.bitsota-status span {
+  display: block;
+}
+
+.bitsota-status strong {
+  color: var(--bitsota-ink);
+}
+
+.bitsota-status span {
+  margin-top: 0.35rem;
+  color: var(--bitsota-muted);
+}
+
+.bitsota-callout {
+  margin: 1.25rem 0;
+  border-left: 4px solid var(--bitsota-warm);
+  border-radius: 6px;
+  padding: 0.85rem 1rem;
+  background: #fff8ed;
+  color: var(--bitsota-ink);
+}
+
+.bitsota-callout strong {
+  color: var(--bitsota-ink);
+}
+
+.bitsota-callout.good {
+  border-left-color: var(--bitsota-good);
+  background: #eefaf1;
+}
+
+.bitsota-callout.danger {
+  border-left-color: var(--bitsota-bad);
+  background: #fff1f1;
+}
+
+.bitsota-compare td:first-child,
+.bitsota-compare th:first-child {
+  width: 34%;
+}
+
 @media (max-width: 760px) {
   .bitsota-hero {
-    padding: 1.25rem;
+    padding: 0.75rem 0 1.2rem;
+  }
+
+  .bitsota-hero h1 {
+    font-size: 2.15rem;
   }
 
   .bitsota-strip,
-  .bitsota-card-grid {
+  .bitsota-path-grid,
+  .bitsota-card-grid,
+  .bitsota-status-grid,
+  .bitsota-quick-facts,
+  .bitsota-mini-map {
     grid-template-columns: 1fr;
   }
 }
