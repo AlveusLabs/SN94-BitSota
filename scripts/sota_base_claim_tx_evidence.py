@@ -231,6 +231,20 @@ def _contract_address(manifest: dict[str, Any], env: dict[str, str], key: str, e
     return _normalize_address(contract.get("address"))
 
 
+def _test_wallet_from_funding_report(artifacts_dir: Path) -> str:
+    report = _load_json(artifacts_dir / "base-sota-testnet-funding.json")
+    for target in report.get("funding_targets") or []:
+        if not isinstance(target, dict):
+            continue
+        if str(target.get("label") or "") == "test_wallet":
+            return str(target.get("address") or "")
+    return ""
+
+
+def _test_wallet_from_local_state(state: dict[str, Any]) -> str:
+    return str(dict(state.get("accounts") or {}).get("alice_reward") or "")
+
+
 def _local_config(state: dict[str, Any]) -> dict[str, str]:
     contracts = dict(state.get("contracts") or {})
     urls = dict(state.get("urls") or {})
@@ -245,12 +259,22 @@ def _local_config(state: dict[str, Any]) -> dict[str, str]:
     }
 
 
-def _testnet_config(manifest: dict[str, Any], env: dict[str, str]) -> dict[str, str]:
+def _testnet_config(
+    manifest: dict[str, Any],
+    env: dict[str, str],
+    state: dict[str, Any],
+    artifacts_dir: Path,
+) -> dict[str, str]:
     chain = dict(manifest.get("chain") or {})
+    wallet_address = (
+        env.get("SOTA_TEST_WALLET_ADDRESS")
+        or _test_wallet_from_funding_report(artifacts_dir)
+        or _test_wallet_from_local_state(state)
+    )
     return {
         "rpc_url": env.get("SOTA_BASE_RPC_URL") or env.get("NEXT_PUBLIC_SOTA_BASE_RPC_URL") or str(chain.get("public_browser_rpc_url") or "https://sepolia.base.org"),
         "expected_chain_id": str(env.get("SOTA_BASE_CHAIN_ID") or env.get("NEXT_PUBLIC_SOTA_BASE_CHAIN_ID") or chain.get("chain_id") or BASE_SEPOLIA_CHAIN_ID),
-        "wallet_address": env.get("SOTA_TEST_WALLET_ADDRESS") or "",
+        "wallet_address": wallet_address,
         "sota_token": _contract_address(manifest, env, "sota_token", "SOTA_TOKEN_ADDRESS"),
         "vault": _contract_address(manifest, env, "vault", "SOTA_VAULT_ADDRESS"),
         "genesis_distributor": _contract_address(manifest, env, "genesis_distributor", "SOTA_GENESIS_DISTRIBUTOR_ADDRESS"),
@@ -262,7 +286,11 @@ def _effective_config(args: argparse.Namespace) -> tuple[dict[str, Any], dict[st
     state = _load_json(args.state) if args.state else {}
     manifest = _load_json(args.manifest)
     env = _load_env(args.env_file)
-    config = _local_config(state) if args.environment == "local" else _testnet_config(manifest, env)
+    config = (
+        _local_config(state)
+        if args.environment == "local"
+        else _testnet_config(manifest, env, state, args.artifacts_dir)
+    )
     overrides = {
         "rpc_url": args.rpc_url,
         "wallet_address": args.wallet_address,
@@ -575,9 +603,6 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
     args.manifest = args.manifest or args.artifacts_dir / "base-sepolia-deployment-manifest.json"
     args.env_file = args.env_file or args.artifacts_dir / "base-sota.env.testnet"
-    if args.environment == "testnet":
-        args.state = None
-
     report = run_evidence(args)
     text = json.dumps(report, indent=2, sort_keys=True) + "\n"
     if args.report_out:

@@ -265,3 +265,45 @@ def test_claim_tx_evidence_supports_local_state_config(tmp_path: Path, monkeypat
 
     assert report["ok"] is True
     assert report["config"]["expected_chain_id"] == "31337"
+
+
+def test_claim_tx_evidence_uses_testnet_funding_wallet_fallback(tmp_path: Path, monkeypatch) -> None:
+    module = _load_module()
+    args = _args(tmp_path)
+    args.artifacts_dir.mkdir(parents=True)
+    (args.artifacts_dir / "base-sota-testnet-funding.json").write_text(
+        json.dumps(
+            {
+                "schema": "sota-base-testnet-funding/v1",
+                "funding_targets": [
+                    {"label": "test_wallet", "address": WALLET},
+                ],
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(module, "_json_rpc", lambda rpc_url, method, params=None, timeout=0.1: "0x14a34")
+
+    report = module.run_evidence(args)
+    wallet_check = next(check for check in report["checks"] if check["name"] == "wallet_address")
+
+    assert wallet_check["status"] == "green"
+    assert report["config"]["wallet_address"] == WALLET.lower()
+
+
+def test_claim_tx_evidence_uses_seeded_local_wallet_for_testnet_fallback(tmp_path: Path, monkeypatch) -> None:
+    module = _load_module()
+    state = tmp_path / "state.json"
+    state.write_text(
+        json.dumps({"accounts": {"alice_reward": WALLET}}) + "\n",
+        encoding="utf-8",
+    )
+    args = _args(tmp_path, state=state)
+    monkeypatch.setattr(module, "_json_rpc", lambda rpc_url, method, params=None, timeout=0.1: "0x14a34")
+
+    report = module.run_evidence(args)
+    wallet_check = next(check for check in report["checks"] if check["name"] == "wallet_address")
+
+    assert wallet_check["status"] == "green"
+    assert report["config"]["wallet_address"] == WALLET.lower()
