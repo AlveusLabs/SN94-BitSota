@@ -66,7 +66,7 @@ def _write_inputs(tmp_path: Path) -> tuple[Path, Path]:
                                 "Port": "8010",
                                 "RuntimeEnvironmentVariables": {},
                                 "RuntimeEnvironmentSecrets": {
-                                    "SOTA_BASE_INDEXER_ADMIN_TOKEN": "base-sota/test/base-sepolia/indexer-admin-token"
+                                    "SOTA_BASE_INDEXER_ADMIN_TOKEN": "arn:aws:secretsmanager:eu-central-1:924380800822:secret:base-sota/test/base-sepolia/indexer-admin-token-fixture"
                                 },
                             },
                         },
@@ -111,22 +111,30 @@ def _args(tmp_path: Path, **overrides):
     return argparse.Namespace(**values)
 
 
+def _connection_lookup(*_args, **_kwargs):
+    return {
+        "ConnectionSummaryList": [
+            {
+                "ConnectionName": "bitsota",
+                "ConnectionArn": "arn:aws:apprunner:eu-central-1:924380800822:connection/bitsota/abc",
+                "Status": "AVAILABLE",
+            }
+        ]
+    }
+
+
+def _set_runtime_secret(args, value: str) -> None:
+    path = args.apprunner_input_dir / "base-sota-indexer-api-test.json"
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    values = payload["SourceConfiguration"]["CodeRepository"]["CodeConfiguration"]["CodeConfigurationValues"]
+    values["RuntimeEnvironmentSecrets"]["SOTA_BASE_INDEXER_ADMIN_TOKEN"] = value
+    path.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+
+
 def test_source_pack_renders_aws_ready_apprunner_json(tmp_path: Path, monkeypatch) -> None:
     module = _load_module()
     args = _args(tmp_path)
-    monkeypatch.setattr(
-        module,
-        "_run_aws",
-        lambda *a, **k: {
-            "ConnectionSummaryList": [
-                {
-                    "ConnectionName": "bitsota",
-                    "ConnectionArn": "arn:aws:apprunner:eu-central-1:924380800822:connection/bitsota/abc",
-                    "Status": "AVAILABLE",
-                }
-            ]
-        },
-    )
+    monkeypatch.setattr(module, "_run_aws", _connection_lookup)
     monkeypatch.setattr(module, "_git_status", lambda path, timeout: "")
     monkeypatch.setattr(module, "_git_remote_head", lambda remote_url, branch, timeout: "a" * 40)
 
@@ -139,6 +147,33 @@ def test_source_pack_renders_aws_ready_apprunner_json(tmp_path: Path, monkeypatc
     assert rendered["SourceConfiguration"]["AuthenticationConfiguration"]["ConnectionArn"].endswith("/abc")
     assert rendered["InstanceConfiguration"]["InstanceRoleArn"].endswith("AppRunnerReadSecrets")
     assert report["rendered_services"][0]["create_service_command"][0:3] == ["aws", "apprunner", "create-service"]
+
+
+def test_source_pack_resolves_base_sota_secret_names_to_arns(tmp_path: Path, monkeypatch) -> None:
+    module = _load_module()
+    args = _args(tmp_path)
+    _set_runtime_secret(args, "base-sota/test/base-sepolia/indexer-admin-token")
+
+    def fake_aws(command, **_kwargs):
+        if command[:2] == ["apprunner", "list-connections"]:
+            return _connection_lookup()
+        if command[:2] == ["secretsmanager", "describe-secret"]:
+            return {
+                "ARN": "arn:aws:secretsmanager:eu-central-1:924380800822:secret:base-sota/test/base-sepolia/indexer-admin-token-abc123"
+            }
+        raise AssertionError(command)
+
+    monkeypatch.setattr(module, "_run_aws", fake_aws)
+    monkeypatch.setattr(module, "_git_status", lambda path, timeout: "")
+    monkeypatch.setattr(module, "_git_remote_head", lambda remote_url, branch, timeout: "a" * 40)
+
+    report = module.build_pack(args)
+    rendered = json.loads((args.out_dir / "base-sota-indexer-api-test.json").read_text(encoding="utf-8"))
+    checks = {check["name"]: check for check in report["checks"]}
+
+    secret = rendered["SourceConfiguration"]["CodeRepository"]["CodeConfiguration"]["CodeConfigurationValues"]["RuntimeEnvironmentSecrets"]["SOTA_BASE_INDEXER_ADMIN_TOKEN"]
+    assert secret == "arn:aws:secretsmanager:eu-central-1:924380800822:secret:base-sota/test/base-sepolia/indexer-admin-token-abc123"
+    assert checks["secret_arn_base-sota-indexer-api-test_SOTA_BASE_INDEXER_ADMIN_TOKEN"]["status"] == "green"
 
 
 def test_source_pack_marks_dirty_source_and_missing_connection_yellow(tmp_path: Path, monkeypatch) -> None:
@@ -196,19 +231,7 @@ def test_indexer_relevant_paths_ignore_generated_artifacts() -> None:
 def test_source_pack_ignores_unrelated_dirty_paths_for_readiness(tmp_path: Path, monkeypatch) -> None:
     module = _load_module()
     args = _args(tmp_path)
-    monkeypatch.setattr(
-        module,
-        "_run_aws",
-        lambda *a, **k: {
-            "ConnectionSummaryList": [
-                {
-                    "ConnectionName": "bitsota",
-                    "ConnectionArn": "arn:aws:apprunner:eu-central-1:924380800822:connection/bitsota/abc",
-                    "Status": "AVAILABLE",
-                }
-            ]
-        },
-    )
+    monkeypatch.setattr(module, "_run_aws", _connection_lookup)
     monkeypatch.setattr(module, "_git_status", lambda path, timeout: " M unrelated.md")
     monkeypatch.setattr(module, "_git_remote_head", lambda remote_url, branch, timeout: "a" * 40)
 

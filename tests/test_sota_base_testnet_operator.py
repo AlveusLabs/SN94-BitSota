@@ -393,8 +393,8 @@ def test_operator_passes_configured_service_urls_to_blocker_gate(tmp_path: Path,
     assert "claims_ui=https://abc.awsapprunner.com" in host_values
     assert "claims_api=https://def.awsapprunner.com" in host_values
     assert "coordinator=https://ghi.awsapprunner.com" in host_values
-    assert "attestation=https://attestation.internal.example" in host_values
-    assert "root_publisher=https://root.internal.example" in host_values
+    assert "attestation=https://attestation.internal.example" not in host_values
+    assert "root_publisher=https://root.internal.example" not in host_values
     assert "monitoring=https://monitoring.internal.example" not in host_values
 
 
@@ -477,6 +477,75 @@ def test_operator_dry_run_roots_keeps_claim_import_yellow(tmp_path: Path, monkey
     assert steps["finalize_claim_artifacts"]["status"] == "yellow"
     assert steps["import_claim_artifacts"]["status"] == "yellow"
     assert "--broadcast" not in " ".join(steps["publish_genesis_root"]["command"])
+
+
+def test_operator_default_rerun_uses_existing_finalized_claim_artifacts(tmp_path: Path, monkeypatch) -> None:
+    module = _load_module()
+    args = _args(tmp_path, deployment=tmp_path / "compact.json", emission_evidence=tmp_path / "evidence.json")
+    args.deployment.write_text("{}\n", encoding="utf-8")
+    args.emission_evidence.write_text("{}\n", encoding="utf-8")
+    paths = module._paths(args.artifacts_dir)
+    root_ids = {
+        "genesis": "0x" + "31" * 32,
+        "emission": "0x" + "32" * 32,
+    }
+
+    def write_finalized_artifacts() -> None:
+        module._write_json(
+            paths["seed_finalized_report"],
+            {
+                "schema": "sota-base-testnet-seed-artifacts/v1",
+                "ok": True,
+                "status": "ready_to_import_claim_artifacts",
+                "indexer_import_ready": True,
+                "root_ids": root_ids,
+            },
+        )
+        for kind, root_id in root_ids.items():
+            artifact = paths["genesis_claim_artifact"] if kind == "genesis" else paths["emission_claim_artifact"]
+            module._write_json(
+                artifact,
+                {
+                    "schema": "sota-base-testnet-claim-artifact/v1",
+                    "indexer_import_ready": True,
+                    "root": {
+                        "root_id": root_id,
+                        "status": "finalized",
+                        "validation_status": "accepted",
+                    },
+                },
+            )
+
+    def fake_run(cmd: list[str], **kwargs) -> dict:
+        _write_standard_reports(module, paths, cmd)
+        if _has_cmd(cmd, "sota_base_testnet_rehearsal.py"):
+            module._write_json(paths["rehearsal_report"], {"ok": True, "status": "green"})
+            module._write_json(paths["manifest"], {"environment": "base-sepolia", "chain": {"chain_id": 84532}})
+            paths["env"].write_text("SOTA_CLAIMS_API_URL=https://claims-api-test.example.invalid\n", encoding="utf-8")
+        if _has_cmd(cmd, "sota_base_testnet_seed_artifacts.py") and "build" in cmd:
+            module._write_json(paths["genesis_root_artifact"], {"root": {"root": "0x" + "11" * 32}})
+            module._write_json(paths["emission_root_artifact"], {"root": {"root": "0x" + "12" * 32}})
+            write_finalized_artifacts()
+        if _has_cmd(cmd, "sota_base_release_status.py"):
+            module._write_json(
+                paths["release_status"],
+                {"schema": "sota-base-release-status/v1", "ok": False, "status": "red"},
+            )
+        return _command_result(cmd)
+
+    monkeypatch.setattr(module, "_run_command", fake_run)
+    report = module.run_operator(args)
+    steps = {step["name"]: step for step in report["steps"]}
+
+    assert report["ok"] is True
+    assert report["status"] == "green"
+    assert steps["publish_genesis_root"]["status"] == "green"
+    assert steps["publish_emission_root"]["status"] == "green"
+    assert steps["finalize_claim_artifacts"]["status"] == "green"
+    assert steps["import_claim_artifacts"]["status"] == "green"
+    assert steps["release_status"]["status"] == "green"
+    assert "observed release status is red" in steps["release_status"]["detail"]
+    assert "command" not in steps["publish_genesis_root"]
 
 
 def test_operator_full_broadcast_finalize_import_path_can_be_green(tmp_path: Path, monkeypatch) -> None:

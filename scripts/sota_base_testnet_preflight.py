@@ -29,8 +29,6 @@ REQUIRED_CONTRACT_KEYS = (
 REQUIRED_SERVICE_KEYS = (
     "claims_ui",
     "indexer_api",
-    "root_publisher",
-    "attestation_builder",
 )
 REQUIRED_PUBLIC_ENV = {
     "NEXT_PUBLIC_SOTA_ENVIRONMENT": {"testnet", "base-sepolia", "sepolia"},

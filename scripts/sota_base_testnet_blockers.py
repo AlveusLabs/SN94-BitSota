@@ -31,8 +31,6 @@ DEFAULT_SERVICE_HOSTS = {
     "claims_ui": "claims-test.bitsota.com",
     "claims_api": "claims-api-test.bitsota.com",
     "coordinator": "coordinator-test.bitsota.com",
-    "attestation": "attestation-test.bitsota.com",
-    "root_publisher": "root-publisher-test.bitsota.com",
 }
 EVM_ADDRESS_RE = re.compile(r"^0x[0-9a-fA-F]{40}$")
 EVM_ADDRESS_ANY_RE = re.compile(r"0x[0-9a-fA-F]{40}")

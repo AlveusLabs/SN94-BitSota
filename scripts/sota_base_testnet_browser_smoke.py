@@ -339,27 +339,33 @@ def _claims_api_checks(values: dict[str, str], *, timeout: float) -> list[Check]
             )
         )
     try:
-        _http_json("POST", _join_url(base, "/api/v1/base/index/sync"), timeout=timeout)
+        sync = dict(_http_json("POST", _join_url(base, "/api/v1/base/index/sync"), timeout=timeout) or {})
         status = dict(_http_json("GET", _join_url(base, "/api/v1/base/index/status"), timeout=timeout) or {})
     except Exception as exc:
         checks.append(Check("indexer_status", "red", f"Indexer status failed: {exc}", "Deploy/sync the public Base Sepolia indexer."))
     else:
         required = {"root_registry", "lane_registry", "genesis_distributor", "emission_distributor"}
         configured = {str(item) for item in status.get("contracts_configured") or []}
+        sync_lag = _as_int(sync.get("lag_blocks"))
+        status_lag = _as_int(status.get("lag_blocks"))
+        lag_ok = sync_lag == 0 or status_lag == 0
         index_ok = (
             _as_int(status.get("chain_id")) == BASE_SEPOLIA_CHAIN_ID
             and configured >= required
-            and _as_int(status.get("lag_blocks")) == 0
+            and lag_ok
+            and not sync.get("last_sync_error")
             and not status.get("last_sync_error")
         )
         checks.append(
             _result_check(
                 "indexer_status",
                 index_ok,
-                "Indexer reports Base Sepolia RPC sync, all contract roles, and zero lag.",
+                "Indexer reports Base Sepolia RPC sync, all contract roles, and a zero-lag sync result.",
                 (
                     f"Indexer status chain_id={status.get('chain_id')!r}, "
-                    f"contracts={sorted(configured)}, lag={status.get('lag_blocks')!r}, "
+                    f"contracts={sorted(configured)}, sync_lag={sync.get('lag_blocks')!r}, "
+                    f"status_lag={status.get('lag_blocks')!r}, "
+                    f"sync_error={sync.get('last_sync_error')!r}, "
                     f"last_sync_error={status.get('last_sync_error')!r}."
                 ),
                 remediation="Fix indexer contract config, RPC sync, or lag before browser smoke.",

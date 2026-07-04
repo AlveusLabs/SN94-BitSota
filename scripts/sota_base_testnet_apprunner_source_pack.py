@@ -459,6 +459,62 @@ def _source_checks(service_name: str, service: dict[str, Any], app_input: dict[s
     return checks
 
 
+def _resolve_runtime_secret_arns(app_input: dict[str, Any], service_name: str, args: argparse.Namespace, checks: list[dict[str, str]]) -> None:
+    code_values = (
+        app_input
+        .setdefault("SourceConfiguration", {})
+        .setdefault("CodeRepository", {})
+        .setdefault("CodeConfiguration", {})
+        .setdefault("CodeConfigurationValues", {})
+    )
+    secrets = code_values.get("RuntimeEnvironmentSecrets")
+    if not isinstance(secrets, dict) or not secrets:
+        return
+    for env_key, raw_value in list(secrets.items()):
+        value = str(raw_value or "").strip()
+        check_name = f"secret_arn_{service_name}_{env_key}"
+        if not value or value.startswith("arn:") or value.startswith("${"):
+            continue
+        if not value.startswith("base-sota/"):
+            continue
+        try:
+            payload = _run_aws(
+                ["secretsmanager", "describe-secret", "--secret-id", value],
+                profile=args.aws_profile,
+                region=args.region,
+                timeout=args.timeout,
+            )
+        except Exception as exc:
+            checks.append(
+                {
+                    "name": check_name,
+                    "status": "red",
+                    "detail": f"Could not resolve Secrets Manager ARN for {env_key} on {service_name}: {exc}",
+                    "remediation": "Resolve all base-sota/test secret handles to full Secrets Manager ARNs before App Runner service creation.",
+                }
+            )
+            continue
+        arn = str(payload.get("ARN") or "").strip()
+        if not arn.startswith("arn:aws:secretsmanager:"):
+            checks.append(
+                {
+                    "name": check_name,
+                    "status": "red",
+                    "detail": f"Secrets Manager describe-secret for {value!r} did not return a usable ARN.",
+                    "remediation": "Fix the secret handle or App Runner source pack secret resolution.",
+                }
+            )
+            continue
+        secrets[env_key] = arn
+        checks.append(
+            {
+                "name": check_name,
+                "status": "green",
+                "detail": f"Resolved {env_key} on {service_name} to a Secrets Manager ARN.",
+            }
+        )
+
+
 def _status_rank(status: str) -> int:
     return {"green": 0, "yellow": 1, "red": 2}.get(status, 2)
 
@@ -541,6 +597,7 @@ def build_pack(args: argparse.Namespace) -> dict[str, Any]:
         elif current_instance_role:
             checks.append({"name": f"instance_role_applied_{service_name}", "status": "green", "detail": f"{service_name} already has a runtime instance role ARN."})
         service = services.get(service_name, {})
+        _resolve_runtime_secret_arns(output_payload, service_name, args, checks)
         source_publication.append(_publication_record(service_name, service, timeout=args.timeout))
         checks.extend(_source_checks(service_name, service, output_payload, timeout=args.timeout, skip_remote=args.skip_remote_check))
         out_path = args.out_dir / input_path.name

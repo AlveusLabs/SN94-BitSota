@@ -7,6 +7,7 @@ from html import escape
 import json
 from pathlib import Path
 import re
+import shlex
 import subprocess
 from typing import Any
 from urllib.parse import urljoin, urlparse
@@ -150,7 +151,16 @@ def _arg_or_manifest_url(args: argparse.Namespace, attr: str, manifest: dict[str
 
 def _secret_handles(manifest: dict[str, Any] | None) -> dict[str, str]:
     handles = dict(dict(manifest or {}).get("secret_handles") or {})
-    return {**DEFAULT_SECRET_HANDLES, **{str(key): str(value) for key, value in handles.items() if value}}
+    normalized: dict[str, str] = {}
+    for key, value in handles.items():
+        key_s = str(key)
+        value_s = str(value).strip()
+        if not value_s:
+            continue
+        if value_s.startswith("TODO:secret-handle:") and key_s in DEFAULT_SECRET_HANDLES:
+            continue
+        normalized[key_s] = value_s
+    return {**DEFAULT_SECRET_HANDLES, **normalized}
 
 
 def _contract_addresses(manifest: dict[str, Any] | None) -> dict[str, str | None]:
@@ -431,6 +441,18 @@ def _aws_deploy_plan(services: list[dict[str, Any]], handles: dict[str, str]) ->
     }
 
 
+def _next_public_env_build_command(env_public_values: dict[str, Any]) -> str:
+    entries = {
+        key: str(value)
+        for key, value in sorted(env_public_values.items())
+        if key.startswith("NEXT_PUBLIC_") and not re.search(r"\s", str(value))
+    }
+    if not entries:
+        return ""
+    values = " ".join(f"{key}={shlex.quote(value)}" for key, value in entries.items())
+    return f"env {values}"
+
+
 def _apprunner_input(service: dict[str, Any]) -> dict[str, Any] | None:
     recipe = dict(service.get("deployment_recipe") or {})
     if recipe.get("target") != "aws_apprunner_public_service":
@@ -439,7 +461,15 @@ def _apprunner_input(service: dict[str, Any]) -> dict[str, Any] | None:
     if not repository_url:
         repository_url = "<GITHUB_REPOSITORY_URL>"
     runtime = "NODEJS_22" if service.get("key") == "claims_ui" else "PYTHON_311"
-    build_command = " && ".join(str(command) for command in service.get("build_commands") or [])
+    build_commands = [str(command) for command in service.get("build_commands") or []]
+    if service.get("key") == "claims_ui":
+        env_build_command = _next_public_env_build_command(dict(service.get("env_public_values") or {}))
+        if env_build_command:
+            build_commands = [
+                f"{env_build_command} {command}" if "pnpm build" in command else command
+                for command in build_commands
+            ]
+    build_command = " && ".join(build_commands)
     code_configuration_values = {
         "Runtime": runtime,
         "BuildCommand": build_command,
@@ -548,6 +578,7 @@ def build_service_pack(args: argparse.Namespace) -> dict[str, Any]:
                 "NEXT_PUBLIC_SOTA_CLAIMS_API_URL",
                 "NEXT_PUBLIC_SOTA_AUTORESEARCH_API_URL",
                 "NEXT_PUBLIC_SOTA_DEFAULT_LANE_ID",
+                "NEXT_PUBLIC_SOTA_CLAIMS_CONTRACT_ADDRESS",
                 "NEXT_PUBLIC_SOTA_GENESIS_DISTRIBUTOR_ADDRESS",
                 "NEXT_PUBLIC_SOTA_EMISSION_DISTRIBUTOR_ADDRESS",
                 "NEXT_PUBLIC_SOTA_TOKEN_ADDRESS",
@@ -563,6 +594,7 @@ def build_service_pack(args: argparse.Namespace) -> dict[str, Any]:
                 "NEXT_PUBLIC_SOTA_CLAIMS_API_URL": urls["claims_api"],
                 "NEXT_PUBLIC_SOTA_AUTORESEARCH_API_URL": urls["coordinator"],
                 "NEXT_PUBLIC_SOTA_DEFAULT_LANE_ID": "base:sota-local",
+                "NEXT_PUBLIC_SOTA_CLAIMS_CONTRACT_ADDRESS": contract("genesis_distributor"),
                 "NEXT_PUBLIC_SOTA_GENESIS_DISTRIBUTOR_ADDRESS": contract("genesis_distributor"),
                 "NEXT_PUBLIC_SOTA_EMISSION_DISTRIBUTOR_ADDRESS": contract("emission_distributor"),
                 "NEXT_PUBLIC_SOTA_TOKEN_ADDRESS": contract("sota_token"),

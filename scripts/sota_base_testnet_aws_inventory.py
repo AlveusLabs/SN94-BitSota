@@ -27,7 +27,6 @@ BASE_SERVICE_PATTERNS = {
     "claims_ui": re.compile(r"(base[-_]?sota|sota[-_]?base).*(claims|website|ui)|claims[-_]?test", re.I),
     "claims_api": re.compile(r"(base[-_]?sota|sota[-_]?base).*(claims|indexer|api)|claims[-_]?api[-_]?test", re.I),
     "coordinator": re.compile(r"(base[-_]?sota|sota[-_]?base).*coordinator|coordinator[-_]?test", re.I),
-    "root_publisher": re.compile(r"(base[-_]?sota|sota[-_]?base).*root|root[-_]?publisher[-_]?test", re.I),
 }
 REQUIRED_PUBLIC_SERVICE_KEYS = tuple(BASE_SERVICE_PATTERNS)
 BASE_SECRET_RE = re.compile(r"(base[-_/]?sepolia|base[-_/]?sota|sota[-_/]?base)", re.I)

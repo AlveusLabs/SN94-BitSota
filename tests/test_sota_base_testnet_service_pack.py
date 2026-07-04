@@ -119,6 +119,7 @@ def test_default_service_pack_is_generated_without_deployed_manifest(tmp_path: P
     claims_ui = next(service for service in pack["services"] if service["key"] == "claims_ui")
     assert claims_ui["deployment_recipe"]["target"] == "aws_apprunner_public_service"
     assert claims_ui["deployment_recipe"]["create_service_input_file"] == "apprunner/base-sota-claims-ui-test.json"
+    assert claims_ui["env_public_values"]["NEXT_PUBLIC_SOTA_CLAIMS_CONTRACT_ADDRESS"] == claims_ui["env_public_values"]["NEXT_PUBLIC_SOTA_GENESIS_DISTRIBUTOR_ADDRESS"]
     claim_artifacts = next(service for service in pack["services"] if service["key"] == "claim_artifacts")
     assert "sota_base_testnet_seed_artifacts.py build" in claim_artifacts["run_command"]
 
@@ -144,6 +145,20 @@ def test_service_pack_uses_manifest_urls_and_secret_handles(tmp_path: Path) -> N
     assert services["indexer_api"]["env_public_values"]["SOTA_BASE_CLAIM_ARTIFACT_REQUIRED"] == "true"
     assert "base-sota-testnet-genesis-claim-artifact.json" in services["indexer_api"]["env_public_values"]["SOTA_BASE_CLAIM_ARTIFACT_URLS"]
     assert not module._secret_findings(pack)
+
+
+def test_service_pack_ignores_manifest_todo_secret_handle_overrides(tmp_path: Path) -> None:
+    module = _load_module()
+    manifest = _manifest(tmp_path)
+    payload = json.loads(manifest.read_text(encoding="utf-8"))
+    payload["secret_handles"]["base_sepolia_indexer_admin_token"] = "TODO:secret-handle:base-sepolia-indexer-admin-token"
+    manifest.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    args = _args(tmp_path, manifest=manifest)
+
+    pack = module.build_service_pack(args)
+    services = {service["key"]: service for service in pack["services"]}
+
+    assert services["indexer_api"]["env_secret_map"]["SOTA_BASE_INDEXER_ADMIN_TOKEN"] == "base-sota/test/base-sepolia/indexer-admin-token"
 
 
 def test_service_pack_rejects_base_mainnet_manifest(tmp_path: Path) -> None:
@@ -186,6 +201,14 @@ def test_service_pack_main_writes_json_markdown_and_html(tmp_path: Path) -> None
     assert args.markdown_out.exists()
     assert args.html_out.exists()
     assert (args.apprunner_out_dir / "base-sota-claims-ui-test.json").exists()
+    claims_input = json.loads((args.apprunner_out_dir / "base-sota-claims-ui-test.json").read_text(encoding="utf-8"))
+    claims_values = claims_input["SourceConfiguration"]["CodeRepository"]["CodeConfiguration"]["CodeConfigurationValues"]
+    assert claims_values["Runtime"] == "NODEJS_22"
+    assert " && env " in claims_values["BuildCommand"]
+    assert "NEXT_PUBLIC_SOTA_BASE_CHAIN_ID=84532" in claims_values["BuildCommand"]
+    assert "NEXT_PUBLIC_SOTA_BASE_CHAIN_NAME" not in claims_values["BuildCommand"]
+    assert "NEXT_PUBLIC_SOTA_CLAIMS_CONTRACT_ADDRESS=" in claims_values["BuildCommand"]
+    assert "corepack pnpm build" in claims_values["BuildCommand"]
     indexer_input = json.loads((args.apprunner_out_dir / "base-sota-indexer-api-test.json").read_text(encoding="utf-8"))
     code_config = indexer_input["SourceConfiguration"]["CodeRepository"]["CodeConfiguration"]
     values = code_config["CodeConfigurationValues"]

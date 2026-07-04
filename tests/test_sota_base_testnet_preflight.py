@@ -97,6 +97,8 @@ def test_template_preflight_reports_missing_deployed_contracts_and_services() ->
     names = {check["name"]: check for check in report["checks"]}
     assert names["contract_sota_token"]["status"] == "red"
     assert names["service_claims_ui"]["status"] == "red"
+    assert "service_root_publisher" not in names
+    assert "service_attestation_builder" not in names
 
 
 def test_offline_filled_manifest_with_public_env_is_yellow_not_red(tmp_path: Path) -> None:

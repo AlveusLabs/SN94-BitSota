@@ -75,7 +75,11 @@ def _json_rpc(rpc_url: str, method: str, params: list[Any] | None = None, *, tim
     request = Request(
         rpc_url,
         data=json.dumps({"jsonrpc": "2.0", "id": 1, "method": method, "params": params or []}).encode("utf-8"),
-        headers={"Content-Type": "application/json", "Accept": "application/json"},
+        headers={
+            "Content-Type": "application/json",
+            "Accept": "application/json",
+            "User-Agent": "sota-base-publish-root/1.0",
+        },
         method="POST",
     )
     with urlopen(request, timeout=timeout) as response:
@@ -267,7 +271,7 @@ def broadcast_publish_request(request: dict[str, Any], *, rpc_url: str, timeout:
         "to": Web3.to_checksum_address(str(request["to"])),
         "data": request["transaction"]["data"],
         "value": 0,
-        "nonce": w3.eth.get_transaction_count(account.address),
+        "nonce": w3.eth.get_transaction_count(account.address, "pending"),
     }
     tx["gas"] = int(w3.eth.estimate_gas(tx) * 1.2)
     tx["maxFeePerGas"] = int(w3.eth.gas_price * 2)
