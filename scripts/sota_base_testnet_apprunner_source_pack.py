@@ -98,10 +98,13 @@ def _run_aws(args: list[str], *, profile: str, region: str, timeout: float) -> d
 def _cached_connection_arn(args: argparse.Namespace) -> tuple[str, str]:
     path = Path(getattr(args, "aws_inventory", DEFAULT_AWS_INVENTORY))
     if not path.exists():
-        return "", ""
+        return _cached_rendered_connection_arn(args)
     try:
         payload = _load_json(path)
     except Exception as exc:
+        rendered_arn, rendered_source = _cached_rendered_connection_arn(args)
+        if rendered_arn:
+            return rendered_arn, rendered_source
         return "", f"cached inventory {path} could not be read: {exc}"
     inventory = dict(payload.get("inventory") or {})
     matches = [
@@ -113,11 +116,34 @@ def _cached_connection_arn(args: argparse.Namespace) -> tuple[str, str]:
     selected = available[0] if available else (matches[0] if matches else {})
     arn = str(selected.get("arn") or "")
     if not arn:
+        rendered_arn, rendered_source = _cached_rendered_connection_arn(args)
+        if rendered_arn:
+            return rendered_arn, rendered_source
         return "", f"cached inventory {path} does not contain connection {args.connection_name!r}"
     status = str(selected.get("status") or "UNKNOWN")
     if status.upper() != "AVAILABLE":
+        rendered_arn, rendered_source = _cached_rendered_connection_arn(args)
+        if rendered_arn:
+            return rendered_arn, rendered_source
         return "", f"cached connection {args.connection_name!r} in {path} is {status}, not AVAILABLE"
     return arn, str(path)
+
+
+def _cached_rendered_connection_arn(args: argparse.Namespace) -> tuple[str, str]:
+    out_dir = Path(getattr(args, "out_dir", DEFAULT_OUT_DIR))
+    if not out_dir.exists():
+        return "", ""
+    for path in sorted(out_dir.glob("*.json")):
+        try:
+            payload = _load_json(path)
+        except Exception:
+            continue
+        source = dict(payload.get("SourceConfiguration") or {})
+        auth = dict(source.get("AuthenticationConfiguration") or {})
+        arn = str(auth.get("ConnectionArn") or "").strip()
+        if arn and not arn.startswith("${"):
+            return arn, f"rendered source input {path}"
+    return "", ""
 
 
 def _resolve_connection_arn(args: argparse.Namespace, checks: list[dict[str, str]]) -> str:
@@ -148,7 +174,7 @@ def _resolve_connection_arn(args: argparse.Namespace, checks: list[dict[str, str
                     "name": "connection_arn",
                     "status": "green",
                     "detail": (
-                        f"Using cached AVAILABLE App Runner GitHub connection ARN for "
+                        f"Using cached App Runner GitHub connection ARN for "
                         f"{args.connection_name!r} from {cached_source}; live AWS lookup failed: {exc}"
                     ),
                 }

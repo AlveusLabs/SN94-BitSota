@@ -193,6 +193,17 @@ def _run_command(
     }
 
 
+def _run_report_command(
+    cmd: list[str],
+    *,
+    report_path: Path,
+    timeout: float,
+    env_overrides: dict[str, str] | None = None,
+) -> dict[str, Any]:
+    report_path.unlink(missing_ok=True)
+    return _run_command(cmd, timeout=timeout, env_overrides=env_overrides)
+
+
 def _aws_secret_string(secret_id: str, *, profile: str, region: str, timeout: float) -> str:
     cmd = [
         "aws",
@@ -918,7 +929,7 @@ def run_operator(args: argparse.Namespace) -> dict[str, Any]:
             "next_actions": _next_actions(current_steps),
         }
 
-    service_pack = _run_command(_service_pack_cmd(args, paths), timeout=args.timeout)
+    service_pack = _run_report_command(_service_pack_cmd(args, paths), report_path=paths["service_pack_json"], timeout=args.timeout)
     steps.append(
         _step_from_json_report(
             "service_pack",
@@ -935,7 +946,7 @@ def run_operator(args: argparse.Namespace) -> dict[str, Any]:
         )
     )
 
-    source_pack = _run_command(_apprunner_source_pack_cmd(args, paths), timeout=args.timeout)
+    source_pack = _run_report_command(_apprunner_source_pack_cmd(args, paths), report_path=paths["apprunner_source_pack"], timeout=args.timeout)
     steps.append(
         _step_from_json_report(
             "apprunner_source_pack",
@@ -951,7 +962,7 @@ def run_operator(args: argparse.Namespace) -> dict[str, Any]:
         )
     )
 
-    funding = _run_command(_funding_cmd(args, paths), timeout=args.timeout)
+    funding = _run_report_command(_funding_cmd(args, paths), report_path=paths["funding"], timeout=args.timeout)
     steps.append(
         _step_from_json_report(
             "funding",
@@ -964,7 +975,7 @@ def run_operator(args: argparse.Namespace) -> dict[str, Any]:
         )
     )
 
-    blockers = _run_command(_blockers_cmd(args, paths), timeout=args.timeout)
+    blockers = _run_report_command(_blockers_cmd(args, paths), report_path=paths["blockers"], timeout=args.timeout)
     steps.append(
         _step_from_json_report(
             "blocker_gate",
@@ -977,7 +988,7 @@ def run_operator(args: argparse.Namespace) -> dict[str, Any]:
         )
     )
 
-    aws_inventory = _run_command(_aws_inventory_cmd(args, paths), timeout=args.timeout)
+    aws_inventory = _run_report_command(_aws_inventory_cmd(args, paths), report_path=paths["aws_inventory"], timeout=args.command_timeout)
     steps.append(
         _step_from_json_report(
             "aws_inventory",
@@ -1010,7 +1021,7 @@ def run_operator(args: argparse.Namespace) -> dict[str, Any]:
                 )
             )
         else:
-            rehearsal = _run_command(_rehearsal_cmd(args, paths), timeout=args.command_timeout, env_overrides=deploy_env)
+            rehearsal = _run_report_command(_rehearsal_cmd(args, paths), report_path=paths["rehearsal_report"], timeout=args.command_timeout, env_overrides=deploy_env)
             steps.append(
                 _step_from_json_report(
                     "rehearsal",
@@ -1151,7 +1162,7 @@ def run_operator(args: argparse.Namespace) -> dict[str, Any]:
         )
 
     if not args.skip_browser_smoke:
-        browser = _run_command(_browser_smoke_cmd(args, paths), timeout=args.command_timeout)
+        browser = _run_report_command(_browser_smoke_cmd(args, paths), report_path=paths["browser_smoke"], timeout=args.command_timeout)
         steps.append(
             _step_from_json_report(
                 "browser_smoke",
@@ -1174,7 +1185,7 @@ def run_operator(args: argparse.Namespace) -> dict[str, Any]:
         )
 
     _write_json(paths["operator_report"], build_report(steps))
-    release = _run_command(_release_status_cmd(args, paths), timeout=args.timeout)
+    release = _run_report_command(_release_status_cmd(args, paths), report_path=paths["release_status"], timeout=args.timeout)
     steps.append(
         _step_from_json_report(
             "release_status",

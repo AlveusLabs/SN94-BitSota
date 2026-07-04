@@ -328,6 +328,40 @@ def test_operator_refreshes_tester_handoff_after_release_status(tmp_path: Path, 
     assert "--mirror-local" in seen["handoff"]
 
 
+def test_operator_does_not_reuse_stale_json_report_after_timeout(tmp_path: Path, monkeypatch) -> None:
+    module = _load_module()
+    args = _args(tmp_path, command_timeout=17.0)
+    paths = module._paths(args.artifacts_dir)
+    paths["aws_inventory"].parent.mkdir(parents=True, exist_ok=True)
+    module._write_json(
+        paths["aws_inventory"],
+        {"schema": "sota-base-testnet-aws-inventory/v1", "ok": True, "status": "green"},
+    )
+    seen = {}
+
+    def fake_run(cmd: list[str], **kwargs) -> dict:
+        if _has_cmd(cmd, "sota_base_testnet_aws_inventory.py"):
+            seen["inventory_timeout"] = kwargs["timeout"]
+            return {
+                "returncode": 124,
+                "stdout": "",
+                "stderr": "command timed out after 17.0 seconds",
+                "command": cmd,
+                "command_text": " ".join(cmd),
+            }
+        _write_standard_reports(module, paths, cmd)
+        return _command_result(cmd)
+
+    monkeypatch.setattr(module, "_run_command", fake_run)
+    report = module.run_operator(args)
+    steps = {step["name"]: step for step in report["steps"]}
+
+    assert seen["inventory_timeout"] == 17.0
+    assert steps["aws_inventory"]["status"] == "red"
+    assert "command timed out" in steps["aws_inventory"]["detail"]
+    assert not paths["aws_inventory"].exists()
+
+
 def test_operator_passes_configured_service_urls_to_blocker_gate(tmp_path: Path, monkeypatch) -> None:
     module = _load_module()
     args = _args(

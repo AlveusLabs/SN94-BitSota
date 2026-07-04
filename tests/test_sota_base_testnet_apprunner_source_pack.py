@@ -253,8 +253,45 @@ def test_source_pack_uses_cached_connection_when_aws_lookup_fails(tmp_path: Path
 
     assert report["status"] == "green"
     assert checks["connection_arn"]["status"] == "green"
-    assert "cached AVAILABLE" in checks["connection_arn"]["detail"]
+    assert "cached App Runner" in checks["connection_arn"]["detail"]
     assert rendered["SourceConfiguration"]["AuthenticationConfiguration"]["ConnectionArn"].endswith("/cached")
+
+
+def test_source_pack_uses_rendered_connection_cache_when_inventory_is_fresh_but_unavailable(tmp_path: Path, monkeypatch) -> None:
+    module = _load_module()
+    args = _args(tmp_path)
+    args.aws_inventory.write_text(
+        json.dumps({"schema": "sota-base-testnet-aws-inventory/v1", "inventory": {"app_runner_connections": []}}) + "\n",
+        encoding="utf-8",
+    )
+    args.out_dir.mkdir(parents=True)
+    (args.out_dir / "base-sota-indexer-api-test.json").write_text(
+        json.dumps(
+            {
+                "ServiceName": "base-sota-indexer-api-test",
+                "SourceConfiguration": {
+                    "AuthenticationConfiguration": {
+                        "ConnectionArn": "arn:aws:apprunner:eu-central-1:924380800822:connection/bitsota/rendered"
+                    }
+                },
+            },
+            indent=2,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(module, "_run_aws", lambda *a, **k: (_ for _ in ()).throw(RuntimeError("SSO expired")))
+    monkeypatch.setattr(module, "_git_status", lambda path, timeout: "")
+    monkeypatch.setattr(module, "_git_remote_head", lambda remote_url, branch, timeout: "a" * 40)
+
+    report = module.build_pack(args)
+    rendered = json.loads((args.out_dir / "base-sota-indexer-api-test.json").read_text(encoding="utf-8"))
+    checks = {check["name"]: check for check in report["checks"]}
+
+    assert report["status"] == "green"
+    assert checks["connection_arn"]["status"] == "green"
+    assert "rendered source input" in checks["connection_arn"]["detail"]
+    assert rendered["SourceConfiguration"]["AuthenticationConfiguration"]["ConnectionArn"].endswith("/rendered")
 
 
 def test_source_pack_reports_missing_cached_connection_after_aws_failure(tmp_path: Path, monkeypatch) -> None:
