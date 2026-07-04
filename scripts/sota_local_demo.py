@@ -293,6 +293,17 @@ def _write_json(path: Path, payload: dict[str, Any]) -> None:
     path.write_text(json.dumps(payload, indent=2, sort_keys=True, default=_json_default) + "\n", encoding="utf-8")
 
 
+def _write_secret_json(path: Path, payload: dict[str, Any]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    fd = os.open(str(path), os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    with os.fdopen(fd, "w", encoding="utf-8") as handle:
+        handle.write(json.dumps(payload, indent=2, sort_keys=True, default=_json_default) + "\n")
+    try:
+        path.chmod(0o600)
+    except OSError:
+        pass
+
+
 def _request_json(
     method: str,
     url: str,
@@ -880,6 +891,204 @@ def seed_autoresearch_and_emission(state: dict[str, Any]) -> dict[str, Any]:
     return state
 
 
+def _load_or_create_reward_key(path: Path) -> dict[str, Any]:
+    if path.exists():
+        payload = _load_json(path)
+        private_key = str(
+            payload.get("private_key")
+            or payload.get("reward_private_key")
+            or payload.get("SOTA_TEST_WALLET_PRIVATE_KEY")
+            or ""
+        ).strip()
+        if not private_key:
+            raise RuntimeError(f"{path} does not contain a private_key field")
+        if not private_key.startswith("0x"):
+            private_key = "0x" + private_key
+        account = Account.from_key(private_key)
+        return {
+            "schema": str(payload.get("schema") or "sota-base-test-wallet-key/v1"),
+            "address": account.address,
+            "private_key": private_key,
+            "path": str(path),
+            "created": False,
+        }
+    account = Account.create(os.urandom(32))
+    payload = {
+        "schema": "sota-base-test-wallet-key/v1",
+        "address": account.address,
+        "private_key": account.key.hex(),
+        "network": "base-sepolia",
+        "purpose": "fresh first-time Base SOTA testnet claim wallet",
+        "warning": "testnet only; do not fund with mainnet assets",
+    }
+    _write_secret_json(path, payload)
+    return {**payload, "path": str(path), "created": True}
+
+
+def _local_seed_task(state: dict[str, Any]) -> dict[str, Any]:
+    task = dict(dict(state.get("autoresearch") or {}).get("task") or {})
+    if task.get("id"):
+        return task
+    tasks = _request_json("GET", "http://127.0.0.1:8000/api/v1/tasks")
+    for row in tasks if isinstance(tasks, list) else []:
+        if str(dict(row).get("slug") or "") == "sota-local-binary-frontier":
+            return dict(row)
+    raise RuntimeError("local autoresearch seed task is missing; start the local SOTA Base stack first")
+
+
+def _next_sota_emission_epoch(subnet_id: str) -> int:
+    roots = _request_json("GET", f"http://127.0.0.1:8000/api/v1/sota/emission-roots?subnet_id={subnet_id}")
+    max_epoch = 0
+    for row in roots if isinstance(roots, list) else []:
+        try:
+            max_epoch = max(max_epoch, int(dict(row).get("epoch") or 0))
+        except Exception:
+            continue
+    return max_epoch + 1
+
+
+def _next_mock_metric_value(task_id: str) -> float:
+    try:
+        best = _request_json("GET", f"http://127.0.0.1:8000/api/v1/tasks/{task_id}/best")
+    except Exception:
+        return 0.82
+    try:
+        incumbent = float(dict(best or {}).get("metric_value"))
+    except Exception:
+        return 0.82
+    direction = str(dict(best or {}).get("metric_direction") or "minimize")
+    if direction == "maximize":
+        return round(incumbent + 0.01, 6)
+    return round(max(0.000001, incumbent - 0.01), 6)
+
+
+def seed_testnet_emission_evidence(
+    *,
+    reward_key_file: Path,
+    evidence_out: Path,
+    epoch: int | None = None,
+    metric_value: float | None = None,
+    require_single_claim: bool = False,
+) -> dict[str, Any]:
+    _wait_http("http://127.0.0.1:8000/readyz", timeout_seconds=15)
+    state = _load_json(STATE_PATH)
+    if not state:
+        raise RuntimeError("local SOTA Base state is missing; start the local stack first")
+    reward_key = _load_or_create_reward_key(reward_key_file)
+    reward_address = Account.from_key(str(reward_key["private_key"])).address
+    alice = Keypair.create_from_uri("//Alice")
+    validators = _demo_validator_keypairs()
+    task = _local_seed_task(state)
+    task_id = str(task["id"])
+    observed_metric = float(_next_mock_metric_value(task_id) if metric_value is None else metric_value)
+    claim_body = {
+        "claim_description": (
+            "local SOTA binary frontier mining claim for fresh Base Sepolia test reward wallet "
+            f"{reward_address}"
+        )
+    }
+    claim_path = f"/api/v1/tasks/{task_id}/claim"
+    claim = _request_json(
+        "POST",
+        f"http://127.0.0.1:8000{claim_path}",
+        claim_body,
+        headers=_signed_headers(alice, "POST", claim_path, claim_body),
+    )
+    submission_body = {
+        "claim_id": claim["id"],
+        "base_ref": "HEAD",
+        "patch": (
+            "diff --git a/train.py b/train.py\n"
+            "--- a/train.py\n"
+            "+++ b/train.py\n"
+            "@@\n"
+            "-score = 0.90\n"
+            f"+score = {observed_metric:.6f}\n"
+        ),
+        "summary": "Lower local heldout PPL with a deterministic fresh-wallet Base Sepolia proof path.",
+        "claimed_metrics": {"heldout_ppl": observed_metric},
+    }
+    _attach_evm_authorization(
+        submission_body,
+        claim_id=claim["id"],
+        task_id=task_id,
+        miner_private_key=ANVIL_PRIVATE_KEYS["miner"],
+        reward_private_key=str(reward_key["private_key"]),
+    )
+    submission = _request_json(
+        "POST",
+        "http://127.0.0.1:8000/api/v1/submissions",
+        submission_body,
+        headers=_signed_headers(alice, "POST", "/api/v1/submissions", submission_body),
+    )
+    evaluations = []
+    evaluation_path = f"/api/v1/submissions/{submission['id']}/peer-evaluate"
+    for name, validator in validators:
+        body = {
+            "status": "accepted",
+            "observed_metrics": {"heldout_ppl": observed_metric},
+            "notes": f"{name} accepts deterministic fresh-wallet frontier improvement for Base Sepolia test evidence",
+        }
+        evaluations.append(
+            _request_json(
+                "POST",
+                f"http://127.0.0.1:8000{evaluation_path}",
+                body,
+                headers=_signed_headers(validator, "POST", evaluation_path, body),
+            )
+        )
+    consensus = _request_json(
+        "GET",
+        f"http://127.0.0.1:8000/api/v1/submissions/{submission['id']}/peer-consensus",
+    )
+    if int(consensus.get("committee_count") or 0) < DEMO_SELF_VALIDATION_COMMITTEE_SIZE:
+        raise RuntimeError(f"fresh-wallet self-validation committee too small: {consensus}")
+    if int(consensus.get("accepted_count") or 0) < DEMO_SELF_VALIDATION_COMMITTEE_SIZE:
+        raise RuntimeError(f"fresh-wallet self-validation did not fully accept: {consensus}")
+    root_epoch = int(epoch or _next_sota_emission_epoch(LANE_ID))
+    root = _request_json(
+        "POST",
+        f"http://127.0.0.1:8000/api/v1/sota/subnets/{LANE_ID}/epochs/{root_epoch}/root",
+        {"include_proofs": True},
+        headers={"X-Admin-Token": ADMIN_TOKEN},
+    )
+    evidence = _request_json("GET", f"http://127.0.0.1:8000/api/v1/sota/subnets/{LANE_ID}/epochs/{root_epoch}/evidence")
+    claims = list(dict(evidence.get("bundle") or {}).get("claim_list") or [])
+    matching_claims = [
+        dict(claim_item)
+        for claim_item in claims
+        if str(dict(claim_item).get("reward_address") or "").lower() == reward_address.lower()
+    ]
+    if not matching_claims:
+        raise RuntimeError(f"fresh reward wallet {reward_address} is missing from epoch {root_epoch} evidence")
+    if require_single_claim and len(claims) != 1:
+        raise RuntimeError(
+            f"epoch {root_epoch} evidence contains {len(claims)} claims; reset the local stack or choose a clean lane before seeding a single tester wallet"
+        )
+    _write_json(evidence_out, evidence)
+    report = {
+        "schema": "sota-base-fresh-testnet-evidence/v1",
+        "reward_address": reward_address,
+        "reward_key_file": str(reward_key_file),
+        "reward_key_created": bool(reward_key.get("created")),
+        "evidence_path": str(evidence_out),
+        "epoch": root_epoch,
+        "lane_id": LANE_ID,
+        "metric_value": observed_metric,
+        "claim": claim,
+        "submission": submission,
+        "evaluations": evaluations,
+        "consensus": consensus,
+        "emission_root": root,
+        "matching_claim": matching_claims[0],
+        "claim_count": len(claims),
+    }
+    state["autoresearch_testnet_reward_seed"] = report
+    state["autoresearch_testnet_faucet_reward"] = report
+    _write_json(STATE_PATH, state)
+    return report
+
+
 def publish_emission_onchain_and_indexer(state: dict[str, Any]) -> dict[str, Any]:
     w3 = _wait_rpc()
     contracts = state["contracts"]
@@ -1387,6 +1596,40 @@ def main() -> int:
     ui_smoke = sub.add_parser("ui-smoke", help="verify the running claims UI, proxy APIs, and self-validation evidence")
     ui_smoke.add_argument("--skip-screenshot", action="store_true", help="skip optional Firefox screenshot")
     ui_smoke.add_argument("--report-out", type=Path, default=RUN_DIR / "ui-smoke" / "report.json")
+    testnet_evidence = sub.add_parser(
+        "seed-testnet-evidence",
+        help="create fresh self-validated emission evidence for a Base Sepolia test reward wallet",
+    )
+    testnet_evidence.add_argument(
+        "--reward-key-file",
+        type=Path,
+        default=TESTNET_RUN_DIR / "fresh-claim-wallet.json",
+        help="testnet wallet key JSON to create or reuse; the private key is not printed",
+    )
+    testnet_evidence.add_argument(
+        "--evidence-out",
+        type=Path,
+        default=TESTNET_RUN_DIR / "base-sota-testnet-emission-evidence-fresh.json",
+        help="where to write the accepted autoresearch evidence bundle",
+    )
+    testnet_evidence.add_argument(
+        "--epoch",
+        type=int,
+        default=0,
+        help="emission epoch to build; default picks the next local epoch",
+    )
+    testnet_evidence.add_argument(
+        "--metric-value",
+        type=float,
+        default=None,
+        help="override the mock heldout_ppl score; default improves on the current local best",
+    )
+    testnet_evidence.add_argument(
+        "--require-single-claim",
+        action="store_true",
+        help="fail if the generated epoch contains any other unclaimed accepted submissions",
+    )
+    testnet_evidence.add_argument("--json", action="store_true", help="print a non-secret JSON report")
     args = parser.parse_args()
     if args.command == "stop":
         stop_stack()
@@ -1406,6 +1649,23 @@ def main() -> int:
         if args.skip_screenshot:
             command.append("--skip-screenshot")
         return subprocess.call(command, cwd=DOCS_REPO)
+    if args.command == "seed-testnet-evidence":
+        report = seed_testnet_emission_evidence(
+            reward_key_file=args.reward_key_file,
+            evidence_out=args.evidence_out,
+            epoch=args.epoch or None,
+            metric_value=args.metric_value,
+            require_single_claim=args.require_single_claim,
+        )
+        if args.json:
+            safe_report = {key: value for key, value in report.items() if key != "reward_key_file"}
+            print(json.dumps(safe_report, indent=2, sort_keys=True, default=_json_default))
+        else:
+            _print("fresh Base Sepolia test evidence seeded")
+            _print(f"Reward address: {report['reward_address']}")
+            _print(f"Evidence: {report['evidence_path']}")
+            _print(f"Epoch: {report['epoch']}")
+        return 0
     if args.command == "launch":
         start_stack(
             website=True,

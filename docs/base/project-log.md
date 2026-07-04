@@ -31,7 +31,7 @@ Reader-visible status:
 | Bittensor migration explanation | Added. |
 | Support FAQ and triage wording | Drafted for Base Sepolia review. |
 | Base Sepolia seeded E2E evidence | Verified against deployed contracts and public services. |
-| Fresh Base Sepolia tester run | Requires operator-provided wallet access or a fresh seeded root cycle. |
+| Fresh Base Sepolia tester run | Public infrastructure is green for the current seeded wallet; final evidence waits on the human MetaMask claim hashes. |
 | Mainnet claim instructions | Not published yet. |
 
 Remaining launch gaps:
@@ -39,5 +39,5 @@ Remaining launch gaps:
 - Base mainnet deployment manifest;
 - multisig or timelock ownership transfer evidence;
 - production monitoring and rollback drill evidence;
-- fresh public test wallet seeding path;
+- fresh public test wallet claim transaction evidence for the current root cycle;
 - external audit and fuzz-expansion evidence.

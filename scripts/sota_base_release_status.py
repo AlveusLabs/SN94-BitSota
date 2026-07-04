@@ -100,6 +100,65 @@ def _gate_status(spec: GateSpec) -> dict[str, Any]:
     }
 
 
+def _normalize_address(value: Any) -> str:
+    return str(value or "").strip().lower()
+
+
+def _current_claim_seed(testnet_dir: Path) -> dict[str, Any]:
+    try:
+        report = _load_report(testnet_dir / "base-sota-testnet-seed-artifacts-finalized.json")
+    except Exception:
+        return {}
+    return dict(dict(report or {}).get("seeded_claims") or {})
+
+
+def _claim_tx_evidence_current_gate(testnet_dir: Path, gate: dict[str, Any]) -> dict[str, Any]:
+    if gate.get("name") != "claim_tx_evidence" or gate.get("status") != "green":
+        return gate
+    seed = _current_claim_seed(testnet_dir)
+    expected_wallet = _normalize_address(seed.get("test_wallet_address"))
+    expected_genesis = str(seed.get("genesis_total_units") or "").strip()
+    expected_emission = str(seed.get("emission_total_units") or "").strip()
+    try:
+        report = _load_report(Path(str(gate.get("path") or "")))
+    except Exception:
+        report = None
+    config = dict(dict(report or {}).get("config") or {})
+    transactions = dict(dict(report or {}).get("transactions") or {})
+    genesis = dict(transactions.get("genesis") or {})
+    emission = dict(transactions.get("emission") or {})
+    observed_wallets = {
+        _normalize_address(config.get("wallet_address")),
+        _normalize_address(genesis.get("from")),
+        _normalize_address(emission.get("from")),
+    }
+    observed_wallets.discard("")
+    reasons: list[str] = []
+    if expected_wallet and observed_wallets and observed_wallets != {expected_wallet}:
+        reasons.append(
+            "claim transaction evidence is for "
+            + ", ".join(sorted(observed_wallets))
+            + f", but current seeded wallet is {expected_wallet}"
+        )
+    if expected_genesis and str(genesis.get("claim_amount_raw") or "").strip() != expected_genesis:
+        reasons.append("genesis claim amount does not match the current seeded genesis artifact")
+    if expected_emission and str(emission.get("claim_amount_raw") or "").strip() != expected_emission:
+        reasons.append("emission claim amount does not match the current seeded emission artifact")
+    if not reasons:
+        return gate
+    updated = dict(gate)
+    updated.update(
+        {
+            "ok": False,
+            "status": "red",
+            "summary": {"green": 0, "yellow": 0, "red": 1},
+            "message": "; ".join(reasons),
+            "next_action": "Submit both claims from the current seeded Base Sepolia wallet, then rerun scripts/sota_base_claim_tx_evidence.py with the new tx hashes.",
+        }
+    )
+    return updated
+
+
 def _local_wallet_status(local_report: Path) -> dict[str, Any]:
     try:
         report = _load_report(local_report)
@@ -306,6 +365,11 @@ def run_status(args: argparse.Namespace) -> dict[str, Any]:
     )
     local_wallet = _local_wallet_status(args.local_report)
     local_remote_wallet = _local_remote_wallet_status(local_tailscale_preflight)
+    if not args.local_only:
+        gate_reports = [
+            _claim_tx_evidence_current_gate(args.testnet_artifacts_dir, gate)
+            for gate in gate_reports
+        ]
     local_wallet_gate = {
         "name": "local_wallet",
         "phase": "local",

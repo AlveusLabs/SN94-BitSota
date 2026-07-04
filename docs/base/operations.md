@@ -310,14 +310,37 @@ service so operators can publish only the Base SOTA service changes.
 The ECR/container pack is optional. Use it only if an existing App Runner ECR
 access role ARN is provided and `iam:PassRole` works for that role.
 
+## Base Sepolia Self-Validation Seed
+
+Before building claim artifacts for a fresh public tester, seed real
+self-validation evidence on the Base Sepolia autoresearch coordinator. This
+creates a test-only task, posts a signed miner submission with EVM reward
+delegation to the seeded reward wallet, records the three peer evaluations,
+builds the next SOTA emission root, and writes the evidence bundle used by the
+operator.
+
+```bash
+cd /home/mekaneeky/repos/SN94-BitSota-live-docs
+python3 scripts/sota_seed_testnet_autoresearch.py \
+  --reward-key-file /secure/artifacts/fresh-claim-wallet.json \
+  --evidence-out /secure/artifacts/base-sota-testnet-emission-evidence-fresh-public.json \
+  --report-out /secure/artifacts/base-sota-testnet-autoresearch-seed.json \
+  --require-single-claim
+```
+
+The script reads the autoresearch admin token from the approved AWS Secrets
+Manager handle unless `SOTA_AUTORESEARCH_ADMIN_TOKEN` is already set. It does
+not print the reward wallet private key and does not touch production
+Bittensor, Base mainnet, or production TAO.
+
 ## Base Sepolia Operator Run
 
 Use the operator command when you want the whole public testnet path attempted
 in order. It generates the service pack, source App Runner pack, funding
 report, blocker report, AWS inventory, deployment manifest/env from a compact
-deployment or fresh deploy, seed claim/root artifacts from real autoresearch evidence, root-publish
-requests/results, finalized claim artifacts, optional indexer import, browser
-smoke, and release status.
+deployment or fresh deploy, seed claim/root artifacts from real autoresearch
+evidence, root-publish requests/results, finalized claim artifacts, optional
+indexer import, browser smoke, and release status.
 
 Read-only/current-blocker run:
 
@@ -644,6 +667,11 @@ Sepolia RPC, and checks:
 - the SOTA token emitted a positive `Transfer` to the tester wallet;
 - the vault emitted `SOTAReleased` to the tester wallet;
 - the tester wallet has a positive SOTA balance after the claims.
+
+Release status also compares this report with the current finalized seed
+artifacts. If a fresh root cycle changes the seeded wallet or claim amounts,
+old claim transaction evidence is marked stale and the `claim_tx_evidence` gate
+returns red until the current wallet submits both claims.
 
 The verifier does not deploy contracts, sign messages, broadcast transactions,
 or touch production Bittensor. A green

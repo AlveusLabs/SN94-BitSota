@@ -126,10 +126,11 @@ Bittensor, Base Sepolia, or Base mainnet.
 </div>
 
 <div class="bitsota-callout">
-  <strong>Base Sepolia:</strong> seeded testnet evidence is green against real
-  deployed contracts and public service URLs. The seeded wallet has already
-  claimed the current roots; another first-time test needs an operator-provided
-  test wallet or a fresh seeded root cycle. This is not a Base mainnet launch.
+  <strong>Base Sepolia:</strong> public testnet infrastructure is green for a
+  fresh MetaMask claim tester against real deployed contracts and service URLs.
+  The current seeded wallet is claimable; full release evidence turns green
+  only after that wallet submits both testnet claim transactions. This is not a
+  Base mainnet launch.
 </div>
 
 ## Keep Reading

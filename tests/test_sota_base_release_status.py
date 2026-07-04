@@ -51,6 +51,48 @@ def _wallet_check(status: str = "green") -> dict:
     }
 
 
+def _write_seed_report(path: Path, *, wallet: str, genesis: str = "150", emission: str = "200") -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(
+        json.dumps(
+            {
+                "schema": "sota-base-testnet-seed-artifacts-finalized/v1",
+                "ok": True,
+                "status": "ready_to_import_claim_artifacts",
+                "seeded_claims": {
+                    "test_wallet_address": wallet,
+                    "genesis_total_units": genesis,
+                    "emission_total_units": emission,
+                },
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+
+def _write_claim_evidence(path: Path, *, wallet: str, genesis: str = "150", emission: str = "200") -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(
+        json.dumps(
+            {
+                "schema": "sota-base-claim-tx-evidence/v1",
+                "ok": True,
+                "status": "green",
+                "summary": {"green": 28, "yellow": 0, "red": 0},
+                "message": "Claim transaction evidence verifies both genesis and emission SOTA claims.",
+                "config": {"wallet_address": wallet},
+                "transactions": {
+                    "genesis": {"from": wallet, "claim_amount_raw": genesis},
+                    "emission": {"from": wallet, "claim_amount_raw": emission},
+                },
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+
 def _args(tmp_path: Path, *, local_only: bool = False):
     return argparse.Namespace(
         local_report=tmp_path / "local" / "report.json",
@@ -213,6 +255,38 @@ def test_release_status_full_green_requires_operator_gate(tmp_path: Path) -> Non
         "testnet_browser_smoke",
         "claim_tx_evidence",
     ]
+
+
+def test_release_status_marks_stale_claim_tx_evidence_red(tmp_path: Path) -> None:
+    module = _load_module()
+    args = _args(tmp_path)
+    _write_report(args.local_report, schema="sota-local-claims-ui-smoke/v1", ok=True, checks=[_wallet_check()])
+    _write_report(args.local_claim_proof, schema="sota-local-claim-proof/v1", ok=True)
+    _write_report(args.testnet_artifacts_dir / "base-sota-testnet-operator-run.json", schema="sota-base-testnet-operator-run/v1", ok=True)
+    _write_report(args.testnet_artifacts_dir / "base-sota-testnet-blockers.json", schema="sota-base-testnet-blockers/v1", ok=True)
+    _write_report(args.testnet_artifacts_dir / "base-sota-testnet-aws-inventory.json", schema="sota-base-testnet-aws-inventory/v1", ok=True)
+    _write_report(args.testnet_artifacts_dir / "base-sota-testnet-funding.json", schema="sota-base-testnet-funding/v1", ok=True)
+    _write_report(args.testnet_artifacts_dir / "base-sota-testnet-secret-handles.json", schema="sota-base-testnet-secret-bootstrap/v1", ok=True)
+    _write_report(args.testnet_artifacts_dir / "base-sota-testnet-apprunner-source-pack.json", schema="sota-base-testnet-apprunner-source-pack/v1", ok=True)
+    _write_report(args.testnet_artifacts_dir / "base-sota-testnet-container-pack.json", schema="sota-base-testnet-container-pack/v1", ok=False, status="yellow")
+    _write_report(args.testnet_artifacts_dir / "base-sota-testnet-browser-smoke.json", schema="sota-base-testnet-browser-smoke/v1", ok=True)
+    _write_seed_report(
+        args.testnet_artifacts_dir / "base-sota-testnet-seed-artifacts-finalized.json",
+        wallet="0x2222222222222222222222222222222222222222",
+    )
+    _write_claim_evidence(
+        args.testnet_artifacts_dir / "base-sota-claim-tx-evidence.json",
+        wallet="0x1111111111111111111111111111111111111111",
+    )
+
+    report = module.run_status(args)
+    claim_gate = next(gate for gate in report["gates"] if gate["name"] == "claim_tx_evidence")
+
+    assert report["ok"] is False
+    assert report["testnet_ok"] is False
+    assert claim_gate["status"] == "red"
+    assert "current seeded wallet" in claim_gate["message"]
+    assert [gate["name"] for gate in report["blocked_gates"]] == ["claim_tx_evidence"]
 
 
 def test_release_status_rejects_schema_mismatch(tmp_path: Path) -> None:
