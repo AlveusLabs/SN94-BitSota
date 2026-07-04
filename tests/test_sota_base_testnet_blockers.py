@@ -42,6 +42,7 @@ def _args(tmp_path: Path, **overrides):
         "deployer_secret_id": "base-sota/test/base-sepolia/deployer",
         "root_publisher_secret_id": "base-sota/test/base-sepolia/root-publisher",
         "gas_address": [],
+        "fallback_report": [],
         "skip_gas": False,
     }
     values.update(overrides)
@@ -276,6 +277,48 @@ def test_blocker_report_marks_zero_gas_signers_and_wallet_red(tmp_path: Path, mo
     assert checks["gas_test_wallet"]["status"] == "red"
     assert "Fund 0x00000000000000000000000000000000000000aa" in checks["gas_deployer"]["remediation"]
     assert "Fund 0x00000000000000000000000000000000000000bb" in checks["gas_test_wallet"]["remediation"]
+
+
+def test_blocker_report_uses_cached_public_addresses_when_aws_tags_fail(tmp_path: Path, monkeypatch) -> None:
+    module = _load_module()
+    fallback_report = tmp_path / "funding.json"
+    fallback_report.write_text(
+        json.dumps(
+            {
+                "schema": "sota-base-testnet-funding/v1",
+                "funding_targets": [
+                    {
+                        "label": "deployer",
+                        "address": "0x00000000000000000000000000000000000000aa",
+                    },
+                    {
+                        "label": "root_publisher",
+                        "address": "0x00000000000000000000000000000000000000cc",
+                    },
+                ],
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    args = _args(tmp_path, skip_readiness_url=True, fallback_report=[fallback_report])
+    _write_artifacts(args)
+    monkeypatch.setattr(module, "_aws_identity_payload", lambda timeout, profile="": {"Account": "123456789012", "Arn": "arn:aws:iam::123456789012:user/test"})
+    monkeypatch.setattr(module, "_rpc_chain_id", lambda rpc_url, timeout: 84532)
+    monkeypatch.setattr(module, "_secret_tag", lambda secret_id, tag_key, profile="", timeout=0.1: (_ for _ in ()).throw(RuntimeError("SSO expired")))
+    monkeypatch.setattr(module, "_native_balance_wei", lambda rpc_url, address, timeout=0.1: 0)
+    monkeypatch.setattr(module, "_resolve_host", lambda host, timeout: ["192.0.2.10"])
+
+    report = module.run_blocker_report(args)
+    checks = {check["name"]: check for check in report["checks"]}
+
+    assert report["ok"] is False
+    assert checks["gas_deployer"]["status"] == "red"
+    assert "0x00000000000000000000000000000000000000aa" in checks["gas_deployer"]["detail"]
+    assert f"from cached public report {fallback_report}" in checks["gas_deployer"]["detail"]
+    assert "SSO expired" in checks["gas_deployer"]["detail"]
+    assert "Fund 0x00000000000000000000000000000000000000aa" in checks["gas_deployer"]["remediation"]
+    assert "0x00000000000000000000000000000000000000cc" in checks["gas_root_publisher"]["detail"]
 
 
 def test_blocker_json_without_report_out_only_prints(tmp_path: Path, monkeypatch, capsys) -> None:

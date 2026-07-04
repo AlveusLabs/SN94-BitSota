@@ -25,6 +25,8 @@ DEFAULT_AWS_PROFILE = "moonrocklab-frankfurt"
 DEFAULT_READINESS_URL = "https://claims-test.bitsota.com/base-sota-testnet-readiness.json"
 DEFAULT_DEPLOYER_SECRET_ID = "base-sota/test/base-sepolia/deployer"
 DEFAULT_ROOT_PUBLISHER_SECRET_ID = "base-sota/test/base-sepolia/root-publisher"
+DEFAULT_FUNDING_REPORT = DEFAULT_ARTIFACTS_DIR / "base-sota-testnet-funding.json"
+DEFAULT_BLOCKER_REPORT = DEFAULT_ARTIFACTS_DIR / "base-sota-testnet-blockers.json"
 DEFAULT_SERVICE_HOSTS = {
     "claims_ui": "claims-test.bitsota.com",
     "claims_api": "claims-api-test.bitsota.com",
@@ -33,6 +35,7 @@ DEFAULT_SERVICE_HOSTS = {
     "root_publisher": "root-publisher-test.bitsota.com",
 }
 EVM_ADDRESS_RE = re.compile(r"^0x[0-9a-fA-F]{40}$")
+EVM_ADDRESS_ANY_RE = re.compile(r"0x[0-9a-fA-F]{40}")
 
 
 @dataclass(frozen=True)
@@ -206,6 +209,45 @@ def _is_evm_address(value: str) -> bool:
     return bool(EVM_ADDRESS_RE.fullmatch(value))
 
 
+def _fallback_reports(args: argparse.Namespace) -> list[Path]:
+    configured = getattr(args, "fallback_report", None)
+    if configured is None:
+        return [DEFAULT_FUNDING_REPORT, DEFAULT_BLOCKER_REPORT]
+    return [Path(item) for item in configured]
+
+
+def _fallback_gas_targets(args: argparse.Namespace) -> dict[str, dict[str, str]]:
+    out: dict[str, dict[str, str]] = {}
+    for path in _fallback_reports(args):
+        if not path.exists():
+            continue
+        try:
+            payload = json.loads(path.read_text(encoding="utf-8"))
+        except Exception:
+            continue
+        if not isinstance(payload, dict):
+            continue
+        for target in payload.get("funding_targets") or []:
+            if not isinstance(target, dict):
+                continue
+            label = str(target.get("label") or "").strip()
+            address = str(target.get("address") or "").strip()
+            if label and _is_evm_address(address):
+                out.setdefault(label, {"address": address, "source": str(path)})
+        for check in payload.get("checks") or []:
+            if not isinstance(check, dict):
+                continue
+            name = str(check.get("name") or "")
+            if not name.startswith("gas_"):
+                continue
+            label = name.removeprefix("gas_")
+            text = f"{check.get('detail') or ''} {check.get('remediation') or ''}"
+            match = EVM_ADDRESS_ANY_RE.search(text)
+            if label and match:
+                out.setdefault(label, {"address": match.group(0), "source": str(path)})
+    return out
+
+
 def _gas_address_check(label: str, address: str, *, rpc_url: str, timeout: float) -> Check:
     if not address:
         return Check(
@@ -240,7 +282,38 @@ def _gas_address_check(label: str, address: str, *, rpc_url: str, timeout: float
     return Check(f"gas_{label}", "green", f"{label} {address} has {balance_wei / 10**18:.8f} ETH on Base Sepolia.")
 
 
-def _gas_secret_check(label: str, secret_id: str, *, rpc_url: str, profile: str, timeout: float) -> Check:
+def _cached_gas_check(
+    label: str,
+    secret_id: str,
+    reason: str,
+    *,
+    rpc_url: str,
+    timeout: float,
+    fallback_targets: dict[str, dict[str, str]],
+) -> Check | None:
+    fallback = fallback_targets.get(label)
+    if not fallback:
+        return None
+    address = str(fallback.get("address") or "")
+    source = str(fallback.get("source") or "cached public report")
+    check = _gas_address_check(label, address, rpc_url=rpc_url, timeout=timeout)
+    detail = (
+        f"{check.detail} (from cached public report {source}; "
+        f"could not read secret tag {secret_id!r}: {reason})."
+    )
+    return Check(check.name, check.status, detail, check.remediation)
+
+
+def _gas_secret_check(
+    label: str,
+    secret_id: str,
+    *,
+    rpc_url: str,
+    profile: str,
+    timeout: float,
+    fallback_targets: dict[str, dict[str, str]] | None = None,
+) -> Check:
+    fallback_targets = fallback_targets or {}
     if not secret_id:
         return Check(
             f"gas_{label}",
@@ -251,6 +324,16 @@ def _gas_secret_check(label: str, secret_id: str, *, rpc_url: str, profile: str,
     try:
         address = _secret_tag(secret_id, "sota-address", profile=profile, timeout=timeout)
     except FileNotFoundError:
+        cached = _cached_gas_check(
+            label,
+            secret_id,
+            "aws CLI is not installed or not on PATH",
+            rpc_url=rpc_url,
+            timeout=timeout,
+            fallback_targets=fallback_targets,
+        )
+        if cached:
+            return cached
         return Check(
             f"gas_{label}",
             "red",
@@ -258,6 +341,16 @@ def _gas_secret_check(label: str, secret_id: str, *, rpc_url: str, profile: str,
             "Install/configure AWS CLI before checking signer gas readiness.",
         )
     except Exception as exc:
+        cached = _cached_gas_check(
+            label,
+            secret_id,
+            str(exc),
+            rpc_url=rpc_url,
+            timeout=timeout,
+            fallback_targets=fallback_targets,
+        )
+        if cached:
+            return cached
         return Check(
             f"gas_{label}",
             "red",
@@ -265,6 +358,16 @@ def _gas_secret_check(label: str, secret_id: str, *, rpc_url: str, profile: str,
             "Add a public sota-address tag to the approved testnet secret handle or fix AWS access.",
         )
     if not address:
+        cached = _cached_gas_check(
+            label,
+            secret_id,
+            "missing sota-address tag",
+            rpc_url=rpc_url,
+            timeout=timeout,
+            fallback_targets=fallback_targets,
+        )
+        if cached:
+            return cached
         return Check(
             f"gas_{label}",
             "yellow",
@@ -561,6 +664,7 @@ def run_blocker_report(args: argparse.Namespace) -> dict[str, Any]:
     checks.append(_aws_identity_check(timeout=args.timeout, skip=args.skip_aws, profile=args.aws_profile))
     checks.append(_rpc_check(args.rpc_url, timeout=args.timeout))
     if not args.skip_gas:
+        fallback_targets = _fallback_gas_targets(args)
         for label, secret_id in (
             ("deployer", args.deployer_secret_id),
             ("root_publisher", args.root_publisher_secret_id),
@@ -572,6 +676,7 @@ def run_blocker_report(args: argparse.Namespace) -> dict[str, Any]:
                     rpc_url=args.rpc_url,
                     profile=args.aws_profile,
                     timeout=args.timeout,
+                    fallback_targets=fallback_targets,
                 )
             )
         for item in args.gas_address:
@@ -658,6 +763,13 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--deployer-secret-id", default=DEFAULT_DEPLOYER_SECRET_ID, help="Approved testnet deployer secret handle; only the public sota-address tag is read.")
     parser.add_argument("--root-publisher-secret-id", default=DEFAULT_ROOT_PUBLISHER_SECRET_ID, help="Approved testnet root-publisher secret handle; only the public sota-address tag is read.")
     parser.add_argument("--gas-address", action="append", default=[], help="Check a public Base Sepolia gas balance as label=0xAddress. Repeatable.")
+    parser.add_argument(
+        "--fallback-report",
+        action="append",
+        type=Path,
+        default=None,
+        help="Existing public funding/blocker report to reuse only for cached public addresses when AWS tags are unavailable. Repeatable.",
+    )
     parser.add_argument("--skip-gas", action="store_true", help="Skip signer/test-wallet gas balance checks.")
     parser.add_argument("--json", action="store_true", help="Print machine-readable JSON.")
     parser.add_argument("--report-out", type=Path)

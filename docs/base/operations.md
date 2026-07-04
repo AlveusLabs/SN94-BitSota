@@ -180,6 +180,10 @@ The default gas checks are:
 If any of these are red, fund the listed public address with Base Sepolia test
 ETH and rerun the blocker gate. Do not paste private keys into the blocker
 command; it only needs public addresses and approved secret-handle tags.
+If AWS SSO is temporarily expired, the blocker gate may reuse cached public
+addresses from prior funding or blocker reports so the gas checks still name
+the address to fund. The AWS identity check remains red until the approved
+profile is authenticated again.
 
 Override a host only when the public testnet URL plan changes:
 
