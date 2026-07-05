@@ -369,17 +369,27 @@ def _testnet_section(release: dict[str, Any], testnet_dir: Path = TESTNET_RUN_DI
     )
     claim_gate = next((dict(gate) for gate in testnet_gates if dict(gate).get("name") == CLAIM_TX_EVIDENCE_GATE), {})
     release_ready = bool(release.get("testnet_ok"))
+    gate_details = {
+        str(dict(gate).get("name") or ""): str(dict(gate).get("message") or "")
+        for gate in testnet_gates
+        if isinstance(gate, dict)
+    }
     blocked_gate_items = [
         {
             "name": dict(gate).get("name"),
             "status": dict(gate).get("status"),
+            "detail": str(dict(gate).get("message") or gate_details.get(str(dict(gate).get("name") or ""), "")),
             "next_action": dict(gate).get("next_action"),
         }
         for gate in blocked
         if dict(gate).get("phase") == "base_sepolia"
     ]
     blocker_summary = "; ".join(
-        f"{dict(gate).get('name')}: {dict(gate).get('next_action')}"
+        (
+            f"{dict(gate).get('name')}: {dict(gate).get('detail')}. Next: {dict(gate).get('next_action')}"
+            if dict(gate).get("detail")
+            else f"{dict(gate).get('name')}: {dict(gate).get('next_action')}"
+        )
         for gate in blocked_gate_items
         if dict(gate).get("name") or dict(gate).get("next_action")
     )
@@ -718,7 +728,10 @@ def render_markdown(handoff: dict[str, Any]) -> str:
             lines.append("")
             for gate in blocked:
                 gate = dict(gate)
-                lines.append(f"- {gate.get('name')}: {gate.get('next_action')}")
+                detail = f"{gate.get('name')}: {gate.get('detail')}" if gate.get("detail") else str(gate.get("name") or "")
+                if gate.get("next_action"):
+                    detail = detail.rstrip(".") + f". Next: {gate.get('next_action')}"
+                lines.append(f"- {detail}")
         immediate = testnet.get("immediate_blockers") or []
         if immediate:
             lines.append("")
@@ -993,7 +1006,11 @@ def render_html(handoff: dict[str, Any]) -> str:
                 f"{gate.get('name')}: {gate.get('status')} ({_summary_text(dict(gate.get('summary') or {}))})"
             )
         blocked_lines = [
-            f"{dict(gate).get('name')}: {dict(gate).get('next_action')}"
+            (
+                f"{dict(gate).get('name')}: {dict(gate).get('detail')}. Next: {dict(gate).get('next_action')}"
+                if dict(gate).get("detail")
+                else f"{dict(gate).get('name')}: {dict(gate).get('next_action')}"
+            )
             for gate in testnet.get("blocked_gates") or []
         ]
         immediate_lines = []

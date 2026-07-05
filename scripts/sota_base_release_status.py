@@ -186,8 +186,42 @@ def _snapshot_alpha_row_count(snapshot_dir: Path) -> int:
         return max(sum(1 for _ in handle) - 1, 0)
 
 
+def _snapshot_binding_evidence(testnet_dir: Path) -> dict[str, Any]:
+    claim_dir = testnet_dir / "snapshot-claims"
+    accepted_files: list[str] = []
+    invalid_files: list[str] = []
+    if claim_dir.exists():
+        for path in sorted(claim_dir.glob("api-binding-*.json")):
+            try:
+                payload = _load_report(path) or {}
+            except Exception:
+                invalid_files.append(str(path))
+                continue
+            if isinstance(payload.get("message"), dict) and str(payload.get("signature") or "").strip():
+                accepted_files.append(str(path))
+            else:
+                invalid_files.append(str(path))
+    pending_requests: list[str] = []
+    for path in sorted(testnet_dir.glob("*binding-request*.json")):
+        try:
+            payload = _load_report(path) or {}
+        except Exception:
+            continue
+        if str(payload.get("schema") or "") == "sota-snapshot-binding-message/v1" and not str(payload.get("signature") or "").strip():
+            pending_requests.append(str(path))
+    return {
+        "snapshot_claim_dir": str(claim_dir),
+        "accepted_signed_binding_count": len(accepted_files),
+        "accepted_signed_binding_files": accepted_files,
+        "invalid_binding_file_count": len(invalid_files),
+        "pending_unsigned_binding_request_count": len(pending_requests),
+        "pending_unsigned_binding_request_files": pending_requests,
+    }
+
+
 def _snapshot_genesis_gate(testnet_dir: Path, snapshot_dir: Path) -> dict[str, Any]:
     artifact_path = testnet_dir / "base-sota-testnet-genesis-claim-artifact.json"
+    binding_evidence = _snapshot_binding_evidence(testnet_dir)
     base = {
         "name": "testnet_snapshot_genesis",
         "phase": "base_sepolia",
@@ -212,6 +246,7 @@ def _snapshot_genesis_gate(testnet_dir: Path, snapshot_dir: Path) -> dict[str, A
             "status": "red",
             "summary": {"green": 0, "yellow": 0, "red": 1},
             "message": f"Could not read genesis claim artifact: {exc}",
+            "snapshot_binding_evidence": binding_evidence,
         }
     if artifact is None:
         return {
@@ -221,6 +256,7 @@ def _snapshot_genesis_gate(testnet_dir: Path, snapshot_dir: Path) -> dict[str, A
             "status": "red",
             "summary": {"green": 0, "yellow": 0, "red": 1},
             "message": "Genesis claim artifact is missing.",
+            "snapshot_binding_evidence": binding_evidence,
         }
     schema = str(artifact.get("schema") or "")
     snapshot = dict(artifact.get("snapshot") or {})
@@ -258,6 +294,11 @@ def _snapshot_genesis_gate(testnet_dir: Path, snapshot_dir: Path) -> dict[str, A
     ]
     if missing_credit_fields:
         reasons.append("allocations are missing TAO/alpha rao credit fields from the snapshot bridge")
+    if reasons and int(binding_evidence["accepted_signed_binding_count"]) <= 0:
+        suffix = ""
+        if int(binding_evidence["pending_unsigned_binding_request_count"]) > 0:
+            suffix = "; pending unsigned binding request exists, but it is not an accepted signed binding"
+        reasons.append(f"accepted signed snapshot binding count is 0{suffix}")
     try:
         allocation_total = sum(int(dict(row).get("amount_units") or dict(row).get("amount") or 0) for row in allocations)
         root_total = int(root.get("total_amount_units") or root.get("budget") or 0)
@@ -279,6 +320,7 @@ def _snapshot_genesis_gate(testnet_dir: Path, snapshot_dir: Path) -> dict[str, A
                 "block_hash": block.get("hash"),
                 "alpha_rows": alpha_rows,
             },
+            "snapshot_binding_evidence": binding_evidence,
         }
     return {
         **base,
@@ -297,6 +339,7 @@ def _snapshot_genesis_gate(testnet_dir: Path, snapshot_dir: Path) -> dict[str, A
             "block_hash": block["hash"],
             "alpha_rows": alpha_rows,
         },
+        "snapshot_binding_evidence": binding_evidence,
     }
 
 
@@ -772,6 +815,7 @@ def run_status(args: argparse.Namespace) -> dict[str, Any]:
                 "phase": gate["phase"],
                 "status": gate["status"],
                 "path": gate["path"],
+                "message": gate.get("message") or "",
                 "next_action": gate["next_action"],
             }
             for gate in blocked

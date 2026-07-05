@@ -202,6 +202,22 @@ def _write_snapshot_genesis_artifact(path: Path) -> None:
     )
 
 
+def _write_pending_binding_request(path: Path) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(
+        json.dumps(
+            {
+                "schema": "sota-snapshot-binding-message/v1",
+                "status": "message_ready",
+                "message": {"coldkey": "5Alice", "reward_address": "0x1111111111111111111111111111111111111111"},
+                "signing_payload": "{}",
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+
 def _args(tmp_path: Path, *, local_only: bool = False):
     return argparse.Namespace(
         local_report=tmp_path / "local" / "report.json",
@@ -531,6 +547,7 @@ def test_release_status_rejects_seeded_genesis_without_snapshot_alpha(tmp_path: 
     path = args.testnet_artifacts_dir / "base-sota-testnet-genesis-claim-artifact.json"
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(seeded) + "\n", encoding="utf-8")
+    _write_pending_binding_request(args.testnet_artifacts_dir / "snapshot-holder-binding-request.json")
 
     report = module.run_status(args)
     gate = next(gate for gate in report["gates"] if gate["name"] == "testnet_snapshot_genesis")
@@ -539,6 +556,10 @@ def test_release_status_rejects_seeded_genesis_without_snapshot_alpha(tmp_path: 
     assert gate["status"] == "red"
     assert "snapshot metadata is missing" in gate["message"]
     assert "TAO/alpha rao credit fields" in gate["message"]
+    assert "accepted signed snapshot binding count is 0" in gate["message"]
+    assert "pending unsigned binding request exists" in gate["message"]
+    assert gate["snapshot_binding_evidence"]["accepted_signed_binding_count"] == 0
+    assert gate["snapshot_binding_evidence"]["pending_unsigned_binding_request_count"] == 1
 
 
 def test_release_status_rejects_schema_mismatch(tmp_path: Path) -> None:
