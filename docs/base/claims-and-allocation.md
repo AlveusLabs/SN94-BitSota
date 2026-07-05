@@ -73,6 +73,12 @@ and alpha-derived credit before storing the accepted binding for the next
 genesis root. The website exposes the same flow from the Genesis tab with the
 `Binding payload` and `Submit binding` buttons.
 
+In the browser, a claimant can use the `Sign with extension` button after
+creating the binding payload. The page asks an injected Polkadot-compatible
+extension to sign the exact payload with the entered snapshot coldkey. It never
+asks for a seed phrase or private key. If the extension does not expose the
+coldkey, the claimant can still copy the payload and paste a signature manually.
+
 For a claimant with a local Bittensor wallet, the helper command signs and
 submits the binding without exposing the coldkey seed phrase:
 
