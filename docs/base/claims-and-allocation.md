@@ -125,7 +125,9 @@ python3 scripts/sota_base_testnet_operator.py \
 ```
 
 If claimants submitted signed bindings through the claims API, the operator can
-export the accepted bindings instead of passing local files:
+export the accepted bindings instead of passing local files. Load the claims
+API admin token into `SOTA_BASE_INDEXER_ADMIN_TOKEN`; the operator also accepts
+the older `SOTA_INDEXER_ADMIN_TOKEN` name for local scripts.
 
 ```bash
 python3 scripts/sota_base_testnet_operator.py \

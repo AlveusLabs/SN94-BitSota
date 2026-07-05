@@ -841,9 +841,29 @@ def _claims_api_url(args: argparse.Namespace, paths: dict[str, Path]) -> str:
     return args.claims_api_url or env.get("SOTA_CLAIMS_API_URL") or env.get("NEXT_PUBLIC_SOTA_CLAIMS_API_URL") or DEFAULT_URLS["claims_api"]
 
 
+def _admin_token(token_env: str) -> str:
+    names = [token_env, "SOTA_BASE_INDEXER_ADMIN_TOKEN", "SOTA_INDEXER_ADMIN_TOKEN"]
+    for name in dict.fromkeys(item for item in names if item):
+        raw = os.environ.get(name, "").strip()
+        if not raw:
+            continue
+        if raw.startswith("{"):
+            try:
+                payload = json.loads(raw)
+            except json.JSONDecodeError:
+                return raw
+            if isinstance(payload, dict):
+                for key in (name, "admin_token", "token", "SOTA_BASE_INDEXER_ADMIN_TOKEN", "SOTA_INDEXER_ADMIN_TOKEN"):
+                    value = str(payload.get(key) or "").strip()
+                    if value:
+                        return value
+        return raw
+    return ""
+
+
 def _post_json(url: str, payload: dict[str, Any], *, token_env: str, timeout: float) -> dict[str, Any]:
     headers = {"Content-Type": "application/json", "Accept": "application/json"}
-    token = os.environ.get(token_env, "").strip()
+    token = _admin_token(token_env)
     if token:
         headers["Authorization"] = f"Bearer {token}"
     request = Request(
@@ -860,7 +880,7 @@ def _post_json(url: str, payload: dict[str, Any], *, token_env: str, timeout: fl
 
 def _get_json(url: str, *, token_env: str, timeout: float) -> dict[str, Any]:
     headers = {"Accept": "application/json"}
-    token = os.environ.get(token_env, "").strip()
+    token = _admin_token(token_env)
     if token:
         headers["Authorization"] = f"Bearer {token}"
     request = Request(url, headers=headers, method="GET")
@@ -1624,7 +1644,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--root-publisher-private-key-secret-id", default=os.environ.get("SOTA_ROOT_PUBLISHER_PRIVATE_KEY_SECRET_ID", DEFAULT_ROOT_PUBLISHER_SECRET_ID))
     parser.add_argument("--root-publisher-private-key-secret-json-key", default=os.environ.get("SOTA_ROOT_PUBLISHER_PRIVATE_KEY_SECRET_JSON_KEY", ""))
     parser.add_argument("--import-artifacts", action="store_true", help="POST finalized claim artifacts into the configured claims API")
-    parser.add_argument("--indexer-admin-token-env", default="SOTA_INDEXER_ADMIN_TOKEN")
+    parser.add_argument("--indexer-admin-token-env", default="SOTA_BASE_INDEXER_ADMIN_TOKEN")
     parser.add_argument("--skip-browser-smoke", action="store_true")
     parser.add_argument("--timeout", type=float, default=10.0)
     parser.add_argument("--command-timeout", type=float, default=300.0)

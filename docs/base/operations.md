@@ -152,6 +152,9 @@ Publish Base Sepolia instructions only after each gate has evidence:
 Pass signed coldkey bindings into the operator with
 `--snapshot-claim-binding`, or export accepted signed bindings from the claims
 API with `--snapshot-claim-bindings-url "$SOTA_CLAIMS_API_URL/api/v1/base/genesis/bindings"`.
+For API export, load the claims API admin token as
+`SOTA_BASE_INDEXER_ADMIN_TOKEN`; the operator keeps a fallback for the older
+`SOTA_INDEXER_ADMIN_TOKEN` local-script name.
 If Base Sepolia is still using the old seeded demo genesis artifact,
 `sota_base_release_status.py` marks
 `testnet_snapshot_genesis` red. Ongoing emissions still come from accepted

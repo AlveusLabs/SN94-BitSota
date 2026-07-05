@@ -93,6 +93,25 @@ def _has_cmd(cmd: list[str], name: str) -> bool:
     return any(name in item for item in cmd)
 
 
+def test_admin_token_prefers_base_env_and_json_payload(monkeypatch) -> None:
+    module = _load_module()
+    monkeypatch.delenv("SOTA_INDEXER_ADMIN_TOKEN", raising=False)
+    monkeypatch.setenv("SOTA_BASE_INDEXER_ADMIN_TOKEN", "base-token")
+
+    assert module._admin_token("SOTA_INDEXER_ADMIN_TOKEN") == "base-token"
+
+    monkeypatch.setenv("SOTA_BASE_INDEXER_ADMIN_TOKEN", '{"admin_token":"json-token"}')
+    assert module._admin_token("SOTA_INDEXER_ADMIN_TOKEN") == "json-token"
+
+
+def test_admin_token_explicit_env_wins(monkeypatch) -> None:
+    module = _load_module()
+    monkeypatch.setenv("SOTA_INDEXER_ADMIN_TOKEN", "legacy-token")
+    monkeypatch.setenv("SOTA_BASE_INDEXER_ADMIN_TOKEN", "base-token")
+
+    assert module._admin_token("SOTA_INDEXER_ADMIN_TOKEN") == "legacy-token"
+
+
 def _write_local_state(path: Path) -> None:
     path.write_text(
         json.dumps(
