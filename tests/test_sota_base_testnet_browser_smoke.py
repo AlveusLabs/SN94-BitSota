@@ -88,8 +88,18 @@ def _write_artifacts(args: argparse.Namespace, *, readiness_ok: bool = True, env
 
 
 def _install_green_http(module, monkeypatch) -> None:
-    page_text = " ".join(module.EXPECTED_TESTNET_CLAIMS_TEXT)
-    monkeypatch.setattr(module, "_http_text", lambda url, timeout: page_text)
+    page_text = (
+        " ".join(module.EXPECTED_TESTNET_CLAIMS_TEXT)
+        + '<script src="/_next/static/chunks/claims.js"></script>'
+    )
+    binding_asset_text = " ".join(module.EXPECTED_BINDING_FRONTEND_TEXT)
+
+    def fake_text(url: str, timeout: float):
+        if url.endswith("/_next/static/chunks/claims.js"):
+            return binding_asset_text
+        return page_text
+
+    monkeypatch.setattr(module, "_http_text", fake_text)
 
     def fake_json(method: str, url: str, *, payload=None, timeout: float):
         if url.endswith("/health"):
@@ -177,6 +187,7 @@ def test_browser_smoke_green_for_public_testnet_fixture(tmp_path: Path, monkeypa
     assert report["summary"]["red"] == 0
     names = {check["name"]: check for check in report["checks"]}
     assert names["claims_page_text"]["status"] == "green"
+    assert names["claims_binding_frontend"]["status"] == "green"
     assert names["genesis_binding_message"]["status"] == "green"
     assert names["genesis_binding_submit_route"]["status"] == "green"
     assert names["genesis_calldata"]["status"] == "green"

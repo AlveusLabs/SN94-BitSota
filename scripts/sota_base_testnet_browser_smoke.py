@@ -30,11 +30,16 @@ EXPECTED_TESTNET_CLAIMS_TEXT = (
     "Testnet readiness",
     "Claim sources",
     "Binding payload",
-    "Sign with extension",
     "TAO credit",
     "Alpha synthetic credit",
     "Total SOTA",
     "Unclaimed SOTA",
+)
+EXPECTED_BINDING_FRONTEND_TEXT = (
+    "Payload to sign with snapshot coldkey",
+    "Coldkey signature",
+    "Sign with extension",
+    "Submit binding",
 )
 
 
@@ -339,6 +344,35 @@ def _claims_page_check(claims_url: str, *, timeout: float) -> Check:
         "Claims UI exposes Base Sepolia wallet, readiness, source, and credit text.",
         f"Claims UI is missing: {', '.join(missing)}",
         remediation=f"Claims UI is missing: {', '.join(missing)}",
+    )
+
+
+def _claims_binding_frontend_check(claims_url: str, *, timeout: float) -> Check:
+    if not claims_url:
+        return Check("claims_binding_frontend", "red", "Claims UI URL is missing.", "Set claims UI URL before browser smoke.")
+    try:
+        html = _http_text(claims_url, timeout=timeout)
+    except Exception as exc:
+        return Check("claims_binding_frontend", "red", f"{claims_url} failed: {exc}", "Deploy the claims UI and make it public.")
+    scripts = sorted(set(re.findall(r"<script[^>]+src=[\"']([^\"']+)[\"']", html)))
+    asset_text = _visible_text(html)
+    errors: list[str] = []
+    for src in scripts[:25]:
+        try:
+            asset_text += "\n" + _http_text(urljoin(claims_url, src), timeout=timeout)
+        except Exception as exc:
+            errors.append(f"{src}: {exc}")
+    missing = [text for text in EXPECTED_BINDING_FRONTEND_TEXT if text not in asset_text]
+    return _result_check(
+        "claims_binding_frontend",
+        not missing,
+        "Claims UI browser assets include coldkey extension signing and signed-binding submit controls.",
+        f"Claims UI browser assets are missing: {', '.join(missing)}",
+        remediation=(
+            f"Deploy the claims UI build with coldkey binding controls. Asset fetch errors: {'; '.join(errors[:3])}"
+            if errors
+            else f"Deploy the claims UI build with coldkey binding controls: {', '.join(missing)}"
+        ),
     )
 
 
@@ -662,6 +696,7 @@ def run_browser_smoke(args: argparse.Namespace) -> dict[str, Any]:
     checks.extend(_config_checks(values))
     checks.append(_readiness_check(args, values["readiness_url"]))
     checks.append(_claims_page_check(values["claims_url"], timeout=args.timeout))
+    checks.append(_claims_binding_frontend_check(values["claims_url"], timeout=args.timeout))
     checks.extend(_claims_api_checks(values, timeout=args.timeout))
     checks.extend(_binding_route_checks(values, timeout=args.timeout))
     checks.extend(_claim_lookup_checks(values, timeout=args.timeout))
