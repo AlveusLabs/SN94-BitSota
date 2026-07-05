@@ -381,7 +381,7 @@ def _snapshot_genesis_gate(testnet_dir: Path, snapshot_dir: Path, args: argparse
             suffix += f"; public claims API accepted binding count is {int(public_count or 0)}"
         elif public_export.get("status") == "red":
             suffix += "; public claims API binding count could not be read"
-        reasons.append(f"accepted signed snapshot binding count is 0{suffix}")
+        reasons.insert(0, f"accepted signed snapshot binding count is 0{suffix}")
     try:
         allocation_total = sum(int(dict(row).get("amount_units") or dict(row).get("amount") or 0) for row in allocations)
         root_total = int(root.get("total_amount_units") or root.get("budget") or 0)

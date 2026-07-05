@@ -585,6 +585,7 @@ def test_release_status_rejects_seeded_genesis_without_snapshot_alpha(tmp_path: 
 
     assert report["ok"] is False
     assert gate["status"] == "red"
+    assert gate["message"].startswith("accepted signed snapshot binding count is 0")
     assert "snapshot metadata is missing" in gate["message"]
     assert "TAO/alpha rao credit fields" in gate["message"]
     assert "accepted signed snapshot binding count is 0" in gate["message"]
