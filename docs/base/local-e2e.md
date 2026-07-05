@@ -169,7 +169,7 @@ You know the demo is working when you can do these steps:
 8. Confirm the mining and self-validation card shows `3/3 accepted` peer
    consensus from the seeded local validators.
 9. Submit the emission claim created by the seeded miner and self-validation flow.
-10. Confirm the local SOTA balance reaches `3.5 SOTA`.
+10. Confirm the local SOTA balance reaches `7201.5 SOTA`.
 11. Open the autoresearch dashboard and see the seeded task, submission, and
    self-validation evidence.
 

@@ -11,7 +11,7 @@
 <div class="bitsota-quick-facts">
   <div class="bitsota-fact"><strong>You need</strong><span>A browser with MetaMask and the printed local-only test key.</span></div>
   <div class="bitsota-fact"><strong>You do not need</strong><span>TAO, a real Bittensor wallet, Base ETH, or a seed phrase.</span></div>
-  <div class="bitsota-fact"><strong>You will claim</strong><span>1.5 local SOTA from genesis accounting, then 2 local SOTA from mining.</span></div>
+  <div class="bitsota-fact"><strong>You will claim</strong><span>1.5 local SOTA from genesis accounting, then 7200 local SOTA from mining.</span></div>
   <div class="bitsota-fact"><strong>You will verify</strong><span>The mined reward shows 3/3 accepted peer-validation evidence.</span></div>
 </div>
 
