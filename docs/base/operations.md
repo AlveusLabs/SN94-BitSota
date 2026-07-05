@@ -87,6 +87,7 @@ local demo and Base Sepolia readiness:
 ```bash
 cd /home/mekaneeky/repos/SN94-BitSota-live-docs
 python3 scripts/sota_base_release_status.py \
+  --snapshot-claim-bindings-url "$SOTA_CLAIMS_API_URL/api/v1/base/genesis/bindings" \
   --report-out /home/mekaneeky/repos/.sota-base-testnet/base-sota-release-status.json \
   --allow-blocked
 ```
@@ -98,6 +99,12 @@ transaction evidence report. It does not deploy contracts, sign messages,
 broadcast transactions, or touch production Bittensor. Green means the
 required gates are green. Red means at least one required gate still blocks
 nontechnical testing.
+
+If `--snapshot-claim-bindings-url` is supplied and
+`SOTA_BASE_INDEXER_ADMIN_TOKEN` is set, the report also records the public
+claims API's accepted signed snapshot binding count. The report stores only the
+count, URL, token environment variable name, and whether an auth header was
+used; it must not store the token value.
 
 For a local-only check, run the local claim proof and swarm smoke first:
 
@@ -157,8 +164,9 @@ For API export, load the claims API admin token as
 `SOTA_INDEXER_ADMIN_TOKEN` local-script name.
 If Base Sepolia is still using the old seeded demo genesis artifact,
 `sota_base_release_status.py` marks
-`testnet_snapshot_genesis` red. Ongoing emissions still come from accepted
-self-validation evidence.
+`testnet_snapshot_genesis` red and reports the accepted signed binding count
+from local exported files and, when configured, the public claims API. Ongoing
+emissions still come from accepted self-validation evidence.
 
 ## Base Sepolia Blocker Gate
 

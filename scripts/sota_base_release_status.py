@@ -5,8 +5,10 @@ import argparse
 from dataclasses import dataclass
 from datetime import datetime, timezone
 import json
+import os
 from pathlib import Path
 from typing import Any
+from urllib.request import Request, urlopen
 
 
 REPOS = Path("/home/mekaneeky/repos")
@@ -186,7 +188,64 @@ def _snapshot_alpha_row_count(snapshot_dir: Path) -> int:
         return max(sum(1 for _ in handle) - 1, 0)
 
 
-def _snapshot_binding_evidence(testnet_dir: Path) -> dict[str, Any]:
+def _token_from_env(name: str) -> str:
+    raw = os.environ.get(name, "").strip()
+    if not raw:
+        return ""
+    try:
+        parsed = json.loads(raw)
+    except json.JSONDecodeError:
+        return raw
+    if isinstance(parsed, dict):
+        for key in (name, "admin_token", "token", "SOTA_BASE_INDEXER_ADMIN_TOKEN", "SOTA_INDEXER_ADMIN_TOKEN"):
+            value = str(parsed.get(key) or "").strip()
+            if value:
+                return value
+    return raw
+
+
+def _public_binding_export_evidence(url: str, *, token_env: str, timeout: float) -> dict[str, Any]:
+    url = str(url or "").strip()
+    if not url:
+        return {"status": "not_configured"}
+    headers = {"Accept": "application/json"}
+    token = _token_from_env(token_env)
+    if token:
+        headers["Authorization"] = f"Bearer {token}"
+    try:
+        request = Request(url, headers=headers, method="GET")
+        with urlopen(request, timeout=timeout) as response:
+            body = response.read().decode("utf-8", errors="replace")
+        payload = json.loads(body) if body.strip() else {}
+        bindings = payload.get("bindings")
+        count = payload.get("count")
+        if isinstance(bindings, list):
+            count = len(bindings)
+        return {
+            "status": "green",
+            "url": url,
+            "schema": str(payload.get("schema") or ""),
+            "accepted_signed_binding_count": int(count or 0),
+            "token_env": token_env,
+            "used_auth_header": bool(token),
+        }
+    except Exception as exc:
+        return {
+            "status": "red",
+            "url": url,
+            "error": str(exc),
+            "token_env": token_env,
+            "used_auth_header": bool(token),
+        }
+
+
+def _snapshot_binding_evidence(
+    testnet_dir: Path,
+    *,
+    snapshot_claim_bindings_url: str = "",
+    indexer_admin_token_env: str = "SOTA_BASE_INDEXER_ADMIN_TOKEN",
+    timeout: float = 10.0,
+) -> dict[str, Any]:
     claim_dir = testnet_dir / "snapshot-claims"
     accepted_files: list[str] = []
     invalid_files: list[str] = []
@@ -216,12 +275,22 @@ def _snapshot_binding_evidence(testnet_dir: Path) -> dict[str, Any]:
         "invalid_binding_file_count": len(invalid_files),
         "pending_unsigned_binding_request_count": len(pending_requests),
         "pending_unsigned_binding_request_files": pending_requests,
+        "public_binding_export": _public_binding_export_evidence(
+            snapshot_claim_bindings_url,
+            token_env=indexer_admin_token_env,
+            timeout=timeout,
+        ),
     }
 
 
-def _snapshot_genesis_gate(testnet_dir: Path, snapshot_dir: Path) -> dict[str, Any]:
+def _snapshot_genesis_gate(testnet_dir: Path, snapshot_dir: Path, args: argparse.Namespace | None = None) -> dict[str, Any]:
     artifact_path = testnet_dir / "base-sota-testnet-genesis-claim-artifact.json"
-    binding_evidence = _snapshot_binding_evidence(testnet_dir)
+    binding_evidence = _snapshot_binding_evidence(
+        testnet_dir,
+        snapshot_claim_bindings_url=str(getattr(args, "snapshot_claim_bindings_url", "") or ""),
+        indexer_admin_token_env=str(getattr(args, "indexer_admin_token_env", "SOTA_BASE_INDEXER_ADMIN_TOKEN") or "SOTA_BASE_INDEXER_ADMIN_TOKEN"),
+        timeout=float(getattr(args, "timeout", 10.0) or 10.0),
+    )
     base = {
         "name": "testnet_snapshot_genesis",
         "phase": "base_sepolia",
@@ -298,6 +367,12 @@ def _snapshot_genesis_gate(testnet_dir: Path, snapshot_dir: Path) -> dict[str, A
         suffix = ""
         if int(binding_evidence["pending_unsigned_binding_request_count"]) > 0:
             suffix = "; pending unsigned binding request exists, but it is not an accepted signed binding"
+        public_export = dict(binding_evidence.get("public_binding_export") or {})
+        public_count = public_export.get("accepted_signed_binding_count")
+        if public_export.get("status") == "green":
+            suffix += f"; public claims API accepted binding count is {int(public_count or 0)}"
+        elif public_export.get("status") == "red":
+            suffix += "; public claims API binding count could not be read"
         reasons.append(f"accepted signed snapshot binding count is 0{suffix}")
     try:
         allocation_total = sum(int(dict(row).get("amount_units") or dict(row).get("amount") or 0) for row in allocations)
@@ -746,7 +821,7 @@ def run_status(args: argparse.Namespace) -> dict[str, Any]:
         )
         gate_reports.insert(
             testnet_insert_at,
-            _snapshot_genesis_gate(args.testnet_artifacts_dir, args.snapshot_dir),
+            _snapshot_genesis_gate(args.testnet_artifacts_dir, args.snapshot_dir, args),
         )
         gate_reports = [
             _claim_tx_evidence_current_gate(args.testnet_artifacts_dir, gate)
@@ -863,6 +938,9 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--local-tailscale-preflight", type=Path, default=LOCAL_RUN_DIR / "tailscale-preflight.json")
     parser.add_argument("--testnet-artifacts-dir", type=Path, default=TESTNET_RUN_DIR)
     parser.add_argument("--snapshot-dir", type=Path, default=DEFAULT_SNAPSHOT_DIR)
+    parser.add_argument("--snapshot-claim-bindings-url", default="", help="Optional claims API export URL for accepted signed snapshot bindings.")
+    parser.add_argument("--indexer-admin-token-env", default="SOTA_BASE_INDEXER_ADMIN_TOKEN", help="Environment variable containing the claims API admin token or JSON secret payload.")
+    parser.add_argument("--timeout", type=float, default=10.0)
     parser.add_argument("--local-only", action="store_true", help="Only require the local demo gate.")
     parser.add_argument("--json", action="store_true")
     parser.add_argument("--report-out", type=Path)

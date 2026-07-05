@@ -227,6 +227,9 @@ def _args(tmp_path: Path, *, local_only: bool = False):
         local_tailscale_preflight=tmp_path / "local" / "tailscale-preflight.json",
         testnet_artifacts_dir=tmp_path / "testnet",
         snapshot_dir=tmp_path / "snapshot",
+        snapshot_claim_bindings_url="",
+        indexer_admin_token_env="SOTA_BASE_INDEXER_ADMIN_TOKEN",
+        timeout=0.1,
         local_only=local_only,
     )
 
@@ -560,6 +563,57 @@ def test_release_status_rejects_seeded_genesis_without_snapshot_alpha(tmp_path: 
     assert "pending unsigned binding request exists" in gate["message"]
     assert gate["snapshot_binding_evidence"]["accepted_signed_binding_count"] == 0
     assert gate["snapshot_binding_evidence"]["pending_unsigned_binding_request_count"] == 1
+    assert gate["snapshot_binding_evidence"]["public_binding_export"]["status"] == "not_configured"
+
+
+def test_release_status_reports_public_binding_export_count(tmp_path: Path, monkeypatch) -> None:
+    module = _load_module()
+    args = _args(tmp_path)
+    args.snapshot_claim_bindings_url = "https://claims-api.example.invalid/api/v1/base/genesis/bindings"
+    _write_report(args.local_report, schema="sota-local-claims-ui-smoke/v1", ok=True, checks=[_wallet_check()])
+    _write_report(args.local_claim_proof, schema="sota-local-claim-proof/v1", ok=True)
+    _write_miner_swarm(args.local_miner_swarm)
+    _write_report(args.testnet_artifacts_dir / "base-sota-testnet-operator-run.json", schema="sota-base-testnet-operator-run/v1", ok=True)
+    _write_report(args.testnet_artifacts_dir / "base-sota-testnet-blockers.json", schema="sota-base-testnet-blockers/v1", ok=True)
+    _write_report(args.testnet_artifacts_dir / "base-sota-testnet-aws-inventory.json", schema="sota-base-testnet-aws-inventory/v1", ok=True)
+    _write_report(args.testnet_artifacts_dir / "base-sota-testnet-funding.json", schema="sota-base-testnet-funding/v1", ok=True)
+    _write_report(args.testnet_artifacts_dir / "base-sota-testnet-secret-handles.json", schema="sota-base-testnet-secret-bootstrap/v1", ok=True)
+    _write_report(args.testnet_artifacts_dir / "base-sota-testnet-apprunner-source-pack.json", schema="sota-base-testnet-apprunner-source-pack/v1", ok=True)
+    _write_report(args.testnet_artifacts_dir / "base-sota-testnet-container-pack.json", schema="sota-base-testnet-container-pack/v1", ok=False, status="yellow")
+    _write_report(args.testnet_artifacts_dir / "base-sota-testnet-browser-smoke.json", schema="sota-base-testnet-browser-smoke/v1", ok=True)
+    _write_report(args.testnet_artifacts_dir / "base-sota-claim-tx-evidence.json", schema="sota-base-claim-tx-evidence/v1", ok=True)
+    _write_snapshot_source(args.snapshot_dir)
+    seeded = {
+        "schema": "sota-base-claim-artifact/v1",
+        "root": {"root_id": "0x" + "12" * 32, "subnet_id": "genesis", "total_amount_units": "150"},
+        "allocations": [{"reward_address": "0x1111111111111111111111111111111111111111", "amount_units": "150"}],
+    }
+    path = args.testnet_artifacts_dir / "base-sota-testnet-genesis-claim-artifact.json"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(seeded) + "\n", encoding="utf-8")
+
+    class FakeResponse:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return False
+
+        def read(self):
+            return b'{"schema":"sota-snapshot-bindings/v1","count":0,"bindings":[]}'
+
+    monkeypatch.setenv("SOTA_BASE_INDEXER_ADMIN_TOKEN", '{"admin_token":"secret-token"}')
+    monkeypatch.setattr(module, "urlopen", lambda request, timeout: FakeResponse())
+
+    report = module.run_status(args)
+    gate = next(gate for gate in report["gates"] if gate["name"] == "testnet_snapshot_genesis")
+    export = gate["snapshot_binding_evidence"]["public_binding_export"]
+
+    assert report["ok"] is False
+    assert export["status"] == "green"
+    assert export["accepted_signed_binding_count"] == 0
+    assert export["used_auth_header"] is True
+    assert "public claims API accepted binding count is 0" in gate["message"]
 
 
 def test_release_status_rejects_schema_mismatch(tmp_path: Path) -> None:
