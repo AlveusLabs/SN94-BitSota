@@ -569,6 +569,34 @@ def test_operator_without_snapshot_binding_refuses_seeded_genesis_by_default(tmp
     args.deployment.write_text("{}\n", encoding="utf-8")
     args.emission_evidence.write_text("{}\n", encoding="utf-8")
     paths = module._paths(args.artifacts_dir)
+    stale_root_ids = {
+        "genesis": "0x" + "31" * 32,
+        "emission": "0x" + "32" * 32,
+    }
+    module._write_json(
+        paths["seed_finalized_report"],
+        {
+            "schema": "sota-base-testnet-seed-artifacts/v1",
+            "ok": True,
+            "status": "ready_to_import_claim_artifacts",
+            "indexer_import_ready": True,
+            "root_ids": stale_root_ids,
+        },
+    )
+    for kind, root_id in stale_root_ids.items():
+        artifact = paths["genesis_claim_artifact"] if kind == "genesis" else paths["emission_claim_artifact"]
+        module._write_json(
+            artifact,
+            {
+                "schema": "sota-base-testnet-claim-artifact/v1",
+                "indexer_import_ready": True,
+                "root": {
+                    "root_id": root_id,
+                    "status": "finalized",
+                    "validation_status": "accepted",
+                },
+            },
+        )
 
     def fake_run(cmd: list[str], **kwargs) -> dict:
         _write_standard_reports(module, paths, cmd)
@@ -592,6 +620,8 @@ def test_operator_without_snapshot_binding_refuses_seeded_genesis_by_default(tmp
     assert steps["snapshot_genesis_artifacts"]["status"] == "red"
     assert "No signed snapshot coldkey binding" in steps["snapshot_genesis_artifacts"]["detail"]
     assert steps["publish_genesis_root"]["status"] == "red"
+    assert steps["finalize_claim_artifacts"]["status"] == "yellow"
+    assert steps["import_claim_artifacts"]["status"] == "yellow"
     assert not paths["genesis_root_artifact"].exists()
 
 

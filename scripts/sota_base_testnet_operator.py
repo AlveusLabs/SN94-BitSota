@@ -1043,12 +1043,14 @@ def _is_snapshot_genesis_claim_artifact(paths: dict[str, Path]) -> bool:
     )
 
 
-def _finalized_root_id(paths: dict[str, Path], kind: str) -> str:
+def _finalized_root_id(paths: dict[str, Path], kind: str, *, allow_seeded_genesis: bool = False) -> str:
     artifact_root_id = _claim_artifact_root_id(paths, kind)
     if not artifact_root_id:
         return ""
     if kind == "genesis" and _is_snapshot_genesis_claim_artifact(paths):
         return artifact_root_id
+    if kind == "genesis" and not allow_seeded_genesis:
+        return ""
     if not paths["seed_finalized_report"].exists():
         return artifact_root_id
     try:
@@ -1065,8 +1067,13 @@ def _finalized_root_id(paths: dict[str, Path], kind: str) -> str:
     return artifact_root_id
 
 
-def _existing_publish_step(paths: dict[str, Path], *, kind: str) -> StepResult | None:
-    root_id = _finalized_root_id(paths, kind)
+def _existing_publish_step(
+    paths: dict[str, Path],
+    *,
+    kind: str,
+    allow_seeded_genesis: bool = False,
+) -> StepResult | None:
+    root_id = _finalized_root_id(paths, kind, allow_seeded_genesis=allow_seeded_genesis)
     if not root_id:
         return None
     artifact_key = "genesis_claim_artifact" if kind == "genesis" else "emission_claim_artifact"
@@ -1081,9 +1088,13 @@ def _existing_publish_step(paths: dict[str, Path], *, kind: str) -> StepResult |
     )
 
 
-def _existing_finalized_claim_artifacts_step(paths: dict[str, Path]) -> StepResult | None:
-    genesis_root_id = _finalized_root_id(paths, "genesis")
-    emission_root_id = _finalized_root_id(paths, "emission")
+def _existing_finalized_claim_artifacts_step(
+    paths: dict[str, Path],
+    *,
+    allow_seeded_genesis: bool = False,
+) -> StepResult | None:
+    genesis_root_id = _finalized_root_id(paths, "genesis", allow_seeded_genesis=allow_seeded_genesis)
+    emission_root_id = _finalized_root_id(paths, "emission", allow_seeded_genesis=allow_seeded_genesis)
     if not genesis_root_id or not emission_root_id:
         return None
     return StepResult(
@@ -1139,8 +1150,12 @@ def _sync_emission_lane_step(args: argparse.Namespace, paths: dict[str, Path]) -
     )
 
 
-def _existing_import_step(paths: dict[str, Path]) -> StepResult | None:
-    if _existing_finalized_claim_artifacts_step(paths) is None:
+def _existing_import_step(
+    paths: dict[str, Path],
+    *,
+    allow_seeded_genesis: bool = False,
+) -> StepResult | None:
+    if _existing_finalized_claim_artifacts_step(paths, allow_seeded_genesis=allow_seeded_genesis) is None:
         return None
     return StepResult(
         "import_claim_artifacts",
@@ -1541,7 +1556,15 @@ def run_operator(args: argparse.Namespace) -> dict[str, Any]:
                     )
                 )
                 continue
-            existing_publish = None if args.broadcast_roots else _existing_publish_step(paths, kind=kind)
+            existing_publish = (
+                None
+                if args.broadcast_roots
+                else _existing_publish_step(
+                    paths,
+                    kind=kind,
+                    allow_seeded_genesis=bool(getattr(args, "allow_seeded_genesis", False)),
+                )
+            )
             if existing_publish is not None:
                 steps.append(existing_publish)
             else:
@@ -1587,7 +1610,10 @@ def run_operator(args: argparse.Namespace) -> dict[str, Any]:
                 )
             )
     else:
-        existing_finalize = _existing_finalized_claim_artifacts_step(paths)
+        existing_finalize = _existing_finalized_claim_artifacts_step(
+            paths,
+            allow_seeded_genesis=bool(getattr(args, "allow_seeded_genesis", False)),
+        )
         if existing_finalize is not None:
             steps.append(existing_finalize)
         else:
@@ -1603,7 +1629,10 @@ def run_operator(args: argparse.Namespace) -> dict[str, Any]:
     if args.import_artifacts:
         steps.append(_import_claim_artifacts(args, paths))
     else:
-        existing_import = _existing_import_step(paths)
+        existing_import = _existing_import_step(
+            paths,
+            allow_seeded_genesis=bool(getattr(args, "allow_seeded_genesis", False)),
+        )
         if existing_import is not None:
             steps.append(existing_import)
         else:
