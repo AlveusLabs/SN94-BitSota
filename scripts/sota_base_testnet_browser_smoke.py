@@ -29,6 +29,7 @@ EXPECTED_TESTNET_CLAIMS_TEXT = (
     "Switch to Base Sepolia",
     "Testnet readiness",
     "Claim sources",
+    "Binding payload",
     "TAO credit",
     "Alpha synthetic credit",
     "Total SOTA",
@@ -153,6 +154,30 @@ def _http_json(method: str, url: str, *, payload: dict[str, Any] | None = None, 
     return json.loads(body.decode("utf-8"))
 
 
+def _http_json_response(method: str, url: str, *, payload: dict[str, Any] | None = None, timeout: float) -> tuple[int, Any]:
+    data = None
+    headers = {"Accept": "application/json"}
+    if payload is not None:
+        data = json.dumps(payload).encode("utf-8")
+        headers["Content-Type"] = "application/json"
+    request = Request(url, data=data, headers=headers, method=method)
+    try:
+        with urlopen(request, timeout=timeout) as response:
+            body = response.read()
+            status = int(response.status)
+    except HTTPError as exc:
+        body = exc.read()
+        status = int(exc.code)
+    except URLError as exc:
+        raise RuntimeError(f"{method} {url} failed: {exc}") from exc
+    if not body:
+        return status, {}
+    try:
+        return status, json.loads(body.decode("utf-8"))
+    except json.JSONDecodeError:
+        return status, body.decode("utf-8", errors="replace")
+
+
 def _http_status(method: str, url: str, *, timeout: float) -> int:
     request = Request(url, headers={"Accept": "application/json"}, method=method)
     try:
@@ -235,6 +260,7 @@ def _config(args: argparse.Namespace) -> tuple[dict[str, Any], dict[str, str], d
         "readiness_url": readiness_url,
         "test_wallet_address": args.test_wallet_address or env.get("SOTA_TEST_WALLET_ADDRESS") or env.get("TEST_WALLET_ADDRESS") or "",
         "test_old_coldkey": args.test_old_coldkey or env.get("SOTA_TEST_OLD_COLDKEY") or env.get("TEST_OLD_COLDKEY") or "",
+        "snapshot_coldkey": getattr(args, "test_snapshot_coldkey", "") or env.get("SOTA_TEST_SNAPSHOT_COLDKEY") or env.get("SOTA_TEST_OLD_COLDKEY") or env.get("TEST_OLD_COLDKEY") or "",
         "lane_id": args.lane_id or env.get("SOTA_TEST_LANE_ID") or env.get("NEXT_PUBLIC_SOTA_DEFAULT_LANE_ID") or LANE_ID,
         "epoch": str(args.epoch or env.get("SOTA_TEST_EPOCH") or "1"),
         "env_chain_id": env.get("NEXT_PUBLIC_SOTA_BASE_CHAIN_ID") or env.get("SOTA_BASE_CHAIN_ID") or "",
@@ -290,6 +316,7 @@ def _config_checks(values: dict[str, str]) -> list[Check]:
         _result_check("autoresearch_url", bool(values["autoresearch_url"]), "Autoresearch/coordinator URL is configured.", "Autoresearch/coordinator URL is missing.", remediation="Set the public Base Sepolia autoresearch coordinator URL."),
         _result_check("readiness_url", bool(values["readiness_url"]), "Public readiness URL is configured.", "Public readiness URL is missing.", remediation="Publish and configure base-sota-testnet-readiness.json."),
         _result_check("test_old_coldkey", bool(values["test_old_coldkey"]), "Seeded test old coldkey is configured.", "Seeded test old coldkey is missing.", remediation="Set SOTA_TEST_OLD_COLDKEY for the public test claim."),
+        _result_check("snapshot_coldkey", bool(values["snapshot_coldkey"]), "Snapshot binding smoke coldkey is configured.", "Snapshot binding smoke coldkey is missing.", remediation="Set SOTA_TEST_SNAPSHOT_COLDKEY to a real coldkey from the locked snapshot."),
         _result_check("test_wallet_address", _is_evm_address(values["test_wallet_address"]), "Seeded test wallet address is configured.", f"Seeded test wallet address is missing or invalid: {values['test_wallet_address'] or 'missing'}.", remediation="Set SOTA_TEST_WALLET_ADDRESS to a public funded Base Sepolia wallet."),
         _result_check("test_lane_id", bool(values["lane_id"]), "Seeded emission lane id is configured.", "Seeded emission lane id is missing.", remediation="Set NEXT_PUBLIC_SOTA_DEFAULT_LANE_ID or SOTA_TEST_LANE_ID."),
     ]
@@ -385,6 +412,100 @@ def _claims_api_checks(values: dict[str, str], *, timeout: float) -> list[Check]
                 remediation="Fix indexer contract config, RPC sync, or lag before browser smoke.",
             )
         )
+    return checks
+
+
+def _binding_route_checks(values: dict[str, str], *, timeout: float) -> list[Check]:
+    checks: list[Check] = []
+    base = values["claims_api_url"]
+    wallet = values["test_wallet_address"]
+    snapshot_coldkey = values["snapshot_coldkey"]
+    if not base or not _is_evm_address(wallet) or not snapshot_coldkey:
+        return [
+            Check(
+                "genesis_binding_inputs",
+                "red",
+                "Claims API URL, test wallet, and snapshot coldkey are required for binding-route smoke.",
+                "Set public test claim inputs before inviting a nontechnical tester.",
+            )
+        ]
+    try:
+        binding = dict(
+            _http_json(
+                "POST",
+                _join_url(base, "/api/v1/base/genesis/binding-message"),
+                payload={"coldkey": snapshot_coldkey, "reward_address": wallet},
+                timeout=timeout,
+            )
+            or {}
+        )
+    except Exception as exc:
+        checks.append(
+            Check(
+                "genesis_binding_message",
+                "red",
+                f"Genesis binding-message route failed: {exc}",
+                "Deploy the claims API with SOTA_BASE_SNAPSHOT_DIR and a real TAO/alpha snapshot.",
+            )
+        )
+        return checks
+    message = dict(binding.get("message") or {})
+    claim = dict(binding.get("snapshot_claim") or {})
+    amount = _as_int(message.get("allocation_amount"))
+    binding_ok = (
+        binding.get("schema") == "sota-snapshot-binding-message/v1"
+        and str(binding.get("signing_payload") or "")
+        and message.get("coldkey") == snapshot_coldkey
+        and str(message.get("reward_address") or "").lower() == wallet.lower()
+        and _as_int(message.get("base_chain_id")) == BASE_SEPOLIA_CHAIN_ID
+        and amount is not None
+        and amount > 0
+        and "direct_tao_rao" in claim
+        and "alpha_credit_rao" in claim
+        and "alpha_credit_rao_by_netuid" in claim
+    )
+    checks.append(
+        _result_check(
+            "genesis_binding_message",
+            binding_ok,
+            "Claims API returns a Base Sepolia coldkey binding payload with TAO and alpha snapshot fields.",
+            (
+                f"Binding message is incomplete: schema={binding.get('schema')!r}, "
+                f"chain={message.get('base_chain_id')!r}, amount={message.get('allocation_amount')!r}, "
+                f"claim_fields={sorted(claim)}."
+            ),
+            remediation="Deploy the binding-message endpoint and configure the locked TAO/alpha snapshot.",
+        )
+    )
+    if not binding_ok:
+        return checks
+    try:
+        status, response = _http_json_response(
+            "POST",
+            _join_url(base, "/api/v1/base/genesis/bindings"),
+            payload={"message": message, "signature": "0x" + "00" * 64},
+            timeout=timeout,
+        )
+    except Exception as exc:
+        checks.append(
+            Check(
+                "genesis_binding_submit_route",
+                "red",
+                f"Genesis binding submit route failed: {exc}",
+                "Deploy the signed-binding submit route on the public claims API.",
+            )
+        )
+        return checks
+    detail = dict(response.get("detail") or {}) if isinstance(response, dict) else {}
+    checks.append(
+        _result_check(
+            "genesis_binding_submit_route",
+            status == 422 and detail.get("code") == "invalid_binding_signature",
+            "Claims API signed-binding route is live and rejects an invalid coldkey signature.",
+            f"Signed-binding route returned HTTP {status} with code {detail.get('code')!r}; expected 422 invalid_binding_signature.",
+            remediation="Deploy the signed-binding submit route and keep invalid signatures rejected.",
+        )
+    )
     return checks
 
 
@@ -541,6 +662,7 @@ def run_browser_smoke(args: argparse.Namespace) -> dict[str, Any]:
     checks.append(_readiness_check(args, values["readiness_url"]))
     checks.append(_claims_page_check(values["claims_url"], timeout=args.timeout))
     checks.extend(_claims_api_checks(values, timeout=args.timeout))
+    checks.extend(_binding_route_checks(values, timeout=args.timeout))
     checks.extend(_claim_lookup_checks(values, timeout=args.timeout))
     checks.extend(_autoresearch_checks(values, timeout=args.timeout))
     checks.append(
@@ -597,6 +719,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--readiness-url", default="")
     parser.add_argument("--test-wallet-address", default="")
     parser.add_argument("--test-old-coldkey", default="")
+    parser.add_argument("--test-snapshot-coldkey", default="")
     parser.add_argument("--lane-id", default="")
     parser.add_argument("--epoch", default="")
     parser.add_argument("--timeout", type=float, default=10.0)

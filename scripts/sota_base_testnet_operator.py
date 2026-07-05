@@ -24,6 +24,8 @@ DEFAULT_DEPLOYER_SECRET_ID = "base-sota/test/base-sepolia/deployer"
 DEFAULT_ROOT_PUBLISHER_SECRET_ID = "base-sota/test/base-sepolia/root-publisher"
 DEFAULT_LOCAL_STATE = REPOS / ".sota-base-local" / "state.json"
 DEFAULT_LOCAL_REPORT = REPOS / ".sota-base-local" / "ui-smoke" / "report.json"
+DEFAULT_SNAPSHOT_DIR = Path("/mnt/4tb/tao_fork_snapshot")
+DEFAULT_SOTA_UNITS_PER_RAO = 10**9
 DEFAULT_TEMPLATE = DOCS_REPO / "docs" / "base" / "manifests" / "base-sepolia-deployment-manifest.template.json"
 DEFAULT_URLS = {
     "claims_ui": "https://claims-test.bitsota.com",
@@ -648,6 +650,39 @@ def _seed_build_cmd(args: argparse.Namespace, paths: dict[str, Path]) -> list[st
     ]
 
 
+def _snapshot_bindings(args: argparse.Namespace, paths: dict[str, Path] | None = None) -> list[Path]:
+    bindings = [Path(item) for item in (getattr(args, "snapshot_claim_binding", None) or [])]
+    if paths is not None:
+        bindings.extend(sorted(paths["snapshot_claim_dir"].glob("api-binding-*.json")))
+    return bindings
+
+
+def _snapshot_build_cmd(args: argparse.Namespace, paths: dict[str, Path]) -> list[str]:
+    cmd = [
+        sys.executable,
+        "scripts/sota_snapshot_claim_bridge.py",
+        "build",
+        "--snapshot-dir",
+        str(getattr(args, "snapshot_dir", DEFAULT_SNAPSHOT_DIR)),
+        "--manifest",
+        str(paths["manifest"]),
+        "--sota-units-per-rao",
+        str(getattr(args, "snapshot_sota_units_per_rao", DEFAULT_SOTA_UNITS_PER_RAO)),
+        "--out-dir",
+        str(paths["snapshot_claim_dir"]),
+    ]
+    for binding in _snapshot_bindings(args, paths):
+        cmd.extend(["--binding", str(binding)])
+    if getattr(args, "allow_local_snapshot", False):
+        cmd.append("--allow-local")
+    return cmd
+
+
+def _promote_snapshot_genesis_root(paths: dict[str, Path]) -> None:
+    root_artifact = _load_json(paths["snapshot_genesis_root_artifact"])
+    _write_json(paths["genesis_root_artifact"], root_artifact)
+
+
 def _publish_cmd(paths: dict[str, Path], *, kind: str, broadcast: bool) -> list[str]:
     artifact_key = "genesis_root_artifact" if kind == "genesis" else "emission_root_artifact"
     out_key = "genesis_publish_result" if kind == "genesis" else "emission_publish_result"
@@ -681,6 +716,20 @@ def _finalize_cmd(paths: dict[str, Path]) -> list[str]:
         str(paths["emission_publish_result"]),
         "--out-dir",
         str(paths["artifacts_dir"]),
+    ]
+
+
+def _snapshot_finalize_cmd(paths: dict[str, Path]) -> list[str]:
+    return [
+        sys.executable,
+        "scripts/sota_snapshot_claim_bridge.py",
+        "finalize",
+        "--claim-template",
+        str(paths["snapshot_genesis_claim_template"]),
+        "--publish-result",
+        str(paths["genesis_publish_result"]),
+        "--out",
+        str(paths["genesis_claim_artifact"]),
     ]
 
 
@@ -773,6 +822,11 @@ def _paths(artifacts_dir: Path) -> dict[str, Path]:
         "emission_publish_result": artifacts_dir / "base-sota-testnet-emission-root-publish-result.json",
         "genesis_claim_artifact": artifacts_dir / "base-sota-testnet-genesis-claim-artifact.json",
         "emission_claim_artifact": artifacts_dir / "base-sota-testnet-emission-claim-artifact.json",
+        "snapshot_claim_dir": artifacts_dir / "snapshot-claims",
+        "snapshot_claim_report": artifacts_dir / "snapshot-claims" / "sota-snapshot-genesis-report.json",
+        "snapshot_genesis_root_artifact": artifacts_dir / "snapshot-claims" / "sota-snapshot-genesis-root-artifact.json",
+        "snapshot_genesis_claim_template": artifacts_dir / "snapshot-claims" / "sota-snapshot-genesis-claim-template.json",
+        "snapshot_genesis_claim_artifact": artifacts_dir / "snapshot-claims" / "sota-snapshot-genesis-claim-artifact.json",
         "browser_smoke": artifacts_dir / "base-sota-testnet-browser-smoke.json",
         "release_status": artifacts_dir / "base-sota-release-status.json",
         "tester_handoff_json": artifacts_dir / "base-sota-tester-handoff.json",
@@ -802,6 +856,63 @@ def _post_json(url: str, payload: dict[str, Any], *, token_env: str, timeout: fl
         body = response.read().decode("utf-8")
     parsed = json.loads(body) if body.strip() else {}
     return dict(parsed or {})
+
+
+def _get_json(url: str, *, token_env: str, timeout: float) -> dict[str, Any]:
+    headers = {"Accept": "application/json"}
+    token = os.environ.get(token_env, "").strip()
+    if token:
+        headers["Authorization"] = f"Bearer {token}"
+    request = Request(url, headers=headers, method="GET")
+    with urlopen(request, timeout=timeout) as response:
+        body = response.read().decode("utf-8")
+    parsed = json.loads(body) if body.strip() else {}
+    return dict(parsed or {})
+
+
+def _export_snapshot_bindings(args: argparse.Namespace, paths: dict[str, Path]) -> StepResult | None:
+    source = str(getattr(args, "snapshot_claim_bindings_url", "") or "").strip()
+    if not source:
+        return None
+    try:
+        payload = _get_json(source, token_env=args.indexer_admin_token_env, timeout=args.timeout)
+        bindings = payload.get("bindings")
+        if not isinstance(bindings, list):
+            raise ValueError("response must contain a bindings list")
+        paths["snapshot_claim_dir"].mkdir(parents=True, exist_ok=True)
+        for stale in paths["snapshot_claim_dir"].glob("api-binding-*.json"):
+            stale.unlink(missing_ok=True)
+        written: list[str] = []
+        for index, binding in enumerate(bindings):
+            if not isinstance(binding, dict):
+                raise ValueError(f"binding {index} is not an object")
+            if not isinstance(binding.get("message"), dict) or not str(binding.get("signature") or "").strip():
+                raise ValueError(f"binding {index} is missing message or signature")
+            path = paths["snapshot_claim_dir"] / f"api-binding-{index:04d}.json"
+            _write_json(path, binding)
+            written.append(str(path))
+    except Exception as exc:
+        return StepResult(
+            "snapshot_binding_export",
+            "red",
+            f"Could not export accepted snapshot bindings from {source}: {exc}",
+            "Fix the claims API binding export route or pass --snapshot-claim-binding files directly.",
+            artifacts={"source": source},
+        )
+    if not written:
+        return StepResult(
+            "snapshot_binding_export",
+            "red",
+            f"No accepted snapshot bindings were returned by {source}.",
+            "Have a snapshot holder submit a signed coldkey binding, then rerun the operator.",
+            artifacts={"source": source},
+        )
+    return StepResult(
+        "snapshot_binding_export",
+        "green",
+        f"Exported {len(written)} accepted signed snapshot binding(s) from the claims API.",
+        artifacts={"source": source, "bindings": json.dumps(written, sort_keys=True)},
+    )
 
 
 def _import_claim_artifacts(args: argparse.Namespace, paths: dict[str, Path]) -> StepResult:
@@ -858,10 +969,27 @@ def _claim_artifact_root_id(paths: dict[str, Path], kind: str) -> str:
     return str(root.get("root_id") or "").strip()
 
 
+def _is_snapshot_genesis_claim_artifact(paths: dict[str, Path]) -> bool:
+    if not paths["genesis_claim_artifact"].exists():
+        return False
+    try:
+        artifact = _load_json(paths["genesis_claim_artifact"])
+    except Exception:
+        return False
+    if not isinstance(artifact.get("snapshot"), dict):
+        return False
+    allocations = artifact.get("allocations")
+    return isinstance(allocations, list) and any(
+        isinstance(row, dict) and "alpha_synthetic_credit_rao" in row for row in allocations
+    )
+
+
 def _finalized_root_id(paths: dict[str, Path], kind: str) -> str:
     artifact_root_id = _claim_artifact_root_id(paths, kind)
     if not artifact_root_id:
         return ""
+    if kind == "genesis" and _is_snapshot_genesis_claim_artifact(paths):
+        return artifact_root_id
     if not paths["seed_finalized_report"].exists():
         return artifact_root_id
     try:
@@ -1190,6 +1318,76 @@ def run_operator(args: argparse.Namespace) -> dict[str, Any]:
                 },
             )
         )
+        export_bindings = _export_snapshot_bindings(args, paths)
+        if export_bindings is not None:
+            steps.append(export_bindings)
+        bindings = _snapshot_bindings(args, paths)
+        if bindings:
+            snapshot = _run_command(_snapshot_build_cmd(args, paths), timeout=args.command_timeout)
+            if int(snapshot["returncode"]) == 0:
+                try:
+                    _promote_snapshot_genesis_root(paths)
+                    steps.append(
+                        StepResult(
+                            "snapshot_genesis_artifacts",
+                            "green",
+                            "Built genesis root from TAO plus synthetic alpha snapshot claims and promoted it for publication.",
+                            artifacts={
+                                "snapshot_report": str(paths["snapshot_claim_report"]),
+                                "snapshot_root": str(paths["snapshot_genesis_root_artifact"]),
+                                "genesis_root": str(paths["genesis_root_artifact"]),
+                            },
+                            command=list(snapshot.get("command") or []),
+                        )
+                    )
+                except Exception as exc:
+                    paths["genesis_root_artifact"].unlink(missing_ok=True)
+                    steps.append(
+                        StepResult(
+                            "snapshot_genesis_artifacts",
+                            "red",
+                            f"Snapshot genesis bridge built but could not promote its root artifact: {exc}",
+                            "Fix the snapshot bridge output before publishing the genesis root.",
+                            artifacts={
+                                "snapshot_report": str(paths["snapshot_claim_report"]),
+                                "snapshot_root": str(paths["snapshot_genesis_root_artifact"]),
+                                "genesis_root": str(paths["genesis_root_artifact"]),
+                            },
+                            command=list(snapshot.get("command") or []),
+                        )
+                    )
+            else:
+                paths["genesis_root_artifact"].unlink(missing_ok=True)
+                steps.append(
+                    _step_from_result(
+                        "snapshot_genesis_artifacts",
+                        snapshot,
+                        success_detail="",
+                        failure_remediation="Fix the signed coldkey binding or snapshot CSV inputs before publishing the genesis root.",
+                        artifacts={
+                            "snapshot_report": str(paths["snapshot_claim_report"]),
+                            "snapshot_root": str(paths["snapshot_genesis_root_artifact"]),
+                            "genesis_root": str(paths["genesis_root_artifact"]),
+                        },
+                    )
+                )
+        elif not getattr(args, "allow_seeded_genesis", False):
+            paths["genesis_root_artifact"].unlink(missing_ok=True)
+            steps.append(
+                StepResult(
+                    "snapshot_genesis_artifacts",
+                    "red",
+                    "No signed snapshot coldkey binding was supplied; refusing to publish the seeded genesis artifact.",
+                    (
+                        "Build a binding message with scripts/sota_snapshot_claim_bridge.py message, have the holder sign it, "
+                        "then rerun with --snapshot-claim-binding <signed-binding.json>."
+                    ),
+                    artifacts={
+                        "snapshot_dir": str(getattr(args, "snapshot_dir", DEFAULT_SNAPSHOT_DIR)),
+                        "genesis_root": str(paths["genesis_root_artifact"]),
+                    },
+                )
+            )
     else:
         missing = []
         if not args.emission_evidence:
@@ -1269,6 +1467,21 @@ def run_operator(args: argparse.Namespace) -> dict[str, Any]:
                 },
             )
         )
+        if _snapshot_bindings(args, paths):
+            snapshot_finalize = _run_command(_snapshot_finalize_cmd(paths), timeout=args.timeout)
+            steps.append(
+                _step_from_result(
+                    "finalize_snapshot_genesis_claim",
+                    snapshot_finalize,
+                    success_detail="Finalized the TAO plus synthetic-alpha snapshot genesis claim artifact with the emitted on-chain root ID.",
+                    failure_remediation="Fix the snapshot claim template or genesis publish result, then rerun finalization.",
+                    artifacts={
+                        "snapshot_template": str(paths["snapshot_genesis_claim_template"]),
+                        "genesis_publish_result": str(paths["genesis_publish_result"]),
+                        "genesis_claim": str(paths["genesis_claim_artifact"]),
+                    },
+                )
+            )
     else:
         existing_finalize = _existing_finalized_claim_artifacts_step(paths)
         if existing_finalize is not None:
@@ -1364,6 +1577,26 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--root-publisher-address", default=os.environ.get("SOTA_ROOT_PUBLISHER_ADDRESS", ""))
     parser.add_argument("--default-lane-id", default=os.environ.get("NEXT_PUBLIC_SOTA_DEFAULT_LANE_ID", "base:sota-local"))
     parser.add_argument("--emission-evidence", type=Path)
+    parser.add_argument("--snapshot-dir", type=Path, default=DEFAULT_SNAPSHOT_DIR)
+    parser.add_argument(
+        "--snapshot-claim-binding",
+        type=Path,
+        action="append",
+        default=[],
+        help="Signed Bittensor coldkey binding JSON for a real snapshot genesis claim; repeat for multiple claimants.",
+    )
+    parser.add_argument(
+        "--snapshot-claim-bindings-url",
+        default=os.environ.get("SOTA_SNAPSHOT_CLAIM_BINDINGS_URL", ""),
+        help="Optional claims API export URL for accepted signed snapshot bindings.",
+    )
+    parser.add_argument("--snapshot-sota-units-per-rao", type=int, default=DEFAULT_SOTA_UNITS_PER_RAO)
+    parser.add_argument("--allow-local-snapshot", action="store_true")
+    parser.add_argument(
+        "--allow-seeded-genesis",
+        action="store_true",
+        help="Developer-only escape hatch for fixture runs; release status rejects seeded genesis.",
+    )
     parser.add_argument("--local-state", type=Path, default=DEFAULT_LOCAL_STATE)
     parser.add_argument("--local-report", type=Path, default=DEFAULT_LOCAL_REPORT)
     parser.add_argument("--test-wallet-address", default=os.environ.get("SOTA_TEST_WALLET_ADDRESS", ""))

@@ -12,6 +12,7 @@ from typing import Any
 REPOS = Path("/home/mekaneeky/repos")
 LOCAL_RUN_DIR = REPOS / ".sota-base-local"
 TESTNET_RUN_DIR = REPOS / ".sota-base-testnet"
+DEFAULT_SNAPSHOT_DIR = Path("/mnt/4tb/tao_fork_snapshot")
 
 
 @dataclass(frozen=True)
@@ -112,13 +113,200 @@ def _current_claim_seed(testnet_dir: Path) -> dict[str, Any]:
     return dict(dict(report or {}).get("seeded_claims") or {})
 
 
+def _artifact_expectation(path: Path) -> dict[str, set[str]]:
+    try:
+        artifact = _load_report(path)
+    except Exception:
+        return {"wallets": set(), "amounts": set()}
+    if not artifact:
+        return {"wallets": set(), "amounts": set()}
+    wallets: set[str] = set()
+    amounts: set[str] = set()
+    allocations = artifact.get("allocations") if isinstance(artifact.get("allocations"), list) else []
+    for allocation in allocations:
+        if not isinstance(allocation, dict):
+            continue
+        wallet = _normalize_address(allocation.get("reward_address") or allocation.get("account"))
+        amount = str(allocation.get("amount_units") or allocation.get("amount") or "").strip()
+        if wallet:
+            wallets.add(wallet)
+        if amount:
+            amounts.add(amount)
+    root = dict(artifact.get("root") or {})
+    root_amount = str(root.get("total_amount_units") or root.get("budget") or "").strip()
+    if root_amount and not amounts:
+        amounts.add(root_amount)
+    return {"wallets": wallets, "amounts": amounts}
+
+
+def _current_claim_expectations(testnet_dir: Path) -> dict[str, set[str]]:
+    seed = _current_claim_seed(testnet_dir)
+    genesis = _artifact_expectation(testnet_dir / "base-sota-testnet-genesis-claim-artifact.json")
+    emission = _artifact_expectation(testnet_dir / "base-sota-testnet-emission-claim-artifact.json")
+    wallets = set(genesis["wallets"]) | set(emission["wallets"])
+    seed_wallet = _normalize_address(seed.get("test_wallet_address"))
+    if seed_wallet and not wallets:
+        wallets.add(seed_wallet)
+    genesis_amounts = set(genesis["amounts"])
+    emission_amounts = set(emission["amounts"])
+    seed_genesis = str(seed.get("genesis_total_units") or "").strip()
+    seed_emission = str(seed.get("emission_total_units") or "").strip()
+    if not genesis_amounts and seed_genesis:
+        genesis_amounts.add(seed_genesis)
+    if not emission_amounts and seed_emission:
+        emission_amounts.add(seed_emission)
+    return {
+        "wallets": wallets,
+        "genesis_amounts": genesis_amounts,
+        "emission_amounts": emission_amounts,
+    }
+
+
+def _snapshot_block(snapshot_dir: Path) -> dict[str, str]:
+    path = snapshot_dir / "genesis_snapshot_block.json"
+    if not path.exists():
+        return {}
+    try:
+        payload = _load_report(path)
+    except Exception:
+        return {}
+    if not payload:
+        return {}
+    return {
+        "number": str(payload.get("bittensor_block_number") or "").strip(),
+        "hash": str(payload.get("bittensor_block_hash") or "").strip().lower(),
+    }
+
+
+def _snapshot_alpha_row_count(snapshot_dir: Path) -> int:
+    path = snapshot_dir / "alpha_exposures.csv"
+    if not path.exists():
+        return 0
+    with path.open("r", encoding="utf-8", newline="") as handle:
+        return max(sum(1 for _ in handle) - 1, 0)
+
+
+def _snapshot_genesis_gate(testnet_dir: Path, snapshot_dir: Path) -> dict[str, Any]:
+    artifact_path = testnet_dir / "base-sota-testnet-genesis-claim-artifact.json"
+    base = {
+        "name": "testnet_snapshot_genesis",
+        "phase": "base_sepolia",
+        "required": True,
+        "path": str(artifact_path),
+        "expected_schema": "sota-base-claim-artifact/v1",
+        "next_action": (
+            "Have a snapshot holder submit a signed coldkey binding through the claims UI/API, then rerun "
+            "scripts/sota_base_testnet_operator.py "
+            f"with --snapshot-dir {snapshot_dir} and --snapshot-claim-bindings-url "
+            '"$SOTA_CLAIMS_API_URL/api/v1/base/genesis/bindings"; alternatively pass '
+            "--snapshot-claim-binding <binding>."
+        ),
+    }
+    try:
+        artifact = _load_report(artifact_path)
+    except Exception as exc:
+        return {
+            **base,
+            "schema": None,
+            "ok": False,
+            "status": "red",
+            "summary": {"green": 0, "yellow": 0, "red": 1},
+            "message": f"Could not read genesis claim artifact: {exc}",
+        }
+    if artifact is None:
+        return {
+            **base,
+            "schema": None,
+            "ok": False,
+            "status": "red",
+            "summary": {"green": 0, "yellow": 0, "red": 1},
+            "message": "Genesis claim artifact is missing.",
+        }
+    schema = str(artifact.get("schema") or "")
+    snapshot = dict(artifact.get("snapshot") or {})
+    root = dict(artifact.get("root") or {})
+    allocations = artifact.get("allocations") if isinstance(artifact.get("allocations"), list) else []
+    block = _snapshot_block(snapshot_dir)
+    alpha_rows = _snapshot_alpha_row_count(snapshot_dir)
+    reasons: list[str] = []
+    if schema != "sota-base-claim-artifact/v1":
+        reasons.append(f"schema is {schema or 'missing'}")
+    if not root.get("root_id"):
+        reasons.append("root_id is missing")
+    if str(root.get("subnet_id") or "") != "genesis":
+        reasons.append("root subnet_id is not genesis")
+    if not snapshot:
+        reasons.append("snapshot metadata is missing")
+    if block:
+        observed_number = str(snapshot.get("bittensor_block_number") or "").strip()
+        observed_hash = str(snapshot.get("bittensor_block_hash") or "").strip().lower()
+        if observed_number != block["number"] or observed_hash != block["hash"]:
+            reasons.append(f"snapshot block does not match {snapshot_dir}")
+    else:
+        reasons.append("snapshot block lock is missing")
+    if alpha_rows <= 0:
+        reasons.append("alpha_exposures.csv is missing or empty")
+    if not allocations:
+        reasons.append("allocations are missing")
+    missing_credit_fields = [
+        index
+        for index, allocation in enumerate(allocations)
+        if not isinstance(allocation, dict)
+        or "tao_credit_rao" not in allocation
+        or "alpha_synthetic_credit_rao" not in allocation
+        or "alpha_credit_rao_by_netuid" not in allocation
+    ]
+    if missing_credit_fields:
+        reasons.append("allocations are missing TAO/alpha rao credit fields from the snapshot bridge")
+    try:
+        allocation_total = sum(int(dict(row).get("amount_units") or dict(row).get("amount") or 0) for row in allocations)
+        root_total = int(root.get("total_amount_units") or root.get("budget") or 0)
+        if allocation_total <= 0 or root_total != allocation_total:
+            reasons.append("root total does not equal allocation total")
+    except Exception:
+        reasons.append("allocation totals could not be verified")
+    if reasons:
+        return {
+            **base,
+            "schema": schema or None,
+            "ok": False,
+            "status": "red",
+            "summary": {"green": 0, "yellow": 0, "red": 1},
+            "message": "; ".join(reasons),
+            "snapshot_source": {
+                "path": str(snapshot_dir),
+                "block_number": block.get("number"),
+                "block_hash": block.get("hash"),
+                "alpha_rows": alpha_rows,
+            },
+        }
+    return {
+        **base,
+        "schema": schema,
+        "ok": True,
+        "status": "green",
+        "summary": {"green": 1, "yellow": 0, "red": 0},
+        "message": (
+            "Base Sepolia genesis claim artifact is built from the locked TAO plus alpha snapshot "
+            f"at block {block['number']} with {alpha_rows} alpha exposure rows."
+        ),
+        "next_action": "",
+        "snapshot_source": {
+            "path": str(snapshot_dir),
+            "block_number": block["number"],
+            "block_hash": block["hash"],
+            "alpha_rows": alpha_rows,
+        },
+    }
+
+
 def _claim_tx_evidence_current_gate(testnet_dir: Path, gate: dict[str, Any]) -> dict[str, Any]:
     if gate.get("name") != "claim_tx_evidence" or gate.get("status") != "green":
         return gate
-    seed = _current_claim_seed(testnet_dir)
-    expected_wallet = _normalize_address(seed.get("test_wallet_address"))
-    expected_genesis = str(seed.get("genesis_total_units") or "").strip()
-    expected_emission = str(seed.get("emission_total_units") or "").strip()
+    expected = _current_claim_expectations(testnet_dir)
+    expected_wallets = set(expected["wallets"])
+    expected_genesis_amounts = set(expected["genesis_amounts"])
+    expected_emission_amounts = set(expected["emission_amounts"])
     try:
         report = _load_report(Path(str(gate.get("path") or "")))
     except Exception:
@@ -134,16 +322,17 @@ def _claim_tx_evidence_current_gate(testnet_dir: Path, gate: dict[str, Any]) -> 
     }
     observed_wallets.discard("")
     reasons: list[str] = []
-    if expected_wallet and observed_wallets and observed_wallets != {expected_wallet}:
+    if expected_wallets and observed_wallets and not observed_wallets.issubset(expected_wallets):
         reasons.append(
             "claim transaction evidence is for "
             + ", ".join(sorted(observed_wallets))
-            + f", but current seeded wallet is {expected_wallet}"
+            + ", but current claim artifacts allow "
+            + ", ".join(sorted(expected_wallets))
         )
-    if expected_genesis and str(genesis.get("claim_amount_raw") or "").strip() != expected_genesis:
-        reasons.append("genesis claim amount does not match the current seeded genesis artifact")
-    if expected_emission and str(emission.get("claim_amount_raw") or "").strip() != expected_emission:
-        reasons.append("emission claim amount does not match the current seeded emission artifact")
+    if expected_genesis_amounts and str(genesis.get("claim_amount_raw") or "").strip() not in expected_genesis_amounts:
+        reasons.append("genesis claim amount does not match the current finalized genesis artifact")
+    if expected_emission_amounts and str(emission.get("claim_amount_raw") or "").strip() not in expected_emission_amounts:
+        reasons.append("emission claim amount does not match the current finalized emission artifact")
     if not reasons:
         return gate
     updated = dict(gate)
@@ -153,10 +342,51 @@ def _claim_tx_evidence_current_gate(testnet_dir: Path, gate: dict[str, Any]) -> 
             "status": "red",
             "summary": {"green": 0, "yellow": 0, "red": 1},
             "message": "; ".join(reasons),
-            "next_action": "Submit both claims from the current seeded Base Sepolia wallet, then rerun scripts/sota_base_claim_tx_evidence.py with the new tx hashes.",
+            "next_action": "Submit both claims from the current Base Sepolia tester wallet, then rerun scripts/sota_base_claim_tx_evidence.py with the new tx hashes.",
         }
     )
     return updated
+
+
+def _browser_smoke_current_gate(testnet_dir: Path, gate: dict[str, Any]) -> dict[str, Any]:
+    if gate.get("name") != "testnet_browser_smoke" or gate.get("status") == "red":
+        return gate
+    path = testnet_dir / "base-sota-testnet-browser-smoke.json"
+    try:
+        report = _load_report(path)
+    except Exception:
+        return gate
+    checks = {
+        str(check.get("name") or ""): str(check.get("status") or "")
+        for check in (dict(report or {}).get("checks") or [])
+        if isinstance(check, dict)
+    }
+    required = {
+        "claims_page_text",
+        "genesis_binding_message",
+        "genesis_binding_submit_route",
+        "genesis_lookup",
+        "emission_lookup",
+        "genesis_calldata",
+        "emission_calldata",
+        "self_validation_evidence",
+    }
+    missing = sorted(required - set(checks))
+    failed = sorted(name for name in required if checks.get(name) not in {"green", "yellow"} and name not in missing)
+    if not missing and not failed:
+        return gate
+    reasons: list[str] = []
+    if missing:
+        reasons.append("missing current browser-smoke checks: " + ", ".join(missing))
+    if failed:
+        reasons.append("failed current browser-smoke checks: " + ", ".join(failed))
+    out = dict(gate)
+    out["ok"] = False
+    out["status"] = "red"
+    out["summary"] = {"green": 0, "yellow": 0, "red": 1}
+    out["message"] = "; ".join(reasons)
+    out["next_action"] = "Deploy current claims UI/API and rerun scripts/sota_base_testnet_browser_smoke.py."
+    return out
 
 
 def _local_wallet_status(local_report: Path) -> dict[str, Any]:
@@ -191,6 +421,91 @@ def _local_wallet_status(local_report: Path) -> dict[str, Any]:
         "status": "red",
         "message": "Local UI smoke did not report tester wallet RPC readiness.",
         "next_action": "Rerun ./scripts/sota_local_demo.py ui-smoke so the tester_wallet_rpc check is present.",
+    }
+
+
+def _local_miner_swarm_gate(path: Path, *, min_miners: int) -> dict[str, Any]:
+    base = {
+        "name": "local_miner_swarm",
+        "phase": "local",
+        "required": True,
+        "path": str(path),
+        "expected_schema": "sota-local-multi-miner/v1",
+        "next_action": f"Run ./scripts/sota_local_demo.py swarm-smoke --count {min_miners}.",
+    }
+    try:
+        report = _load_report(path)
+    except Exception as exc:
+        return {
+            **base,
+            "schema": None,
+            "ok": False,
+            "status": "red",
+            "summary": {"green": 0, "yellow": 0, "red": 1},
+            "message": f"Could not read local miner swarm report: {exc}",
+        }
+    if report is None:
+        return {
+            **base,
+            "schema": None,
+            "ok": False,
+            "status": "red",
+            "summary": {"green": 0, "yellow": 0, "red": 1},
+            "message": "Local miner swarm report is missing.",
+        }
+    schema = str(report.get("schema") or "")
+    checks = dict(report.get("checks") or {})
+    miners = report.get("miners") if isinstance(report.get("miners"), list) else []
+    claim_transactions = report.get("claim_transactions") if isinstance(report.get("claim_transactions"), list) else []
+    reasons: list[str] = []
+    miner_count = int(report.get("miner_count") or 0)
+    accepted_count = int(report.get("accepted_count") or 0)
+    matching_claim_count = int(report.get("matching_claim_count") or 0)
+    if schema != "sota-local-multi-miner/v1":
+        reasons.append(f"schema is {schema or 'missing'}")
+    if not bool(report.get("ok")):
+        reasons.append("report ok is false")
+    if miner_count < min_miners:
+        reasons.append(f"miner_count {miner_count} is below required {min_miners}")
+    if len(miners) < min_miners:
+        reasons.append(f"miners list has {len(miners)} entries")
+    if accepted_count < min_miners:
+        reasons.append(f"accepted_count {accepted_count} is below required {min_miners}")
+    if matching_claim_count < min_miners:
+        reasons.append(f"matching_claim_count {matching_claim_count} is below required {min_miners}")
+    if len(claim_transactions) < min_miners:
+        reasons.append(f"claim_transactions has {len(claim_transactions)} entries")
+    required_checks = {
+        "distinct_hotkeys",
+        "distinct_miner_addresses",
+        "distinct_reward_addresses",
+        "all_processes_exited_zero",
+        "all_self_validation_accepted",
+        "all_claims_submitted",
+    }
+    failed_checks = sorted(name for name in required_checks if not bool(checks.get(name)))
+    if failed_checks:
+        reasons.append("failed checks: " + ", ".join(failed_checks))
+    if reasons:
+        return {
+            **base,
+            "schema": schema or None,
+            "ok": False,
+            "status": "red",
+            "summary": {"green": 0, "yellow": 0, "red": 1},
+            "message": "; ".join(reasons),
+        }
+    return {
+        **base,
+        "schema": schema,
+        "ok": True,
+        "status": "green",
+        "summary": {"green": 1, "yellow": 0, "red": 0},
+        "message": (
+            f"Local miner swarm ran {miner_count} distinct miners, accepted {accepted_count} self-validated submissions, "
+            f"published {matching_claim_count} matching leaves, and submitted {len(claim_transactions)} claim transactions."
+        ),
+        "next_action": "",
     }
 
 
@@ -359,6 +674,18 @@ def run_status(args: argparse.Namespace) -> dict[str, Any]:
         include_testnet=not args.local_only,
     )
     gate_reports = [_gate_status(gate) for gate in gates]
+    local_insert_at = next(
+        (
+            index + 1
+            for index, gate in enumerate(gate_reports)
+            if gate["name"] == "local_claim_proof"
+        ),
+        len(gate_reports),
+    )
+    gate_reports.insert(
+        local_insert_at,
+        _local_miner_swarm_gate(args.local_miner_swarm, min_miners=args.min_local_miners),
+    )
     local_tailscale_preflight = _optional_report_status(
         args.local_tailscale_preflight,
         expected_schema="sota-local-tailscale-preflight/v1",
@@ -366,8 +693,24 @@ def run_status(args: argparse.Namespace) -> dict[str, Any]:
     local_wallet = _local_wallet_status(args.local_report)
     local_remote_wallet = _local_remote_wallet_status(local_tailscale_preflight)
     if not args.local_only:
+        testnet_insert_at = next(
+            (
+                index + 1
+                for index, gate in enumerate(gate_reports)
+                if gate["name"] == "testnet_operator_run"
+            ),
+            len(gate_reports),
+        )
+        gate_reports.insert(
+            testnet_insert_at,
+            _snapshot_genesis_gate(args.testnet_artifacts_dir, args.snapshot_dir),
+        )
         gate_reports = [
             _claim_tx_evidence_current_gate(args.testnet_artifacts_dir, gate)
+            for gate in gate_reports
+        ]
+        gate_reports = [
+            _browser_smoke_current_gate(args.testnet_artifacts_dir, gate)
             for gate in gate_reports
         ]
     local_wallet_gate = {
@@ -471,8 +814,11 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Aggregate Base SOTA local and Base Sepolia release-gate reports.")
     parser.add_argument("--local-report", type=Path, default=LOCAL_RUN_DIR / "ui-smoke" / "report.json")
     parser.add_argument("--local-claim-proof", type=Path, default=LOCAL_RUN_DIR / "claim-proof" / "latest.json")
+    parser.add_argument("--local-miner-swarm", type=Path, default=LOCAL_RUN_DIR / "miner-swarm" / "latest.json")
+    parser.add_argument("--min-local-miners", type=int, default=3)
     parser.add_argument("--local-tailscale-preflight", type=Path, default=LOCAL_RUN_DIR / "tailscale-preflight.json")
     parser.add_argument("--testnet-artifacts-dir", type=Path, default=TESTNET_RUN_DIR)
+    parser.add_argument("--snapshot-dir", type=Path, default=DEFAULT_SNAPSHOT_DIR)
     parser.add_argument("--local-only", action="store_true", help="Only require the local demo gate.")
     parser.add_argument("--json", action="store_true")
     parser.add_argument("--report-out", type=Path)

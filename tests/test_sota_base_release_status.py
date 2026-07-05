@@ -21,6 +21,17 @@ def _load_module():
 
 
 def _write_report(path: Path, *, schema: str, ok: bool, status: str = "green", checks: list[dict] | None = None) -> None:
+    if checks is None and schema == "sota-base-testnet-browser-smoke/v1" and ok:
+        checks = [
+            {"name": "claims_page_text", "status": "green"},
+            {"name": "genesis_binding_message", "status": "green"},
+            {"name": "genesis_binding_submit_route", "status": "green"},
+            {"name": "genesis_lookup", "status": "green"},
+            {"name": "emission_lookup", "status": "green"},
+            {"name": "genesis_calldata", "status": "green"},
+            {"name": "emission_calldata", "status": "green"},
+            {"name": "self_validation_evidence", "status": "green"},
+        ]
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(
         json.dumps(
@@ -93,12 +104,113 @@ def _write_claim_evidence(path: Path, *, wallet: str, genesis: str = "150", emis
     )
 
 
+def _write_miner_swarm(path: Path, *, count: int = 5, ok: bool = True) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(
+        json.dumps(
+            {
+                "schema": "sota-local-multi-miner/v1",
+                "ok": ok,
+                "miner_count": count,
+                "accepted_count": count,
+                "matching_claim_count": count,
+                "miners": [
+                    {
+                        "name": f"miner-{index}",
+                        "hotkey": f"hotkey-{index}",
+                        "miner_address": f"0x{index:040x}",
+                        "reward_address": f"0x{index + 100:040x}",
+                    }
+                    for index in range(1, count + 1)
+                ],
+                "claim_transactions": [
+                    {
+                        "reward_address": f"0x{index + 100:040x}",
+                        "tx_hash": "0x" + f"{index:064x}",
+                        "amount_units": "1",
+                    }
+                    for index in range(1, count + 1)
+                ],
+                "checks": {
+                    "distinct_hotkeys": True,
+                    "distinct_miner_addresses": True,
+                    "distinct_reward_addresses": True,
+                    "all_processes_exited_zero": True,
+                    "all_self_validation_accepted": True,
+                    "all_claims_submitted": True,
+                },
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+
+def _write_snapshot_source(path: Path) -> None:
+    path.mkdir(parents=True, exist_ok=True)
+    (path / "genesis_snapshot_block.json").write_text(
+        json.dumps(
+            {
+                "schema": "sota-genesis-snapshot-block-lock/v1",
+                "bittensor_block_number": 8549811,
+                "bittensor_block_hash": "0x" + "ab" * 32,
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    (path / "alpha_exposures.csv").write_text(
+        "coldkey,netuid,included,total_alpha_units,tao_in_pool_rao\n"
+        "5Alice,1,True,100,200\n",
+        encoding="utf-8",
+    )
+
+
+def _write_snapshot_genesis_artifact(path: Path) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(
+        json.dumps(
+            {
+                "schema": "sota-base-claim-artifact/v1",
+                "indexer_import_ready": True,
+                "snapshot": {
+                    "snapshot_id": "sota-genesis-8549811-test",
+                    "bittensor_block_number": 8549811,
+                    "bittensor_block_hash": "0x" + "ab" * 32,
+                },
+                "root": {
+                    "root_id": "0x" + "12" * 32,
+                    "subnet_id": "genesis",
+                    "status": "finalized",
+                    "validation_status": "accepted",
+                    "total_amount_units": "350",
+                },
+                "allocations": [
+                    {
+                        "kind": "genesis",
+                        "reward_address": "0x1111111111111111111111111111111111111111",
+                        "amount_units": "350",
+                        "tao_credit_rao": "100",
+                        "alpha_synthetic_credit_rao": "250",
+                        "alpha_credit_rao_by_netuid": {"1": "250"},
+                    }
+                ],
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+
 def _args(tmp_path: Path, *, local_only: bool = False):
     return argparse.Namespace(
         local_report=tmp_path / "local" / "report.json",
         local_claim_proof=tmp_path / "local" / "claim-proof.json",
+        local_miner_swarm=tmp_path / "local" / "miner-swarm.json",
+        min_local_miners=3,
         local_tailscale_preflight=tmp_path / "local" / "tailscale-preflight.json",
         testnet_artifacts_dir=tmp_path / "testnet",
+        snapshot_dir=tmp_path / "snapshot",
         local_only=local_only,
     )
 
@@ -108,6 +220,7 @@ def test_release_status_local_only_green(tmp_path: Path) -> None:
     args = _args(tmp_path, local_only=True)
     _write_report(args.local_report, schema="sota-local-claims-ui-smoke/v1", ok=True, checks=[_wallet_check()])
     _write_report(args.local_claim_proof, schema="sota-local-claim-proof/v1", ok=True)
+    _write_miner_swarm(args.local_miner_swarm)
 
     report = module.run_status(args)
 
@@ -120,7 +233,7 @@ def test_release_status_local_only_green(tmp_path: Path) -> None:
     assert report["local_remote_wallet_ok"] is False
     assert report["testnet_ok"] is None
     assert report["blocked_gates"] == []
-    assert [gate["name"] for gate in report["gates"]] == ["local_demo", "local_claim_proof", "local_wallet"]
+    assert [gate["name"] for gate in report["gates"]] == ["local_demo", "local_claim_proof", "local_miner_swarm", "local_wallet"]
 
 
 def test_release_status_local_only_requires_claim_proof(tmp_path: Path) -> None:
@@ -134,7 +247,7 @@ def test_release_status_local_only_requires_claim_proof(tmp_path: Path) -> None:
     assert report["status"] == "red"
     assert report["local_stack_ok"] is False
     assert report["local_ok"] is False
-    assert {gate["name"] for gate in report["blocked_gates"]} == {"local_claim_proof", "local_wallet"}
+    assert {gate["name"] for gate in report["blocked_gates"]} == {"local_claim_proof", "local_miner_swarm", "local_wallet"}
 
 
 def test_release_status_reports_local_wallet_readiness_from_local_smoke(tmp_path: Path) -> None:
@@ -152,6 +265,7 @@ def test_release_status_reports_local_wallet_readiness_from_local_smoke(tmp_path
         ],
     )
     _write_report(args.local_claim_proof, schema="sota-local-claim-proof/v1", ok=True)
+    _write_miner_swarm(args.local_miner_swarm)
 
     report = module.run_status(args)
 
@@ -175,6 +289,7 @@ def test_release_status_remote_wallet_comes_from_tailscale_preflight(tmp_path: P
     args = _args(tmp_path, local_only=True)
     _write_report(args.local_report, schema="sota-local-claims-ui-smoke/v1", ok=True, checks=[_wallet_check()])
     _write_report(args.local_claim_proof, schema="sota-local-claim-proof/v1", ok=True)
+    _write_miner_swarm(args.local_miner_swarm)
     _write_report(args.local_tailscale_preflight, schema="sota-local-tailscale-preflight/v1", ok=True)
 
     report = module.run_status(args)
@@ -191,6 +306,7 @@ def test_release_status_full_requires_all_testnet_gates(tmp_path: Path) -> None:
     args = _args(tmp_path)
     _write_report(args.local_report, schema="sota-local-claims-ui-smoke/v1", ok=True, checks=[_wallet_check()])
     _write_report(args.local_claim_proof, schema="sota-local-claim-proof/v1", ok=True)
+    _write_miner_swarm(args.local_miner_swarm)
     _write_report(args.testnet_artifacts_dir / "base-sota-testnet-operator-run.json", schema="sota-base-testnet-operator-run/v1", ok=False, status="red")
     _write_report(args.testnet_artifacts_dir / "base-sota-testnet-blockers.json", schema="sota-base-testnet-blockers/v1", ok=False, status="red")
     _write_report(args.testnet_artifacts_dir / "base-sota-testnet-aws-inventory.json", schema="sota-base-testnet-aws-inventory/v1", ok=False, status="red")
@@ -211,6 +327,7 @@ def test_release_status_full_requires_all_testnet_gates(tmp_path: Path) -> None:
     assert report["testnet_ok"] is False
     assert {gate["name"] for gate in report["blocked_gates"]} == {
         "testnet_operator_run",
+        "testnet_snapshot_genesis",
         "testnet_blockers",
         "testnet_aws_inventory",
         "testnet_funding",
@@ -226,6 +343,7 @@ def test_release_status_full_green_requires_operator_gate(tmp_path: Path) -> Non
     args = _args(tmp_path)
     _write_report(args.local_report, schema="sota-local-claims-ui-smoke/v1", ok=True, checks=[_wallet_check()])
     _write_report(args.local_claim_proof, schema="sota-local-claim-proof/v1", ok=True)
+    _write_miner_swarm(args.local_miner_swarm)
     _write_report(args.testnet_artifacts_dir / "base-sota-testnet-operator-run.json", schema="sota-base-testnet-operator-run/v1", ok=True)
     _write_report(args.testnet_artifacts_dir / "base-sota-testnet-blockers.json", schema="sota-base-testnet-blockers/v1", ok=True)
     _write_report(args.testnet_artifacts_dir / "base-sota-testnet-aws-inventory.json", schema="sota-base-testnet-aws-inventory/v1", ok=True)
@@ -234,7 +352,14 @@ def test_release_status_full_green_requires_operator_gate(tmp_path: Path) -> Non
     _write_report(args.testnet_artifacts_dir / "base-sota-testnet-apprunner-source-pack.json", schema="sota-base-testnet-apprunner-source-pack/v1", ok=True)
     _write_report(args.testnet_artifacts_dir / "base-sota-testnet-container-pack.json", schema="sota-base-testnet-container-pack/v1", ok=False, status="yellow")
     _write_report(args.testnet_artifacts_dir / "base-sota-testnet-browser-smoke.json", schema="sota-base-testnet-browser-smoke/v1", ok=True)
-    _write_report(args.testnet_artifacts_dir / "base-sota-claim-tx-evidence.json", schema="sota-base-claim-tx-evidence/v1", ok=True)
+    _write_snapshot_source(args.snapshot_dir)
+    _write_snapshot_genesis_artifact(args.testnet_artifacts_dir / "base-sota-testnet-genesis-claim-artifact.json")
+    _write_claim_evidence(
+        args.testnet_artifacts_dir / "base-sota-claim-tx-evidence.json",
+        wallet="0x1111111111111111111111111111111111111111",
+        genesis="350",
+        emission="200",
+    )
 
     report = module.run_status(args)
 
@@ -244,8 +369,10 @@ def test_release_status_full_green_requires_operator_gate(tmp_path: Path) -> Non
     assert [gate["name"] for gate in report["gates"]] == [
         "local_demo",
         "local_claim_proof",
+        "local_miner_swarm",
         "local_wallet",
         "testnet_operator_run",
+        "testnet_snapshot_genesis",
         "testnet_blockers",
         "testnet_aws_inventory",
         "testnet_funding",
@@ -257,11 +384,49 @@ def test_release_status_full_green_requires_operator_gate(tmp_path: Path) -> Non
     ]
 
 
+def test_release_status_rejects_stale_browser_smoke_without_binding_checks(tmp_path: Path) -> None:
+    module = _load_module()
+    args = _args(tmp_path)
+    _write_report(args.local_report, schema="sota-local-claims-ui-smoke/v1", ok=True, checks=[_wallet_check()])
+    _write_report(args.local_claim_proof, schema="sota-local-claim-proof/v1", ok=True)
+    _write_miner_swarm(args.local_miner_swarm)
+    _write_report(args.testnet_artifacts_dir / "base-sota-testnet-operator-run.json", schema="sota-base-testnet-operator-run/v1", ok=True)
+    _write_report(args.testnet_artifacts_dir / "base-sota-testnet-blockers.json", schema="sota-base-testnet-blockers/v1", ok=True)
+    _write_report(args.testnet_artifacts_dir / "base-sota-testnet-aws-inventory.json", schema="sota-base-testnet-aws-inventory/v1", ok=True)
+    _write_report(args.testnet_artifacts_dir / "base-sota-testnet-funding.json", schema="sota-base-testnet-funding/v1", ok=True)
+    _write_report(args.testnet_artifacts_dir / "base-sota-testnet-secret-handles.json", schema="sota-base-testnet-secret-bootstrap/v1", ok=True)
+    _write_report(args.testnet_artifacts_dir / "base-sota-testnet-apprunner-source-pack.json", schema="sota-base-testnet-apprunner-source-pack/v1", ok=True)
+    _write_report(args.testnet_artifacts_dir / "base-sota-testnet-container-pack.json", schema="sota-base-testnet-container-pack/v1", ok=False, status="yellow")
+    _write_report(
+        args.testnet_artifacts_dir / "base-sota-testnet-browser-smoke.json",
+        schema="sota-base-testnet-browser-smoke/v1",
+        ok=True,
+        checks=[{"name": "claims_page_text", "status": "green"}],
+    )
+    _write_snapshot_source(args.snapshot_dir)
+    _write_snapshot_genesis_artifact(args.testnet_artifacts_dir / "base-sota-testnet-genesis-claim-artifact.json")
+    _write_claim_evidence(
+        args.testnet_artifacts_dir / "base-sota-claim-tx-evidence.json",
+        wallet="0x1111111111111111111111111111111111111111",
+        genesis="350",
+        emission="200",
+    )
+
+    report = module.run_status(args)
+    gate = next(gate for gate in report["gates"] if gate["name"] == "testnet_browser_smoke")
+
+    assert report["ok"] is False
+    assert gate["status"] == "red"
+    assert "genesis_binding_message" in gate["message"]
+    assert [gate["name"] for gate in report["blocked_gates"]] == ["testnet_browser_smoke"]
+
+
 def test_release_status_marks_stale_claim_tx_evidence_red(tmp_path: Path) -> None:
     module = _load_module()
     args = _args(tmp_path)
     _write_report(args.local_report, schema="sota-local-claims-ui-smoke/v1", ok=True, checks=[_wallet_check()])
     _write_report(args.local_claim_proof, schema="sota-local-claim-proof/v1", ok=True)
+    _write_miner_swarm(args.local_miner_swarm)
     _write_report(args.testnet_artifacts_dir / "base-sota-testnet-operator-run.json", schema="sota-base-testnet-operator-run/v1", ok=True)
     _write_report(args.testnet_artifacts_dir / "base-sota-testnet-blockers.json", schema="sota-base-testnet-blockers/v1", ok=True)
     _write_report(args.testnet_artifacts_dir / "base-sota-testnet-aws-inventory.json", schema="sota-base-testnet-aws-inventory/v1", ok=True)
@@ -270,6 +435,8 @@ def test_release_status_marks_stale_claim_tx_evidence_red(tmp_path: Path) -> Non
     _write_report(args.testnet_artifacts_dir / "base-sota-testnet-apprunner-source-pack.json", schema="sota-base-testnet-apprunner-source-pack/v1", ok=True)
     _write_report(args.testnet_artifacts_dir / "base-sota-testnet-container-pack.json", schema="sota-base-testnet-container-pack/v1", ok=False, status="yellow")
     _write_report(args.testnet_artifacts_dir / "base-sota-testnet-browser-smoke.json", schema="sota-base-testnet-browser-smoke/v1", ok=True)
+    _write_snapshot_source(args.snapshot_dir)
+    _write_snapshot_genesis_artifact(args.testnet_artifacts_dir / "base-sota-testnet-genesis-claim-artifact.json")
     _write_seed_report(
         args.testnet_artifacts_dir / "base-sota-testnet-seed-artifacts-finalized.json",
         wallet="0x2222222222222222222222222222222222222222",
@@ -285,8 +452,93 @@ def test_release_status_marks_stale_claim_tx_evidence_red(tmp_path: Path) -> Non
     assert report["ok"] is False
     assert report["testnet_ok"] is False
     assert claim_gate["status"] == "red"
-    assert "current seeded wallet" in claim_gate["message"]
+    assert "current finalized genesis artifact" in claim_gate["message"]
     assert [gate["name"] for gate in report["blocked_gates"]] == ["claim_tx_evidence"]
+
+
+def test_release_status_claim_evidence_uses_artifact_wallet_over_seed_wallet(tmp_path: Path) -> None:
+    module = _load_module()
+    args = _args(tmp_path)
+    _write_report(args.local_report, schema="sota-local-claims-ui-smoke/v1", ok=True, checks=[_wallet_check()])
+    _write_report(args.local_claim_proof, schema="sota-local-claim-proof/v1", ok=True)
+    _write_miner_swarm(args.local_miner_swarm)
+    _write_report(args.testnet_artifacts_dir / "base-sota-testnet-operator-run.json", schema="sota-base-testnet-operator-run/v1", ok=True)
+    _write_report(args.testnet_artifacts_dir / "base-sota-testnet-blockers.json", schema="sota-base-testnet-blockers/v1", ok=True)
+    _write_report(args.testnet_artifacts_dir / "base-sota-testnet-aws-inventory.json", schema="sota-base-testnet-aws-inventory/v1", ok=True)
+    _write_report(args.testnet_artifacts_dir / "base-sota-testnet-funding.json", schema="sota-base-testnet-funding/v1", ok=True)
+    _write_report(args.testnet_artifacts_dir / "base-sota-testnet-secret-handles.json", schema="sota-base-testnet-secret-bootstrap/v1", ok=True)
+    _write_report(args.testnet_artifacts_dir / "base-sota-testnet-apprunner-source-pack.json", schema="sota-base-testnet-apprunner-source-pack/v1", ok=True)
+    _write_report(args.testnet_artifacts_dir / "base-sota-testnet-container-pack.json", schema="sota-base-testnet-container-pack/v1", ok=False, status="yellow")
+    _write_report(args.testnet_artifacts_dir / "base-sota-testnet-browser-smoke.json", schema="sota-base-testnet-browser-smoke/v1", ok=True)
+    _write_snapshot_source(args.snapshot_dir)
+    _write_snapshot_genesis_artifact(args.testnet_artifacts_dir / "base-sota-testnet-genesis-claim-artifact.json")
+    emission_artifact = {
+        "schema": "sota-base-claim-artifact/v1",
+        "root": {"root_id": "0x" + "13" * 32, "subnet_id": "base:sota-local", "total_amount_units": "200"},
+    }
+    (args.testnet_artifacts_dir / "base-sota-testnet-emission-claim-artifact.json").write_text(
+        json.dumps(emission_artifact) + "\n",
+        encoding="utf-8",
+    )
+    _write_seed_report(
+        args.testnet_artifacts_dir / "base-sota-testnet-seed-artifacts-finalized.json",
+        wallet="0x2222222222222222222222222222222222222222",
+        genesis="999",
+        emission="999",
+    )
+    _write_claim_evidence(
+        args.testnet_artifacts_dir / "base-sota-claim-tx-evidence.json",
+        wallet="0x1111111111111111111111111111111111111111",
+        genesis="350",
+        emission="200",
+    )
+
+    report = module.run_status(args)
+    claim_gate = next(gate for gate in report["gates"] if gate["name"] == "claim_tx_evidence")
+
+    assert report["ok"] is True
+    assert claim_gate["status"] == "green"
+
+
+def test_release_status_rejects_seeded_genesis_without_snapshot_alpha(tmp_path: Path) -> None:
+    module = _load_module()
+    args = _args(tmp_path)
+    _write_report(args.local_report, schema="sota-local-claims-ui-smoke/v1", ok=True, checks=[_wallet_check()])
+    _write_report(args.local_claim_proof, schema="sota-local-claim-proof/v1", ok=True)
+    _write_miner_swarm(args.local_miner_swarm)
+    _write_report(args.testnet_artifacts_dir / "base-sota-testnet-operator-run.json", schema="sota-base-testnet-operator-run/v1", ok=True)
+    _write_report(args.testnet_artifacts_dir / "base-sota-testnet-blockers.json", schema="sota-base-testnet-blockers/v1", ok=True)
+    _write_report(args.testnet_artifacts_dir / "base-sota-testnet-aws-inventory.json", schema="sota-base-testnet-aws-inventory/v1", ok=True)
+    _write_report(args.testnet_artifacts_dir / "base-sota-testnet-funding.json", schema="sota-base-testnet-funding/v1", ok=True)
+    _write_report(args.testnet_artifacts_dir / "base-sota-testnet-secret-handles.json", schema="sota-base-testnet-secret-bootstrap/v1", ok=True)
+    _write_report(args.testnet_artifacts_dir / "base-sota-testnet-apprunner-source-pack.json", schema="sota-base-testnet-apprunner-source-pack/v1", ok=True)
+    _write_report(args.testnet_artifacts_dir / "base-sota-testnet-container-pack.json", schema="sota-base-testnet-container-pack/v1", ok=False, status="yellow")
+    _write_report(args.testnet_artifacts_dir / "base-sota-testnet-browser-smoke.json", schema="sota-base-testnet-browser-smoke/v1", ok=True)
+    _write_report(args.testnet_artifacts_dir / "base-sota-claim-tx-evidence.json", schema="sota-base-claim-tx-evidence/v1", ok=True)
+    _write_snapshot_source(args.snapshot_dir)
+    seeded = {
+        "schema": "sota-base-claim-artifact/v1",
+        "root": {"root_id": "0x" + "12" * 32, "subnet_id": "genesis", "total_amount_units": "150"},
+        "allocations": [
+            {
+                "reward_address": "0x1111111111111111111111111111111111111111",
+                "amount_units": "150",
+                "tao_credit": "100",
+                "alpha_synthetic_credit": "50",
+            }
+        ],
+    }
+    path = args.testnet_artifacts_dir / "base-sota-testnet-genesis-claim-artifact.json"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(seeded) + "\n", encoding="utf-8")
+
+    report = module.run_status(args)
+    gate = next(gate for gate in report["gates"] if gate["name"] == "testnet_snapshot_genesis")
+
+    assert report["ok"] is False
+    assert gate["status"] == "red"
+    assert "snapshot metadata is missing" in gate["message"]
+    assert "TAO/alpha rao credit fields" in gate["message"]
 
 
 def test_release_status_rejects_schema_mismatch(tmp_path: Path) -> None:
@@ -304,6 +556,22 @@ def test_release_status_rejects_schema_mismatch(tmp_path: Path) -> None:
     assert gate["expected_schema"] == "sota-local-claims-ui-smoke/v1"
 
 
+def test_release_status_rejects_too_small_local_miner_swarm(tmp_path: Path) -> None:
+    module = _load_module()
+    args = _args(tmp_path, local_only=True)
+    _write_report(args.local_report, schema="sota-local-claims-ui-smoke/v1", ok=True, checks=[_wallet_check()])
+    _write_report(args.local_claim_proof, schema="sota-local-claim-proof/v1", ok=True)
+    _write_miner_swarm(args.local_miner_swarm, count=1)
+
+    report = module.run_status(args)
+    gate = next(gate for gate in report["gates"] if gate["name"] == "local_miner_swarm")
+
+    assert report["ok"] is False
+    assert gate["status"] == "red"
+    assert "below required" in gate["message"]
+    assert [gate["name"] for gate in report["blocked_gates"]] == ["local_miner_swarm"]
+
+
 def test_release_status_missing_report_is_red(tmp_path: Path) -> None:
     module = _load_module()
     args = _args(tmp_path, local_only=True)
@@ -317,6 +585,8 @@ def test_release_status_missing_report_is_red(tmp_path: Path) -> None:
     assert gates["local_demo"]["message"] == "Report is missing."
     assert gates["local_claim_proof"]["status"] == "red"
     assert gates["local_claim_proof"]["message"] == "Report is missing."
+    assert gates["local_miner_swarm"]["status"] == "red"
+    assert gates["local_miner_swarm"]["message"] == "Local miner swarm report is missing."
 
 
 def test_release_status_json_without_report_out_only_prints(tmp_path: Path, capsys) -> None:
@@ -324,6 +594,7 @@ def test_release_status_json_without_report_out_only_prints(tmp_path: Path, caps
     args = _args(tmp_path, local_only=True)
     _write_report(args.local_report, schema="sota-local-claims-ui-smoke/v1", ok=True, checks=[_wallet_check()])
     _write_report(args.local_claim_proof, schema="sota-local-claim-proof/v1", ok=True)
+    _write_miner_swarm(args.local_miner_swarm)
 
     exit_code = module.main(
         [
@@ -332,6 +603,8 @@ def test_release_status_json_without_report_out_only_prints(tmp_path: Path, caps
             str(args.local_report),
             "--local-claim-proof",
             str(args.local_claim_proof),
+            "--local-miner-swarm",
+            str(args.local_miner_swarm),
             "--json",
         ]
     )

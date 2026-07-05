@@ -40,6 +40,12 @@ def _args(tmp_path: Path, **overrides):
         "root_publisher_address": "",
         "default_lane_id": "base:sota-test",
         "emission_evidence": None,
+        "snapshot_dir": tmp_path / "snapshot",
+        "snapshot_claim_binding": [],
+        "snapshot_claim_bindings_url": "",
+        "snapshot_sota_units_per_rao": 10**9,
+        "allow_local_snapshot": False,
+        "allow_seeded_genesis": True,
         "local_state": tmp_path / "local-state.json",
         "local_report": tmp_path / "local-report.json",
         "test_wallet_address": "0x00000000000000000000000000000000000000aa",
@@ -479,6 +485,42 @@ def test_operator_dry_run_roots_keeps_claim_import_yellow(tmp_path: Path, monkey
     assert "--broadcast" not in " ".join(steps["publish_genesis_root"]["command"])
 
 
+def test_operator_without_snapshot_binding_refuses_seeded_genesis_by_default(tmp_path: Path, monkeypatch) -> None:
+    module = _load_module()
+    args = _args(
+        tmp_path,
+        deployment=tmp_path / "compact.json",
+        emission_evidence=tmp_path / "evidence.json",
+        allow_seeded_genesis=False,
+    )
+    args.deployment.write_text("{}\n", encoding="utf-8")
+    args.emission_evidence.write_text("{}\n", encoding="utf-8")
+    paths = module._paths(args.artifacts_dir)
+
+    def fake_run(cmd: list[str], **kwargs) -> dict:
+        _write_standard_reports(module, paths, cmd)
+        if _has_cmd(cmd, "sota_base_testnet_rehearsal.py"):
+            module._write_json(paths["rehearsal_report"], {"ok": True, "status": "green"})
+            module._write_json(paths["manifest"], {"environment": "base-sepolia", "chain": {"chain_id": 84532}})
+            paths["env"].write_text("SOTA_CLAIMS_API_URL=https://claims-api-test.example.invalid\n", encoding="utf-8")
+        if _has_cmd(cmd, "sota_base_testnet_seed_artifacts.py") and "build" in cmd:
+            module._write_json(paths["seed_report"], {"status": "ready_to_publish_roots"})
+            module._write_json(paths["genesis_root_artifact"], {"root": {"root": "0x" + "11" * 32}})
+            module._write_json(paths["emission_root_artifact"], {"root": {"root": "0x" + "12" * 32}})
+        return _command_result(cmd)
+
+    monkeypatch.setattr(module, "_run_command", fake_run)
+
+    report = module.run_operator(args)
+    steps = {step["name"]: step for step in report["steps"]}
+
+    assert report["ok"] is False
+    assert steps["snapshot_genesis_artifacts"]["status"] == "red"
+    assert "No signed snapshot coldkey binding" in steps["snapshot_genesis_artifacts"]["detail"]
+    assert steps["publish_genesis_root"]["status"] == "red"
+    assert not paths["genesis_root_artifact"].exists()
+
+
 def test_operator_default_rerun_uses_existing_finalized_claim_artifacts(tmp_path: Path, monkeypatch) -> None:
     module = _load_module()
     args = _args(tmp_path, deployment=tmp_path / "compact.json", emission_evidence=tmp_path / "evidence.json")
@@ -594,6 +636,176 @@ def test_operator_full_broadcast_finalize_import_path_can_be_green(tmp_path: Pat
     assert steps["finalize_claim_artifacts"]["status"] == "green"
     assert steps["import_claim_artifacts"]["status"] == "green"
     assert report["read_only_default"] is False
+
+
+def test_operator_snapshot_binding_replaces_seed_genesis_root_and_claim(tmp_path: Path, monkeypatch) -> None:
+    module = _load_module()
+    binding = tmp_path / "binding.json"
+    binding.write_text('{"message":{},"signature":"0x11"}\n', encoding="utf-8")
+    args = _args(
+        tmp_path,
+        deployment=tmp_path / "compact.json",
+        emission_evidence=tmp_path / "evidence.json",
+        snapshot_dir=tmp_path / "real-snapshot",
+        snapshot_claim_binding=[binding],
+        broadcast_roots=True,
+    )
+    args.deployment.write_text("{}\n", encoding="utf-8")
+    args.emission_evidence.write_text("{}\n", encoding="utf-8")
+    paths = module._paths(args.artifacts_dir)
+    seed_genesis_root = "0x" + "11" * 32
+    snapshot_genesis_root = "0x" + "99" * 32
+    genesis_root_id = "0x" + "21" * 32
+    emission_root_id = "0x" + "22" * 32
+    seen: dict[str, list[str] | str] = {}
+
+    def fake_run(cmd: list[str], **kwargs) -> dict:
+        _write_standard_reports(module, paths, cmd)
+        if _has_cmd(cmd, "sota_base_testnet_rehearsal.py"):
+            module._write_json(paths["rehearsal_report"], {"ok": True, "status": "green"})
+            module._write_json(paths["manifest"], {"environment": "base-sepolia", "chain": {"chain_id": 84532}})
+            paths["env"].write_text("SOTA_CLAIMS_API_URL=https://claims-api-test.example.invalid\n", encoding="utf-8")
+        if _has_cmd(cmd, "sota_base_testnet_seed_artifacts.py") and "build" in cmd:
+            module._write_json(paths["seed_report"], {"status": "ready_to_publish_roots"})
+            module._write_json(paths["genesis_root_artifact"], {"root": {"root": seed_genesis_root}})
+            module._write_json(paths["emission_root_artifact"], {"root": {"root": "0x" + "12" * 32}})
+        if _has_cmd(cmd, "sota_snapshot_claim_bridge.py") and "build" in cmd:
+            seen["snapshot_build"] = cmd
+            module._write_json(paths["snapshot_claim_report"], {"status": "ready_to_publish_root"})
+            module._write_json(paths["snapshot_genesis_root_artifact"], {"root": {"root": snapshot_genesis_root}})
+            module._write_json(
+                paths["snapshot_genesis_claim_template"],
+                {
+                    "schema": "sota-base-claim-artifact/v1",
+                    "snapshot": {"snapshot_id": "sota-genesis-test"},
+                    "root": {"root_id": None, "status": "finalized", "validation_status": "accepted"},
+                    "allocations": [{"alpha_synthetic_credit_rao": "250"}],
+                },
+            )
+        if _has_cmd(cmd, "sota_base_publish_root.py"):
+            kind = cmd[cmd.index("--kind") + 1]
+            out = Path(cmd[cmd.index("--out") + 1])
+            if kind == "genesis":
+                seen["published_genesis_root"] = module._load_json(paths["genesis_root_artifact"])["root"]["root"]
+            module._write_json(out, {"status": "broadcasted", "root_id": genesis_root_id if kind == "genesis" else emission_root_id})
+        if _has_cmd(cmd, "sota_base_testnet_seed_artifacts.py") and "finalize" in cmd:
+            module._write_json(
+                paths["seed_finalized_report"],
+                {
+                    "status": "ready_to_import_claim_artifacts",
+                    "indexer_import_ready": True,
+                    "root_ids": {"genesis": "0x" + "31" * 32, "emission": emission_root_id},
+                },
+            )
+            module._write_json(
+                paths["genesis_claim_artifact"],
+                {
+                    "indexer_import_ready": True,
+                    "root": {
+                        "root_id": "0x" + "31" * 32,
+                        "status": "finalized",
+                        "validation_status": "accepted",
+                    },
+                },
+            )
+            module._write_json(
+                paths["emission_claim_artifact"],
+                {
+                    "indexer_import_ready": True,
+                    "root": {
+                        "root_id": emission_root_id,
+                        "status": "finalized",
+                        "validation_status": "accepted",
+                    },
+                },
+            )
+        if _has_cmd(cmd, "sota_snapshot_claim_bridge.py") and "finalize" in cmd:
+            seen["snapshot_finalize"] = cmd
+            module._write_json(
+                paths["genesis_claim_artifact"],
+                {
+                    "indexer_import_ready": True,
+                    "snapshot": {"snapshot_id": "sota-genesis-test"},
+                    "root": {
+                        "root_id": genesis_root_id,
+                        "status": "finalized",
+                        "validation_status": "accepted",
+                    },
+                    "allocations": [{"alpha_synthetic_credit_rao": "250"}],
+                },
+            )
+        return _command_result(cmd)
+
+    monkeypatch.setattr(module, "_run_command", fake_run)
+
+    report = module.run_operator(args)
+    steps = {step["name"]: step for step in report["steps"]}
+
+    assert steps["snapshot_genesis_artifacts"]["status"] == "green"
+    assert steps["finalize_snapshot_genesis_claim"]["status"] == "green"
+    assert steps["publish_genesis_root"]["status"] == "green"
+    assert steps["import_claim_artifacts"]["status"] == "green"
+    assert seen["published_genesis_root"] == snapshot_genesis_root
+    assert "--snapshot-dir" in seen["snapshot_build"]
+    assert str(args.snapshot_dir) in seen["snapshot_build"]
+    assert str(binding) in seen["snapshot_build"]
+    assert module._load_json(paths["genesis_claim_artifact"])["allocations"][0]["alpha_synthetic_credit_rao"] == "250"
+
+
+def test_operator_can_export_snapshot_bindings_from_claims_api(tmp_path: Path, monkeypatch) -> None:
+    module = _load_module()
+    args = _args(
+        tmp_path,
+        deployment=tmp_path / "compact.json",
+        emission_evidence=tmp_path / "evidence.json",
+        snapshot_dir=tmp_path / "real-snapshot",
+        snapshot_claim_bindings_url="https://claims-api-test.example.invalid/api/v1/base/genesis/bindings",
+    )
+    args.deployment.write_text("{}\n", encoding="utf-8")
+    args.emission_evidence.write_text("{}\n", encoding="utf-8")
+    paths = module._paths(args.artifacts_dir)
+    seen: dict[str, list[str] | str] = {}
+
+    def fake_get_json(url: str, **kwargs) -> dict:
+        seen["bindings_url"] = url
+        assert kwargs["token_env"] == args.indexer_admin_token_env
+        return {
+            "bindings": [
+                {
+                    "message": {"coldkey": "5Alice", "claim_id": "claim-1"},
+                    "signature": "0x" + "11" * 64,
+                }
+            ]
+        }
+
+    def fake_run(cmd: list[str], **kwargs) -> dict:
+        _write_standard_reports(module, paths, cmd)
+        if _has_cmd(cmd, "sota_base_testnet_rehearsal.py"):
+            module._write_json(paths["rehearsal_report"], {"ok": True, "status": "green"})
+            module._write_json(paths["manifest"], {"environment": "base-sepolia", "chain": {"chain_id": 84532}})
+            paths["env"].write_text("SOTA_CLAIMS_API_URL=https://claims-api-test.example.invalid\n", encoding="utf-8")
+        if _has_cmd(cmd, "sota_base_testnet_seed_artifacts.py") and "build" in cmd:
+            module._write_json(paths["seed_report"], {"status": "ready_to_publish_roots"})
+            module._write_json(paths["genesis_root_artifact"], {"root": {"root": "0x" + "11" * 32}})
+            module._write_json(paths["emission_root_artifact"], {"root": {"root": "0x" + "12" * 32}})
+        if _has_cmd(cmd, "sota_snapshot_claim_bridge.py") and "build" in cmd:
+            seen["snapshot_build"] = cmd
+            module._write_json(paths["snapshot_claim_report"], {"status": "ready_to_publish_root"})
+            module._write_json(paths["snapshot_genesis_root_artifact"], {"root": {"root": "0x" + "99" * 32}})
+        return _command_result(cmd)
+
+    monkeypatch.setattr(module, "_get_json", fake_get_json)
+    monkeypatch.setattr(module, "_run_command", fake_run)
+
+    report = module.run_operator(args)
+    steps = {step["name"]: step for step in report["steps"]}
+    exported = paths["snapshot_claim_dir"] / "api-binding-0000.json"
+
+    assert steps["snapshot_binding_export"]["status"] == "green"
+    assert steps["snapshot_genesis_artifacts"]["status"] == "green"
+    assert seen["bindings_url"] == args.snapshot_claim_bindings_url
+    assert exported.exists()
+    assert str(exported) in seen["snapshot_build"]
 
 
 def test_operator_loads_deployer_private_key_from_secret_handle(tmp_path: Path, monkeypatch) -> None:

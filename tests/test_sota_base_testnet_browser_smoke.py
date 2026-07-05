@@ -108,6 +108,23 @@ def _install_green_http(module, monkeypatch) -> None:
                 "lag_blocks": 0,
                 "last_sync_error": None,
             }
+        if url.endswith("/api/v1/base/genesis/binding-message"):
+            return {
+                "schema": "sota-snapshot-binding-message/v1",
+                "status": "message_ready",
+                "message": {
+                    "coldkey": "5GrwvaEF5zXb26Fz9rcQpDWS57CtERHpNehXCPcNoHGKutQY",
+                    "reward_address": "0x5555555555555555555555555555555555555555",
+                    "base_chain_id": 84532,
+                    "allocation_amount": 1500000000000000000,
+                },
+                "signing_payload": "{}",
+                "snapshot_claim": {
+                    "direct_tao_rao": "100",
+                    "alpha_credit_rao": "50",
+                    "alpha_credit_rao_by_netuid": {"1": "50"},
+                },
+            }
         if "/api/v1/base/eligibility/" in url and "subnet_id=genesis" in url:
             return {
                 "eligible": True,
@@ -136,6 +153,14 @@ def _install_green_http(module, monkeypatch) -> None:
         raise AssertionError(f"unexpected {method} {url}")
 
     monkeypatch.setattr(module, "_http_json", fake_json)
+    monkeypatch.setattr(
+        module,
+        "_http_json_response",
+        lambda method, url, payload=None, timeout=0.1: (
+            422,
+            {"detail": {"code": "invalid_binding_signature"}},
+        ),
+    )
     monkeypatch.setattr(module, "_http_status", lambda method, url, timeout: 204)
 
 
@@ -152,6 +177,8 @@ def test_browser_smoke_green_for_public_testnet_fixture(tmp_path: Path, monkeypa
     assert report["summary"]["red"] == 0
     names = {check["name"]: check for check in report["checks"]}
     assert names["claims_page_text"]["status"] == "green"
+    assert names["genesis_binding_message"]["status"] == "green"
+    assert names["genesis_binding_submit_route"]["status"] == "green"
     assert names["genesis_calldata"]["status"] == "green"
     assert names["emission_calldata"]["status"] == "green"
     assert names["self_validation_evidence"]["status"] == "green"

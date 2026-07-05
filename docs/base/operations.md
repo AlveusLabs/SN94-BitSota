@@ -58,6 +58,8 @@ Save evidence that a nontechnical reviewer can read later:
 - the ready URL block printed by the launcher;
 - the local claim proof report under
   `/home/mekaneeky/repos/.sota-base-local/claim-proof/latest.json`;
+- the local multi-miner swarm report under
+  `/home/mekaneeky/repos/.sota-base-local/miner-swarm/latest.json`;
 - the local wallet address and old coldkey shown by the launcher;
 - screenshots or notes for before/after local SOTA balances;
 - the autoresearch dashboard showing the seeded task, submission, and
@@ -90,15 +92,18 @@ python3 scripts/sota_base_release_status.py \
 ```
 
 This command reads the local UI smoke report, the local state-changing claim
-proof report, Base Sepolia operator report, blocker report, public
-browser-smoke report, and claim transaction evidence report. It does not deploy
-contracts, sign messages, broadcast transactions, or touch production
-Bittensor. Green means the required gates are green. Red means at least one
-required gate still blocks nontechnical testing.
+proof report, the local multi-miner self-validation/claim report, Base Sepolia
+operator report, blocker report, public browser-smoke report, and claim
+transaction evidence report. It does not deploy contracts, sign messages,
+broadcast transactions, or touch production Bittensor. Green means the
+required gates are green. Red means at least one required gate still blocks
+nontechnical testing.
 
-For a local-only check:
+For a local-only check, run the local claim proof and swarm smoke first:
 
 ```bash
+./scripts/sota_local_demo.py smoke
+./scripts/sota_local_demo.py swarm-smoke --count 5
 python3 scripts/sota_base_release_status.py --local-only
 ```
 
@@ -131,17 +136,26 @@ Publish Base Sepolia instructions only after each gate has evidence:
 | Local demo | One-command local run passes and the reviewer evidence above is saved. |
 | Deployment manifest | One manifest names `base-sepolia`, chain ID, public RPC label, secret handles, source branches, commit SHAs, contract addresses, ABI bundle, service URLs, owners, and rollback owner. Use `docs/base/manifests/base-sepolia-deployment-manifest.template.json` until a deployed Base Sepolia manifest replaces it. |
 | Contracts | SOTA token, vault, root registry, lane registry, genesis distributor, and emission distributor are deployed to Base Sepolia with constructor args and source verification links. |
-| Funding | Deployer, root publisher, and the seeded test wallet have Base Sepolia ETH before deployment, root publication, or browser-wallet smoke. |
+| Funding | Deployer, root publisher, and the tester wallet have Base Sepolia ETH before deployment, root publication, or browser-wallet smoke. |
 | Roles and custody | Owner, publisher, releaser, pause guardian, and multisig or timelock records are written using public addresses and secret handles only. |
-| Claim/root artifacts | Test-only genesis and emission root artifacts are built from the Base Sepolia manifest and accepted autoresearch self-validation evidence, then finalized with emitted on-chain root IDs before indexer import. |
-| Indexer/API | Testnet API reads from the manifest, catches up contract events, ingests public claim artifacts, and serves eligibility, proof, claim status, root status, and unsigned claim calldata routes. |
-| Claims website | Website is configured for Base Sepolia, shows split genesis/emission claims, and labels the network as testnet. |
+| Snapshot genesis | The finalized Base Sepolia genesis claim artifact is built from `/mnt/4tb/tao_fork_snapshot`, includes the locked Bittensor block, and records `tao_credit_rao`, `alpha_synthetic_credit_rao`, and `alpha_credit_rao_by_netuid` per allocation. |
+| Claim/root artifacts | Genesis uses signed coldkey snapshot bindings. Emissions use accepted autoresearch self-validation evidence. Both roots are finalized with emitted on-chain root IDs before indexer import. |
+| Indexer/API | Testnet API reads from the manifest, catches up contract events, ingests public claim artifacts, serves genesis binding-message and signed-binding submit routes, and serves eligibility, proof, claim status, root status, and unsigned claim calldata routes. |
+| Claims website | Website is configured for Base Sepolia, shows split genesis/emission claims, exposes the genesis binding payload and submit flow, and labels the network as testnet. |
 | Browser wallet smoke | A funded test wallet can switch to Base Sepolia, submit a test claim, and produce an explorer transaction hash or a recorded revert. |
 | Root lifecycle | Test-only genesis and emission roots can be built, validated, published, indexed, read back, and challenged or paused when appropriate. |
 | Observability | Operators can see service health, RPC failures, index lag, failed claim transactions, API errors, signer actions, root publication, and pause state. |
 | Recovery | Operators know how to pause, stop writers, preserve logs and transaction hashes, correct config, redeploy if needed, and verify recovery. |
 | Support wording | Public wording explains testnet claims without promising payout timing, reversals, exchange distribution, audit completion, or mainnet launch. |
 | QA gate | QA records pass/fail/blocker status for every gate and decides whether the final staged end-to-end test can run. |
+
+Pass signed coldkey bindings into the operator with
+`--snapshot-claim-binding`, or export accepted signed bindings from the claims
+API with `--snapshot-claim-bindings-url "$SOTA_CLAIMS_API_URL/api/v1/base/genesis/bindings"`.
+If Base Sepolia is still using the old seeded demo genesis artifact,
+`sota_base_release_status.py` marks
+`testnet_snapshot_genesis` red. Ongoing emissions still come from accepted
+self-validation evidence.
 
 ## Base Sepolia Blocker Gate
 
@@ -256,10 +270,10 @@ python3 scripts/sota_base_testnet_funding.py \
   --allow-blocked
 ```
 
-Green means the deployer, root publisher, and seeded test wallet all meet the
+Green means the deployer, root publisher, and tester wallet all meet the
 minimum Base Sepolia ETH balance for their role. The defaults are `0.020 ETH`
 for the deployer, `0.005 ETH` for the root publisher, and `0.005 ETH` for the
-seeded test wallet. Red means fund the listed public address with the displayed
+tester wallet. Red means fund the listed public address with the displayed
 additional amount and rerun this gate. The report includes BaseScan address
 links and the official Base network faucet documentation URL. Use native Base
 Sepolia ETH only; never fund these testnet roles with Base mainnet ETH.
@@ -312,24 +326,27 @@ access role ARN is provided and `iam:PassRole` works for that role.
 
 ## Base Sepolia Fresh Tester Prep
 
-Use this when the next nontechnical tester needs a clean first-time MetaMask
-claim. It creates a new throwaway Base Sepolia test wallet file, seeds real
+Use this when the next nontechnical tester has a known MetaMask test wallet and
+a signed Bittensor coldkey snapshot binding for that wallet. It seeds real
 public self-validation evidence, tops the wallet up with Base Sepolia test ETH
-from the local faucet wallet if needed, publishes/imports the new genesis and
-emission roots, runs browser smoke, and refreshes release status plus the
-tester handoff. It also refreshes the website repo's public Base Sepolia JSON
-artifacts locally so the static readiness and claim-artifact files match the
-current wallet/root cycle.
+from the local faucet wallet if needed, publishes/imports the snapshot genesis
+root and emission root, runs browser smoke, and refreshes release status plus
+the tester handoff. It also refreshes the website repo's public Base Sepolia
+JSON artifacts locally so the static readiness and claim-artifact files match
+the current wallet/root cycle.
 
 ```bash
 cd /home/mekaneeky/repos/SN94-BitSota-live-docs
 python3 scripts/sota_prepare_fresh_testnet_tester.py
 ```
 
-The command prints only the reward address, claim URL, handoff path, and next
-operator action. It writes the wallet key JSON under `.sota-base-testnet/` and
-does not print private keys. Wallet access must still be provided out of band
-to the human tester.
+The command now fails fast unless `--reward-key-file` and
+`--snapshot-claim-binding` are supplied. The binding's `reward_address` must
+match the wallet file. Build the binding message with
+`sota_snapshot_claim_bridge.py message`, have the holder sign it with the
+Bittensor coldkey, then rerun prep with the signed binding. The command prints
+only the reward address, claim URL, handoff path, and next operator action; it
+does not print private keys.
 
 After the command succeeds, commit and push the refreshed public JSON artifacts
 in the website repo so the App Runner claims UI serves the current readiness,
@@ -338,10 +355,10 @@ private key material.
 
 ## Base Sepolia Self-Validation Seed
 
-Before building claim artifacts for a fresh public tester, seed real
+Before building emission claim artifacts for a fresh public tester, seed real
 self-validation evidence on the Base Sepolia autoresearch coordinator. This
 creates a test-only task, posts a signed miner submission with EVM reward
-delegation to the seeded reward wallet, records the three peer evaluations,
+delegation to the tester reward wallet, records the three peer evaluations,
 builds the next SOTA emission root, and writes the evidence bundle used by the
 operator.
 
@@ -368,8 +385,9 @@ specific seed artifact.
 Use the operator command when you want the whole public testnet path attempted
 in order. It generates the service pack, source App Runner pack, funding
 report, blocker report, AWS inventory, deployment manifest/env from a compact
-deployment or fresh deploy, seed claim/root artifacts from real autoresearch
-evidence, root-publish requests/results, finalized claim artifacts, optional
+deployment or fresh deploy, snapshot genesis artifacts from signed coldkey
+bindings, emission artifacts from real autoresearch evidence, root-publish
+requests/results, finalized claim artifacts, optional
 indexer import, browser smoke, and release status.
 
 Read-only/current-blocker run:
@@ -388,6 +406,8 @@ python3 scripts/sota_base_testnet_operator.py \
   --aws-profile moonrocklab-frankfurt \
   --deployment /secure/artifacts/base-sepolia-compact-deployment.json \
   --emission-evidence /secure/artifacts/base-sota-emission-evidence.json \
+  --snapshot-dir /mnt/4tb/tao_fork_snapshot \
+  --snapshot-claim-binding "$SOTA_SNAPSHOT_CLAIM_BINDING" \
   --test-wallet-address "$SOTA_TEST_WALLET_ADDRESS" \
   --test-old-coldkey "$SOTA_TEST_OLD_COLDKEY" \
   --default-lane-id "$NEXT_PUBLIC_SOTA_DEFAULT_LANE_ID" \
@@ -404,6 +424,8 @@ python3 scripts/sota_base_testnet_operator.py \
   --deploy \
   --private-key-secret-id "$SOTA_DEPLOYER_PRIVATE_KEY_SECRET_ID" \
   --emission-evidence /secure/artifacts/base-sota-emission-evidence.json \
+  --snapshot-dir /mnt/4tb/tao_fork_snapshot \
+  --snapshot-claim-binding "$SOTA_SNAPSHOT_CLAIM_BINDING" \
   --test-wallet-address "$SOTA_TEST_WALLET_ADDRESS" \
   --test-old-coldkey "$SOTA_TEST_OLD_COLDKEY" \
   --default-lane-id "$NEXT_PUBLIC_SOTA_DEFAULT_LANE_ID" \
@@ -431,8 +453,14 @@ AWS Secrets Manager handle. `--import-artifacts` posts finalized genesis and
 emission claim artifacts into the configured testnet claims API. The operator
 report is written to `base-sota-testnet-operator-run.json`; it stays red or
 yellow until every generated report is green, both roots have emitted on-chain
-root IDs, the claim artifacts are imported, browser smoke is green, and
+root IDs, the snapshot genesis artifact includes TAO/alpha rao credits, the
+claim artifacts are imported, browser smoke is green, and
 MetaMask claim transaction evidence is recorded.
+
+`SOTA_TEST_WALLET_ADDRESS` must be the same Base wallet named in the signed
+snapshot binding's `reward_address`. The operator verifies the binding
+signature and claim amount; release status verifies the finalized artifact
+came from the locked snapshot and contains the alpha-credit fields.
 
 ## Base Sepolia Service Pack
 
@@ -472,7 +500,7 @@ mainnet. The blocker gate now requires
 red testnet blocker. Before the deployment manifest and env file exist, the
 pack is expected to stay yellow and the blocker gate is expected to stay red.
 
-## Base Sepolia Seed Claim Artifacts
+## Base Sepolia Claim Artifact Building
 
 Testnet claims have a two-phase artifact path. First build root artifacts and
 pending claim templates from the deployed manifest plus real autoresearch
@@ -493,6 +521,11 @@ The builder recomputes emission leaves, proofs, totals, and the Merkle root. It
 refuses emission evidence unless each claim has accepted self-validation
 consensus with the configured committee minimums. It does not sign, publish, or
 broadcast.
+
+For release readiness, do not publish the genesis artifact produced by this
+seed builder. Use the operator with `--snapshot-claim-binding` so genesis is
+rebuilt by `sota_snapshot_claim_bridge.py` from the locked TAO plus alpha
+snapshot. The release-status gate rejects the old seeded genesis artifact.
 
 Next publish the generated genesis and emission root artifacts using the root
 publisher. The build report prints dry-run and broadcast commands. After both
@@ -644,8 +677,8 @@ nontechnical tester yet.
 After the blocker report and preflight are green, run the read-only public
 browser smoke before handing the testnet to a nontechnical MetaMask tester. It
 loads the public claims page, requires Base Sepolia UI copy and readiness
-wording, checks the public claims API/indexer, verifies the seeded old
-coldkey/test-wallet genesis claim, verifies the seeded self-validated emission
+wording, checks the public claims API/indexer, verifies the snapshot old
+coldkey/test-wallet genesis claim, verifies the self-validated emission
 claim, checks unsigned claim calldata for both claim types, and confirms
 autoresearch self-validation evidence is public.
 
@@ -657,7 +690,7 @@ python3 scripts/sota_base_testnet_browser_smoke.py \
 
 The script is read-only. It does not deploy contracts, sign messages, broadcast
 transactions, or touch production Bittensor. A green report means the public UI
-and APIs are ready for the human MetaMask step: connect the seeded test wallet,
+and APIs are ready for the human MetaMask step: connect the tester wallet,
 submit the genesis claim, then submit the mined-emission claim. Red means do
 not invite a nontechnical tester yet.
 
@@ -671,7 +704,7 @@ The generated testnet env must include:
 ## Base Sepolia Claim Transaction Evidence
 
 After the public browser-smoke report is green, ask the human tester to connect
-the seeded MetaMask wallet, switch to Base Sepolia, submit the genesis claim,
+the tester MetaMask wallet, switch to Base Sepolia, submit the genesis claim,
 then submit the mined-emission claim. Record both transaction hashes.
 
 Verify those hashes with the read-only evidence verifier:
@@ -689,7 +722,7 @@ The verifier reads the generated manifest/env, queries the configured Base
 Sepolia RPC, and checks:
 
 - both transactions succeeded;
-- both transactions came from the seeded test wallet;
+- both transactions came from the tester wallet;
 - genesis targeted `GenesisClaimDistributor`;
 - emission targeted `EmissionClaimDistributor`;
 - both transactions used the expected claim function selector;
@@ -698,8 +731,9 @@ Sepolia RPC, and checks:
 - the vault emitted `SOTAReleased` to the tester wallet;
 - the tester wallet has a positive SOTA balance after the claims.
 
-Release status also compares this report with the current finalized seed
-artifacts. If a fresh root cycle changes the seeded wallet or claim amounts,
+Release status also checks that genesis is a snapshot artifact with TAO and
+alpha rao credits, and compares this report with the current finalized
+artifacts. If a fresh root cycle changes the tester wallet or claim amounts,
 old claim transaction evidence is marked stale and the `claim_tx_evidence` gate
 returns red until the current wallet submits both claims.
 
