@@ -22,6 +22,39 @@ Confirm these are all true:
 Do not use Base mainnet. Do not use a production Bittensor wallet, production
 TAO wallet, real seed phrase, or production private key for this dry run.
 
+## If The Handoff Says Not Ready
+
+Stop before opening MetaMask if the handoff says `Base Sepolia claim test
+ready: false`.
+
+The common blocker is genesis binding. That means a snapshot holder has not yet
+proved ownership of the legacy Bittensor coldkey and bound it to the Base wallet
+that will receive SOTA. A normal MetaMask tester cannot fix that by trying the
+claim button.
+
+The snapshot holder should use the Genesis binding panel in the claims UI:
+
+1. Open the Base Sepolia claims URL from the handoff.
+2. Select `Genesis`.
+3. Enter the snapshot coldkey and the Base reward wallet.
+4. Click `Create binding payload`.
+5. Sign the payload with the matching Bittensor coldkey by using the browser
+   coldkey extension or by pasting a signature produced by the local helper.
+6. Click `Submit binding`.
+7. Check binding status for the same coldkey and reward wallet.
+
+The page must never ask for a seed phrase or private key. The binding only
+proves coldkey control and chooses the Base wallet that will receive SOTA.
+
+After the binding is accepted, the operator still has to publish and import a
+new genesis root before a tester can claim:
+
+1. Export the accepted binding or pass the signed binding file to the operator.
+2. Build the genesis artifact from `/mnt/4tb/tao_fork_snapshot`.
+3. Publish the genesis root on Base Sepolia.
+4. Import the finalized claim artifact into the claims API.
+5. Rerun browser smoke and refresh the handoff.
+
 ## MetaMask Network
 
 | Field | Value |
