@@ -1547,12 +1547,22 @@ def run_operator(args: argparse.Namespace) -> dict[str, Any]:
         for kind in ("genesis", "emission"):
             artifact_path = paths["genesis_root_artifact"] if kind == "genesis" else paths["emission_root_artifact"]
             if not artifact_path.exists():
+                remediation = "Build seed artifacts before publishing roots."
+                if (
+                    kind == "genesis"
+                    and not _snapshot_bindings(args, paths)
+                    and not bool(getattr(args, "allow_seeded_genesis", False))
+                ):
+                    remediation = (
+                        "Submit/export a signed snapshot coldkey binding, then build snapshot genesis artifacts; "
+                        "seeded genesis is refused by default."
+                    )
                 steps.append(
                     StepResult(
                         f"publish_{kind}_root",
                         "red",
                         f"{kind.title()} root artifact is missing.",
-                        "Build seed artifacts before publishing roots.",
+                        remediation,
                     )
                 )
                 continue

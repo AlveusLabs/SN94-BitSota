@@ -20,7 +20,15 @@ def _load_module():
     return module
 
 
-def _write_report(path: Path, *, schema: str, ok: bool, status: str = "green", checks: list[dict] | None = None) -> None:
+def _write_report(
+    path: Path,
+    *,
+    schema: str,
+    ok: bool,
+    status: str = "green",
+    checks: list[dict] | None = None,
+    next_actions: list[str] | None = None,
+) -> None:
     if checks is None and schema == "sota-base-testnet-browser-smoke/v1" and ok:
         checks = [
             {"name": "claims_page_text", "status": "green"},
@@ -42,6 +50,7 @@ def _write_report(path: Path, *, schema: str, ok: bool, status: str = "green", c
                 "summary": {"green": 1 if ok else 0, "yellow": 0, "red": 0 if ok else 1},
                 "message": "ok" if ok else "blocked",
                 "checks": checks or [],
+                "next_actions": next_actions or [],
             }
         )
         + "\n",
@@ -330,7 +339,13 @@ def test_release_status_full_requires_all_testnet_gates(tmp_path: Path) -> None:
     _write_report(args.local_report, schema="sota-local-claims-ui-smoke/v1", ok=True, checks=[_wallet_check()])
     _write_report(args.local_claim_proof, schema="sota-local-claim-proof/v1", ok=True)
     _write_miner_swarm(args.local_miner_swarm)
-    _write_report(args.testnet_artifacts_dir / "base-sota-testnet-operator-run.json", schema="sota-base-testnet-operator-run/v1", ok=False, status="red")
+    _write_report(
+        args.testnet_artifacts_dir / "base-sota-testnet-operator-run.json",
+        schema="sota-base-testnet-operator-run/v1",
+        ok=False,
+        status="red",
+        next_actions=["Submit/export a signed snapshot coldkey binding."],
+    )
     _write_report(args.testnet_artifacts_dir / "base-sota-testnet-blockers.json", schema="sota-base-testnet-blockers/v1", ok=False, status="red")
     _write_report(args.testnet_artifacts_dir / "base-sota-testnet-aws-inventory.json", schema="sota-base-testnet-aws-inventory/v1", ok=False, status="red")
     _write_report(args.testnet_artifacts_dir / "base-sota-testnet-funding.json", schema="sota-base-testnet-funding/v1", ok=False, status="red")
@@ -360,6 +375,8 @@ def test_release_status_full_requires_all_testnet_gates(tmp_path: Path) -> None:
         "testnet_browser_smoke",
         "claim_tx_evidence",
     }
+    operator_gate = next(gate for gate in report["blocked_gates"] if gate["name"] == "testnet_operator_run")
+    assert operator_gate["next_action"] == "Submit/export a signed snapshot coldkey binding."
 
 
 def test_release_status_full_green_requires_operator_gate(tmp_path: Path) -> None:

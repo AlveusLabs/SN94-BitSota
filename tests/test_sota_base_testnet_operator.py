@@ -620,6 +620,7 @@ def test_operator_without_snapshot_binding_refuses_seeded_genesis_by_default(tmp
     assert steps["snapshot_genesis_artifacts"]["status"] == "red"
     assert "No signed snapshot coldkey binding" in steps["snapshot_genesis_artifacts"]["detail"]
     assert steps["publish_genesis_root"]["status"] == "red"
+    assert "signed snapshot coldkey binding" in steps["publish_genesis_root"]["remediation"]
     assert steps["finalize_claim_artifacts"]["status"] == "yellow"
     assert steps["import_claim_artifacts"]["status"] == "yellow"
     assert not paths["genesis_root_artifact"].exists()

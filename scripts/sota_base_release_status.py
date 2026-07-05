@@ -84,6 +84,14 @@ def _gate_status(spec: GateSpec) -> dict[str, Any]:
     if not schema_ok:
         status = "red"
     summary = report.get("summary") if isinstance(report.get("summary"), dict) else {}
+    next_action = spec.next_action
+    report_next_actions = report.get("next_actions")
+    if isinstance(report_next_actions, list):
+        for item in report_next_actions:
+            candidate = str(item or "").strip()
+            if candidate:
+                next_action = candidate
+                break
     return {
         "name": spec.name,
         "phase": spec.phase,
@@ -99,7 +107,7 @@ def _gate_status(spec: GateSpec) -> dict[str, Any]:
             "red": int(summary.get("red") or 0),
         },
         "message": str(report.get("message") or ""),
-        "next_action": "" if ok else spec.next_action,
+        "next_action": "" if ok else next_action,
     }
 
 
