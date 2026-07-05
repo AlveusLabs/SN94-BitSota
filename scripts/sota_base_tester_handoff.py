@@ -121,7 +121,11 @@ def _tester_decision_lines(handoff: dict[str, Any]) -> list[str]:
         if testnet.get("release_ready"):
             lines.append("Full Base Sepolia evidence: ready; both human MetaMask claim transactions verified.")
         else:
-            lines.append("Full Base Sepolia evidence: not ready until the current seeded wallet submits both claim transactions and the hashes verify.")
+            blocker_text = str(testnet.get("blocker_summary") or "").strip().rstrip(".")
+            if blocker_text:
+                lines.append(f"Full Base Sepolia evidence: not ready. Remaining gate: {blocker_text}.")
+            else:
+                lines.append("Full Base Sepolia evidence: not ready; review the blocked gates before sending this to testers.")
     return lines
 
 
@@ -365,6 +369,20 @@ def _testnet_section(release: dict[str, Any], testnet_dir: Path = TESTNET_RUN_DI
     )
     claim_gate = next((dict(gate) for gate in testnet_gates if dict(gate).get("name") == CLAIM_TX_EVIDENCE_GATE), {})
     release_ready = bool(release.get("testnet_ok"))
+    blocked_gate_items = [
+        {
+            "name": dict(gate).get("name"),
+            "status": dict(gate).get("status"),
+            "next_action": dict(gate).get("next_action"),
+        }
+        for gate in blocked
+        if dict(gate).get("phase") == "base_sepolia"
+    ]
+    blocker_summary = "; ".join(
+        f"{dict(gate).get('name')}: {dict(gate).get('next_action')}"
+        for gate in blocked_gate_items
+        if dict(gate).get("name") or dict(gate).get("next_action")
+    )
     fresh_funding = dict(fresh_tester_report.get("funding") or {})
     fresh_tester = {
         "status": str(fresh_tester_report.get("status") or "missing"),
@@ -409,7 +427,7 @@ def _testnet_section(release: dict[str, Any], testnet_dir: Path = TESTNET_RUN_DI
             "The seeded Base Sepolia wallet is operator-controlled and has already claimed the current roots. "
             "A new nontechnical claim test needs an operator-provided test wallet or a fresh seeded root cycle."
             if release_ready
-            else "The seeded Base Sepolia wallet must be provided out of band by an operator; this handoff never prints a testnet private key."
+            else "Base Sepolia tester wallets are provided out of band by an operator; this handoff never prints a testnet private key. Do not invite public testers until the remaining evidence gate is green."
         ),
         "gates": [
             {
@@ -420,23 +438,18 @@ def _testnet_section(release: dict[str, Any], testnet_dir: Path = TESTNET_RUN_DI
             }
             for gate in testnet_gates
         ],
-        "blocked_gates": [
-            {
-                "name": dict(gate).get("name"),
-                "status": dict(gate).get("status"),
-                "next_action": dict(gate).get("next_action"),
-            }
-            for gate in blocked
-            if dict(gate).get("phase") == "base_sepolia"
-        ],
+        "blocked_gates": blocked_gate_items,
+        "blocker_summary": blocker_summary,
         "immediate_blockers": immediate_blockers,
         "funding_targets": funding_targets,
         "faucet_sources": faucet_sources,
         "tester_message": (
             "Base Sepolia is fully verified, including human MetaMask claim transaction evidence."
             if release_ready
-            else "Base Sepolia is ready for a MetaMask claim tester; full release turns green after the two claim transaction hashes verify."
+            else f"Base Sepolia is ready for a MetaMask claim tester; full release turns green after the remaining evidence gate verifies. Remaining gate: {blocker_summary}"
             if claim_tester_ready
+            else f"Base Sepolia infrastructure is not ready for a nontechnical MetaMask tester yet. Remaining gate: {blocker_summary}"
+            if blocker_summary
             else "Base Sepolia infrastructure is not ready for a nontechnical MetaMask tester yet."
         ),
         "expected_flow_when_ready": [
@@ -457,7 +470,7 @@ def _testnet_section(release: dict[str, Any], testnet_dir: Path = TESTNET_RUN_DI
         ]
         if claim_tester_ready
         else [
-            "Clear the infrastructure blockers listed above.",
+            "Clear the blocked evidence gate listed above.",
             "Rerun the Base Sepolia operator and browser smoke.",
             "Return to this handoff when the claim tester readiness is green.",
         ],
