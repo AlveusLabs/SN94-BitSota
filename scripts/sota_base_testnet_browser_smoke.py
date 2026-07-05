@@ -30,6 +30,7 @@ EXPECTED_TESTNET_CLAIMS_TEXT = (
     "Testnet readiness",
     "Claim sources",
     "Binding payload",
+    "Binding status",
     "TAO credit",
     "Alpha synthetic credit",
     "Total SOTA",

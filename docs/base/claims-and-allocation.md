@@ -73,6 +73,14 @@ and alpha-derived credit before storing the accepted binding for the next
 genesis root. The website exposes the same flow from the Genesis tab with the
 `Binding payload` and `Submit binding` buttons.
 
+After submitting, the claimant can use `Binding status` in the Genesis tab to
+check whether that exact coldkey and Base reward wallet has an accepted binding.
+The public API route is:
+
+```bash
+curl -fsS "$SOTA_CLAIMS_API_URL/api/v1/base/genesis/bindings/status?coldkey=5...&reward_address=0x..."
+```
+
 In the browser, a claimant can use the `Sign with extension` button after
 creating the binding payload. The page asks an injected Polkadot-compatible
 extension to sign the exact payload with the entered snapshot coldkey. It never
