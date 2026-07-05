@@ -159,7 +159,17 @@ genesis root that omits alpha.
 
 ## Ongoing Emissions
 
-Ongoing emissions are paid in SOTA only. A miner submission carries:
+Ongoing emissions are paid in SOTA only. The global schedule target is
+`7,200 SOTA/day`, split across active SOTA-native lanes by editable weights.
+Production values stay configurable; Base Sepolia testnet defaults use one
+daily epoch and a frontier-capacitor R&D lane.
+
+Workload or inference lanes can release rewards every epoch after validation.
+R&D/frontier lanes accrue their budget in a capacitor and release only after
+self-validation consensus confirms the submitted artifact is real and above the
+current SOTA/frontier for that task.
+
+A miner submission carries:
 
 - EVM miner address;
 - optional reward address;

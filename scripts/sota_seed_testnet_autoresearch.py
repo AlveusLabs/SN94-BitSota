@@ -33,12 +33,24 @@ COMMITTEE_SIZE = 3
 ANVIL_MINER_PRIVATE_KEY = "0x7c852118294e51e653712a81e05800f419141751be58f605c371e15141b007a6"
 
 sys.path.insert(0, str(DOCS_REPO / "scripts"))
+from sota_emission_policy import frontier_capacitor_reward_policy, sota_epoch_budget_units  # noqa: E402
 import sota_local_demo as local_demo  # noqa: E402
 
 
 def _write_json(path: Path, payload: dict[str, Any]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(payload, indent=2, sort_keys=True, default=str) + "\n", encoding="utf-8")
+
+
+def _write_secret_json(path: Path, payload: dict[str, Any]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    fd = os.open(str(path), os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    with os.fdopen(fd, "w", encoding="utf-8") as handle:
+        handle.write(json.dumps(payload, indent=2, sort_keys=True, default=str) + "\n")
+    try:
+        path.chmod(0o600)
+    except OSError:
+        pass
 
 
 def _load_json(path: Path) -> dict[str, Any]:
@@ -97,6 +109,40 @@ def _url(base: str, path: str) -> str:
 
 def _demo_validator_keypairs() -> list[tuple[str, Keypair]]:
     return [(name, Keypair.create_from_uri(f"//{name}")) for name in ("Bob", "Charlie", "Dave")]
+
+
+def _load_or_create_reward_key(path: Path) -> dict[str, Any]:
+    if path.exists():
+        payload = _load_json(path)
+        private_key = str(
+            payload.get("private_key")
+            or payload.get("reward_private_key")
+            or payload.get("SOTA_TEST_WALLET_PRIVATE_KEY")
+            or ""
+        ).strip()
+        if not private_key:
+            raise RuntimeError(f"{path} does not contain a private_key field")
+        if not private_key.startswith("0x"):
+            private_key = "0x" + private_key
+        account = Account.from_key(private_key)
+        return {
+            "schema": str(payload.get("schema") or "sota-base-test-wallet-key/v1"),
+            "address": account.address,
+            "private_key": private_key,
+            "path": str(path),
+            "created": False,
+        }
+    account = Account.create(os.urandom(32))
+    payload = {
+        "schema": "sota-base-test-wallet-key/v1",
+        "address": account.address,
+        "private_key": account.key.hex(),
+        "network": "base-sepolia",
+        "purpose": "fresh first-time Base SOTA testnet claim wallet",
+        "warning": "testnet only; do not fund with mainnet assets",
+    }
+    _write_secret_json(path, payload)
+    return {**payload, "path": str(path), "created": True}
 
 
 def _manifest_lane_registry(path: Path) -> str:
@@ -161,7 +207,7 @@ def _fresh_slug() -> str:
 def seed_public_autoresearch(args: argparse.Namespace) -> dict[str, Any]:
     admin_token = _admin_token(args)
     coordinator_url = args.coordinator_url.rstrip("/")
-    reward_key = local_demo._load_or_create_reward_key(args.reward_key_file)
+    reward_key = _load_or_create_reward_key(args.reward_key_file)
     reward_private_key = str(reward_key["private_key"])
     reward_address = Account.from_key(reward_private_key).address
     validators = _demo_validator_keypairs()
@@ -187,12 +233,8 @@ def seed_public_autoresearch(args: argparse.Namespace) -> dict[str, Any]:
             "id": LANE_ID,
             "title": "SOTA Base Sepolia self-validation lane",
             "task_slugs": [task["slug"]],
-            "budget_units_per_epoch": 2 * ONE_SOTA,
-            "reward_policy": {
-                "version": 1,
-                "source": "accepted_submissions",
-                "allocation": "equal_per_accepted_submission",
-            },
+            "budget_units_per_epoch": sota_epoch_budget_units(),
+            "reward_policy": frontier_capacitor_reward_policy(),
             "active": True,
             "base_registry_chain_id": 84532,
             "base_registry_address": lane_registry,

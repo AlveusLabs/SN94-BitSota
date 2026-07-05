@@ -2,8 +2,10 @@ from __future__ import annotations
 
 import argparse
 import importlib.util
+import json
 from pathlib import Path
 import sys
+import pytest
 
 
 REPO = Path(__file__).resolve().parents[1]
@@ -54,3 +56,41 @@ def test_refresh_website_public_artifacts_can_be_skipped(tmp_path: Path) -> None
     result = module._refresh_website_public_artifacts(args)
 
     assert result["status"] == "skipped"
+
+
+def test_fresh_tester_requires_snapshot_binding(tmp_path: Path) -> None:
+    module = _load_module()
+    args = argparse.Namespace(snapshot_claim_binding=[], reward_key_file=tmp_path / "wallet.json")
+
+    with pytest.raises(RuntimeError, match="requires a real signed snapshot binding"):
+        module._assert_snapshot_binding_inputs(args)
+
+
+def test_fresh_tester_requires_known_reward_key_for_snapshot_binding(tmp_path: Path) -> None:
+    module = _load_module()
+    binding = tmp_path / "binding.json"
+    binding.write_text('{"message":{"reward_address":"0x1111111111111111111111111111111111111111"}}\n', encoding="utf-8")
+    args = argparse.Namespace(snapshot_claim_binding=[binding], reward_key_file=None)
+
+    with pytest.raises(RuntimeError, match="--reward-key-file is required"):
+        module._assert_snapshot_binding_inputs(args)
+
+
+def test_binding_reward_addresses_reads_signed_binding_message(tmp_path: Path) -> None:
+    module = _load_module()
+    binding = tmp_path / "binding.json"
+    binding.write_text(
+        json.dumps(
+            {
+                "message": {
+                    "coldkey": "5Alice",
+                    "reward_address": "0x1111111111111111111111111111111111111111",
+                },
+                "signature": "0x12",
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    assert module._binding_reward_addresses([binding]) == {"0x1111111111111111111111111111111111111111"}

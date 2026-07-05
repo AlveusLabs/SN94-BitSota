@@ -21,6 +21,12 @@ from eth_utils import keccak
 from substrateinterface import Keypair
 from web3 import Web3
 
+SCRIPT_DIR = Path(__file__).resolve().parent
+if str(SCRIPT_DIR) not in sys.path:
+    sys.path.insert(0, str(SCRIPT_DIR))
+
+from sota_emission_policy import frontier_capacitor_reward_policy, sota_epoch_budget_units
+
 
 REPOS = Path("/home/mekaneeky/repos")
 DOCS_REPO = Path(__file__).resolve().parents[1]
@@ -67,6 +73,7 @@ ANVIL_PRIVATE_KEYS = {
 }
 DEMO_VALIDATOR_URIS = ("//Bob", "//Charlie", "//Dave")
 DEMO_SELF_VALIDATION_COMMITTEE_SIZE = len(DEMO_VALIDATOR_URIS)
+DEMO_SWARM_MINER_COUNT = 5
 
 
 def _print(message: str) -> None:
@@ -293,17 +300,6 @@ def _write_json(path: Path, payload: dict[str, Any]) -> None:
     path.write_text(json.dumps(payload, indent=2, sort_keys=True, default=_json_default) + "\n", encoding="utf-8")
 
 
-def _write_secret_json(path: Path, payload: dict[str, Any]) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    fd = os.open(str(path), os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
-    with os.fdopen(fd, "w", encoding="utf-8") as handle:
-        handle.write(json.dumps(payload, indent=2, sort_keys=True, default=_json_default) + "\n")
-    try:
-        path.chmod(0o600)
-    except OSError:
-        pass
-
-
 def _request_json(
     method: str,
     url: str,
@@ -487,6 +483,32 @@ def _hex32(value: bytes | str) -> str:
 
 def _demo_validator_keypairs() -> list[tuple[str, Keypair]]:
     return [(uri.removeprefix("//"), Keypair.create_from_uri(uri)) for uri in DEMO_VALIDATOR_URIS]
+
+
+def _deterministic_private_key(label: str) -> str:
+    value = keccak(text=label)
+    if int.from_bytes(value, "big") == 0:
+        value = b"\x01".rjust(32, b"\x00")
+    return "0x" + value.hex()
+
+
+def _demo_swarm_miner(index: int) -> dict[str, Any]:
+    if index < 1:
+        raise ValueError("miner index must start at 1")
+    hotkey_uri = f"//SotaLocalMiner{index}"
+    hotkey = Keypair.create_from_uri(hotkey_uri)
+    miner_private_key = _deterministic_private_key(f"sota-local-swarm:miner:{index}")
+    reward_private_key = _deterministic_private_key(f"sota-local-swarm:reward:{index}")
+    return {
+        "index": index,
+        "name": f"miner-{index}",
+        "hotkey_uri": hotkey_uri,
+        "hotkey": hotkey.ss58_address,
+        "miner_private_key": miner_private_key,
+        "miner_address": Account.from_key(miner_private_key).address,
+        "reward_private_key": reward_private_key,
+        "reward_address": Account.from_key(reward_private_key).address,
+    }
 
 
 def _root_pair(left: str, right: str) -> str:
@@ -789,12 +811,8 @@ def seed_autoresearch_and_emission(state: dict[str, Any]) -> dict[str, Any]:
         "id": LANE_ID,
         "title": "SOTA local frontier lane",
         "task_slugs": [task["slug"]],
-        "budget_units_per_epoch": 2 * ONE_SOTA,
-        "reward_policy": {
-            "version": 1,
-            "source": "accepted_submissions",
-            "allocation": "equal_per_accepted_submission",
-        },
+        "budget_units_per_epoch": sota_epoch_budget_units(),
+        "reward_policy": frontier_capacitor_reward_policy(),
         "active": True,
         "base_registry_chain_id": CHAIN_ID,
         "base_registry_address": state["contracts"]["lane_registry"],
@@ -891,40 +909,6 @@ def seed_autoresearch_and_emission(state: dict[str, Any]) -> dict[str, Any]:
     return state
 
 
-def _load_or_create_reward_key(path: Path) -> dict[str, Any]:
-    if path.exists():
-        payload = _load_json(path)
-        private_key = str(
-            payload.get("private_key")
-            or payload.get("reward_private_key")
-            or payload.get("SOTA_TEST_WALLET_PRIVATE_KEY")
-            or ""
-        ).strip()
-        if not private_key:
-            raise RuntimeError(f"{path} does not contain a private_key field")
-        if not private_key.startswith("0x"):
-            private_key = "0x" + private_key
-        account = Account.from_key(private_key)
-        return {
-            "schema": str(payload.get("schema") or "sota-base-test-wallet-key/v1"),
-            "address": account.address,
-            "private_key": private_key,
-            "path": str(path),
-            "created": False,
-        }
-    account = Account.create(os.urandom(32))
-    payload = {
-        "schema": "sota-base-test-wallet-key/v1",
-        "address": account.address,
-        "private_key": account.key.hex(),
-        "network": "base-sepolia",
-        "purpose": "fresh first-time Base SOTA testnet claim wallet",
-        "warning": "testnet only; do not fund with mainnet assets",
-    }
-    _write_secret_json(path, payload)
-    return {**payload, "path": str(path), "created": True}
-
-
 def _local_seed_task(state: dict[str, Any]) -> dict[str, Any]:
     task = dict(dict(state.get("autoresearch") or {}).get("task") or {})
     if task.get("id"):
@@ -936,8 +920,8 @@ def _local_seed_task(state: dict[str, Any]) -> dict[str, Any]:
     raise RuntimeError("local autoresearch seed task is missing; start the local SOTA Base stack first")
 
 
-def _next_sota_emission_epoch(subnet_id: str) -> int:
-    roots = _request_json("GET", f"http://127.0.0.1:8000/api/v1/sota/emission-roots?subnet_id={subnet_id}")
+def _next_sota_emission_epoch(lane_id: str) -> int:
+    roots = _request_json("GET", f"http://127.0.0.1:8000/api/v1/sota/emission-roots?subnet_id={lane_id}")
     max_epoch = 0
     for row in roots if isinstance(roots, list) else []:
         try:
@@ -947,104 +931,310 @@ def _next_sota_emission_epoch(subnet_id: str) -> int:
     return max_epoch + 1
 
 
-def _next_mock_metric_value(task_id: str) -> float:
-    try:
-        best = _request_json("GET", f"http://127.0.0.1:8000/api/v1/tasks/{task_id}/best")
-    except Exception:
-        return 0.82
-    try:
-        incumbent = float(dict(best or {}).get("metric_value"))
-    except Exception:
-        return 0.82
-    direction = str(dict(best or {}).get("metric_direction") or "minimize")
-    if direction == "maximize":
-        return round(incumbent + 0.01, 6)
-    return round(max(0.000001, incumbent - 0.01), 6)
+def _extract_last_json_object(text: str) -> dict[str, Any]:
+    decoder = json.JSONDecoder()
+    found: dict[str, Any] | None = None
+    for index, char in enumerate(str(text or "")):
+        if char != "{":
+            continue
+        try:
+            value, end = decoder.raw_decode(text[index:])
+        except json.JSONDecodeError:
+            continue
+        if isinstance(value, dict) and not text[index + end :].strip():
+            found = value
+    if found is None:
+        raise RuntimeError("miner process did not print a final JSON result")
+    return found
 
 
-def seed_testnet_emission_evidence(
+def _claimable_amount_units(eligibility: dict[str, Any], *, root_id: str) -> int:
+    total = 0
+    for allocation in list(eligibility.get("allocations") or []):
+        item = dict(allocation or {})
+        if str(item.get("root_id") or "").lower() == root_id.lower() and not bool(item.get("claimed")):
+            total += int(item.get("amount") or 0)
+    return total
+
+
+def _send_local_private_key_tx(w3: Web3, private_key: str, tx: dict[str, Any]) -> str:
+    account = Account.from_key(private_key)
+    value_text = str(tx.get("value") or "0x0")
+    value = int(value_text, 16 if value_text.startswith("0x") else 10)
+    transaction = {
+        "to": Web3.to_checksum_address(str(tx["to"])),
+        "from": account.address,
+        "data": str(tx["data"]),
+        "value": value,
+        "nonce": w3.eth.get_transaction_count(account.address),
+        "chainId": int(tx.get("chainId") or w3.eth.chain_id),
+        "gasPrice": int(w3.eth.gas_price),
+    }
+    transaction["gas"] = int(w3.eth.estimate_gas(transaction))
+    signed = Account.sign_transaction(transaction, private_key)
+    raw = getattr(signed, "raw_transaction", None) or getattr(signed, "rawTransaction")
+    tx_hash = w3.eth.send_raw_transaction(raw)
+    receipt = w3.eth.wait_for_transaction_receipt(tx_hash)
+    if int(receipt.status) != 1:
+        raise RuntimeError(f"local private-key transaction reverted: {tx_hash.hex()}")
+    text = tx_hash.hex()
+    return text if text.startswith("0x") else f"0x{text}"
+
+
+def _fund_local_reward_accounts(w3: Web3, state: dict[str, Any], miners: list[dict[str, Any]]) -> None:
+    sender = state["accounts"]["owner"]
+    minimum_balance = 2 * 10**16
+    top_up_amount = 10**17
+    for miner in miners:
+        reward_address = Web3.to_checksum_address(str(miner["reward_address"]))
+        if int(w3.eth.get_balance(reward_address)) >= minimum_balance:
+            continue
+        tx_hash = w3.eth.send_transaction(
+            {
+                "from": sender,
+                "to": reward_address,
+                "value": top_up_amount,
+            }
+        )
+        receipt = w3.eth.wait_for_transaction_receipt(tx_hash)
+        if int(receipt.status) != 1:
+            raise RuntimeError(f"failed to fund local reward address {reward_address}: {tx_hash.hex()}")
+
+
+def _run_local_miner_processes(
     *,
-    reward_key_file: Path,
-    evidence_out: Path,
+    miners: list[dict[str, Any]],
+    task_id: str,
+    timeout_seconds: float,
+) -> list[dict[str, Any]]:
+    miner_root = RUN_DIR / "miners"
+    log_root = LOG_DIR / "miners"
+    miner_root.mkdir(parents=True, exist_ok=True)
+    log_root.mkdir(parents=True, exist_ok=True)
+    pythonpath_parts = [str(DOCS_REPO), str(AUTORESEARCH_REPO / "src")]
+    if os.environ.get("PYTHONPATH"):
+        pythonpath_parts.append(str(os.environ["PYTHONPATH"]))
+    processes: list[dict[str, Any]] = []
+    for miner in miners:
+        workspace_root = miner_root / str(miner["name"])
+        if workspace_root.exists():
+            shutil.rmtree(workspace_root)
+        workspace_root.mkdir(parents=True, exist_ok=True)
+        log_path = log_root / f"{miner['name']}.log"
+        env = os.environ.copy()
+        env.update(
+            {
+                "PYTHONPATH": os.pathsep.join(pythonpath_parts),
+                "BITSOTA_LOCAL_MINER_INDEX": str(miner["index"]),
+                "BITSOTA_RESEARCH_CLAIM_DESCRIPTION": (
+                    f"local SOTA multi-miner swarm claim {miner['index']} for reward {miner['reward_address']}"
+                ),
+                "BITSOTA_EVM_MINER_PRIVATE_KEY": str(miner["miner_private_key"]),
+                "BITSOTA_EVM_REWARD_PRIVATE_KEY": str(miner["reward_private_key"]),
+                "BITSOTA_EVM_COMPETITION_ID": str(task_id),
+                "BITSOTA_EVM_LANE_ID": LANE_ID,
+            }
+        )
+        command = [
+            sys.executable,
+            "-m",
+            "neurons.research_agent_miner",
+            "mine-once",
+            "--coordinator-url",
+            "http://127.0.0.1:8000",
+            "--task-id",
+            str(task_id),
+            "--hotkey-uri",
+            str(miner["hotkey_uri"]),
+            "--workspace-root",
+            str(workspace_root),
+            "--agent-command",
+            f"{sys.executable} {DOCS_REPO / 'scripts' / 'sota_local_miner_agent.py'}",
+            "--agent-mode",
+            "gui_managed",
+        ]
+        handle = log_path.open("wb")
+        process = subprocess.Popen(
+            command,
+            cwd=DOCS_REPO,
+            env=env,
+            stdout=handle,
+            stderr=subprocess.STDOUT,
+            start_new_session=True,
+        )
+        processes.append(
+            {
+                "miner": miner,
+                "workspace_root": workspace_root,
+                "log_path": log_path,
+                "handle": handle,
+                "process": process,
+                "pid": process.pid,
+            }
+        )
+
+    results: list[dict[str, Any]] = []
+    deadline = time.monotonic() + max(1.0, float(timeout_seconds))
+    for item in processes:
+        process: subprocess.Popen = item["process"]
+        remaining = max(1.0, deadline - time.monotonic())
+        try:
+            returncode = process.wait(timeout=remaining)
+        except subprocess.TimeoutExpired as exc:
+            try:
+                os.killpg(process.pid, signal.SIGTERM)
+            except Exception:
+                pass
+            raise RuntimeError(f"miner process timed out pid={process.pid} log={item['log_path']}") from exc
+        finally:
+            item["handle"].close()
+        log_text = Path(item["log_path"]).read_text(encoding="utf-8", errors="replace")
+        if int(returncode) != 0:
+            raise RuntimeError(f"miner process exited {returncode} pid={process.pid} log={item['log_path']}")
+        payload = _extract_last_json_object(log_text)
+        miner = dict(item["miner"])
+        submission = dict(payload.get("submission") or {})
+        claim = dict(payload.get("claim") or {})
+        results.append(
+            {
+                "name": miner["name"],
+                "index": miner["index"],
+                "pid": item["pid"],
+                "returncode": int(returncode),
+                "workspace_root": str(item["workspace_root"]),
+                "log_path": str(item["log_path"]),
+                "hotkey": miner["hotkey"],
+                "miner_address": miner["miner_address"],
+                "reward_address": miner["reward_address"],
+                "claim_id": str(claim.get("id") or ""),
+                "submission_id": str(submission.get("id") or ""),
+                "claimed_metrics": dict(submission.get("claimed_metrics") or {}),
+                "submission": submission,
+                "claim": claim,
+            }
+        )
+    return results
+
+
+def _self_validate_swarm_submissions(miner_results: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    validators = _demo_validator_keypairs()
+    validated: list[dict[str, Any]] = []
+    for result in miner_results:
+        submission = dict(result.get("submission") or {})
+        submission_id = str(submission.get("id") or "")
+        if not submission_id:
+            raise RuntimeError(f"miner result is missing submission id: {result}")
+        claimed_metrics = dict(submission.get("claimed_metrics") or result.get("claimed_metrics") or {})
+        observed_metric = float(claimed_metrics.get("heldout_ppl") or 0.0)
+        evaluation_path = f"/api/v1/submissions/{submission_id}/peer-evaluate"
+        evaluations = []
+        for name, validator in validators:
+            body = {
+                "status": "accepted",
+                "observed_metrics": {"heldout_ppl": observed_metric},
+                "notes": f"{name} accepts local miner swarm submission {submission_id}",
+            }
+            evaluations.append(
+                _request_json(
+                    "POST",
+                    f"http://127.0.0.1:8000{evaluation_path}",
+                    body,
+                    headers=_signed_headers(validator, "POST", evaluation_path, body),
+                )
+            )
+        consensus = _request_json(
+            "GET",
+            f"http://127.0.0.1:8000/api/v1/submissions/{submission_id}/peer-consensus",
+        )
+        if int(consensus.get("committee_count") or 0) < DEMO_SELF_VALIDATION_COMMITTEE_SIZE:
+            raise RuntimeError(f"swarm committee too small for {submission_id}: {consensus}")
+        if int(consensus.get("accepted_count") or 0) < DEMO_SELF_VALIDATION_COMMITTEE_SIZE:
+            raise RuntimeError(f"swarm submission was not fully accepted for {submission_id}: {consensus}")
+        validated.append({**result, "evaluations": evaluations, "consensus": consensus})
+    return validated
+
+
+def _claim_swarm_emissions(
+    *,
+    state: dict[str, Any],
+    published: dict[str, Any],
+    miners: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    w3 = _wait_rpc()
+    _fund_local_reward_accounts(w3, state, miners)
+    claim_results: list[dict[str, Any]] = []
+    root_id = str(published["root_id"])
+    token = _contract(w3, "SOTAToken", state["contracts"]["sota_token"])
+    for miner in miners:
+        reward_address = Web3.to_checksum_address(str(miner["reward_address"]))
+        eligibility = _request_json(
+            "GET",
+            f"http://127.0.0.1:8010/api/v1/base/eligibility/{reward_address}?root_id={root_id}",
+        )
+        claimable = _claimable_amount_units(dict(eligibility), root_id=root_id)
+        if claimable <= 0:
+            raise RuntimeError(f"expected positive SOTA emission claim for {reward_address}")
+        tx_payload = _request_json(
+            "POST",
+            "http://127.0.0.1:8010/api/v1/base/claims/transaction",
+            {
+                "program": "emission",
+                "evmAddress": reward_address,
+                "laneId": LANE_ID,
+                "rootId": root_id,
+            },
+        )
+        tx_hash = _send_local_private_key_tx(w3, str(miner["reward_private_key"]), dict(tx_payload["transaction"]))
+        _request_json("POST", "http://127.0.0.1:8010/api/v1/base/index/sync")
+        claimed = _request_json(
+            "GET",
+            f"http://127.0.0.1:8010/api/v1/base/eligibility/{reward_address}?root_id={root_id}",
+        )
+        if dict(claimed.get("claim_state") or {}).get("status") != "claimed":
+            raise RuntimeError(f"expected claimed indexer state for {reward_address}: {claimed.get('claim_state')}")
+        balance = int(token.functions.balanceOf(reward_address).call())
+        if balance < claimable:
+            raise RuntimeError(f"expected {reward_address} SOTA balance >= {claimable}, got {balance}")
+        claim_results.append(
+            {
+                "reward_address": reward_address,
+                "amount_units": claimable,
+                "tx_hash": tx_hash,
+                "sota_balance_units": balance,
+                "claim_state": dict(claimed.get("claim_state") or {}),
+            }
+        )
+    return claim_results
+
+
+def run_local_miner_swarm(
+    *,
+    count: int = DEMO_SWARM_MINER_COUNT,
     epoch: int | None = None,
-    metric_value: float | None = None,
-    require_single_claim: bool = False,
+    report_out: Path = RUN_DIR / "miner-swarm" / "latest.json",
+    claim: bool = True,
+    timeout_seconds: float = 180.0,
 ) -> dict[str, Any]:
     _wait_http("http://127.0.0.1:8000/readyz", timeout_seconds=15)
+    _wait_http("http://127.0.0.1:8010/health", timeout_seconds=15)
     state = _load_json(STATE_PATH)
     if not state:
         raise RuntimeError("local SOTA Base state is missing; start the local stack first")
-    reward_key = _load_or_create_reward_key(reward_key_file)
-    reward_address = Account.from_key(str(reward_key["private_key"])).address
-    alice = Keypair.create_from_uri("//Alice")
-    validators = _demo_validator_keypairs()
+    if count < 1:
+        raise ValueError("miner count must be positive")
     task = _local_seed_task(state)
     task_id = str(task["id"])
-    observed_metric = float(_next_mock_metric_value(task_id) if metric_value is None else metric_value)
-    claim_body = {
-        "claim_description": (
-            "local SOTA binary frontier mining claim for fresh Base Sepolia test reward wallet "
-            f"{reward_address}"
-        )
-    }
-    claim_path = f"/api/v1/tasks/{task_id}/claim"
-    claim = _request_json(
-        "POST",
-        f"http://127.0.0.1:8000{claim_path}",
-        claim_body,
-        headers=_signed_headers(alice, "POST", claim_path, claim_body),
-    )
-    submission_body = {
-        "claim_id": claim["id"],
-        "base_ref": "HEAD",
-        "patch": (
-            "diff --git a/train.py b/train.py\n"
-            "--- a/train.py\n"
-            "+++ b/train.py\n"
-            "@@\n"
-            "-score = 0.90\n"
-            f"+score = {observed_metric:.6f}\n"
-        ),
-        "summary": "Lower local heldout PPL with a deterministic fresh-wallet Base Sepolia proof path.",
-        "claimed_metrics": {"heldout_ppl": observed_metric},
-    }
-    _attach_evm_authorization(
-        submission_body,
-        claim_id=claim["id"],
+    miners = [_demo_swarm_miner(index) for index in range(1, count + 1)]
+    for field in ("hotkey", "miner_address", "reward_address"):
+        values = [str(miner[field]).lower() for miner in miners]
+        if len(set(values)) != len(values):
+            raise RuntimeError(f"duplicate local swarm {field} values")
+    miner_results = _run_local_miner_processes(
+        miners=miners,
         task_id=task_id,
-        miner_private_key=ANVIL_PRIVATE_KEYS["miner"],
-        reward_private_key=str(reward_key["private_key"]),
+        timeout_seconds=timeout_seconds,
     )
-    submission = _request_json(
-        "POST",
-        "http://127.0.0.1:8000/api/v1/submissions",
-        submission_body,
-        headers=_signed_headers(alice, "POST", "/api/v1/submissions", submission_body),
-    )
-    evaluations = []
-    evaluation_path = f"/api/v1/submissions/{submission['id']}/peer-evaluate"
-    for name, validator in validators:
-        body = {
-            "status": "accepted",
-            "observed_metrics": {"heldout_ppl": observed_metric},
-            "notes": f"{name} accepts deterministic fresh-wallet frontier improvement for Base Sepolia test evidence",
-        }
-        evaluations.append(
-            _request_json(
-                "POST",
-                f"http://127.0.0.1:8000{evaluation_path}",
-                body,
-                headers=_signed_headers(validator, "POST", evaluation_path, body),
-            )
-        )
-    consensus = _request_json(
-        "GET",
-        f"http://127.0.0.1:8000/api/v1/submissions/{submission['id']}/peer-consensus",
-    )
-    if int(consensus.get("committee_count") or 0) < DEMO_SELF_VALIDATION_COMMITTEE_SIZE:
-        raise RuntimeError(f"fresh-wallet self-validation committee too small: {consensus}")
-    if int(consensus.get("accepted_count") or 0) < DEMO_SELF_VALIDATION_COMMITTEE_SIZE:
-        raise RuntimeError(f"fresh-wallet self-validation did not fully accept: {consensus}")
+    validated = _self_validate_swarm_submissions(miner_results)
     root_epoch = int(epoch or _next_sota_emission_epoch(LANE_ID))
     root = _request_json(
         "POST",
@@ -1053,51 +1243,121 @@ def seed_testnet_emission_evidence(
         headers={"X-Admin-Token": ADMIN_TOKEN},
     )
     evidence = _request_json("GET", f"http://127.0.0.1:8000/api/v1/sota/subnets/{LANE_ID}/epochs/{root_epoch}/evidence")
-    claims = list(dict(evidence.get("bundle") or {}).get("claim_list") or [])
+    bundle = dict(evidence.get("bundle") or {})
+    claims = [dict(item) for item in list(bundle.get("claim_list") or [])]
+    reward_addresses = {str(miner["reward_address"]).lower() for miner in miners}
     matching_claims = [
-        dict(claim_item)
+        claim_item
         for claim_item in claims
-        if str(dict(claim_item).get("reward_address") or "").lower() == reward_address.lower()
+        if str(claim_item.get("reward_address") or "").lower() in reward_addresses
     ]
-    if not matching_claims:
-        raise RuntimeError(f"fresh reward wallet {reward_address} is missing from epoch {root_epoch} evidence")
-    if require_single_claim and len(claims) != 1:
+    if len(matching_claims) < count:
         raise RuntimeError(
-            f"epoch {root_epoch} evidence contains {len(claims)} claims; reset the local stack or choose a clean lane before seeding a single tester wallet"
+            f"swarm root contains {len(matching_claims)} matching reward leaves for {count} local miners"
         )
-    _write_json(evidence_out, evidence)
+    published = _publish_emission_artifact(
+        state,
+        root=root,
+        evidence=evidence,
+        nonce_label=f"local-miner-swarm-root-v{root_epoch}",
+    )
+    claim_results = _claim_swarm_emissions(state=state, published=published, miners=miners) if claim else []
+    public_miners = [
+        {key: value for key, value in miner.items() if not key.endswith("_private_key")}
+        for miner in miners
+    ]
     report = {
-        "schema": "sota-base-fresh-testnet-evidence/v1",
-        "reward_address": reward_address,
-        "reward_key_file": str(reward_key_file),
-        "reward_key_created": bool(reward_key.get("created")),
-        "evidence_path": str(evidence_out),
+        "schema": "sota-local-multi-miner/v1",
+        "ok": True,
+        "miner_count": count,
+        "accepted_count": len(validated),
+        "committee_size": DEMO_SELF_VALIDATION_COMMITTEE_SIZE,
         "epoch": root_epoch,
         "lane_id": LANE_ID,
-        "metric_value": observed_metric,
-        "claim": claim,
-        "submission": submission,
-        "evaluations": evaluations,
-        "consensus": consensus,
+        "task_id": task_id,
+        "task_slug": task.get("slug"),
+        "processes": [
+            {
+                key: value
+                for key, value in item.items()
+                if key not in {"submission", "claim", "evaluations"}
+            }
+            for item in validated
+        ],
+        "miners": public_miners,
         "emission_root": root,
-        "matching_claim": matching_claims[0],
+        "published": {key: value for key, value in published.items() if key != "artifact"},
         "claim_count": len(claims),
+        "matching_claim_count": len(matching_claims),
+        "matching_claims": matching_claims,
+        "claim_transactions": claim_results,
+        "checks": {
+            "distinct_hotkeys": len({miner["hotkey"].lower() for miner in public_miners}) == count,
+            "distinct_miner_addresses": len({miner["miner_address"].lower() for miner in public_miners}) == count,
+            "distinct_reward_addresses": len({miner["reward_address"].lower() for miner in public_miners}) == count,
+            "all_processes_exited_zero": all(int(item["returncode"]) == 0 for item in validated),
+            "all_self_validation_accepted": all(
+                str(dict(item.get("consensus") or {}).get("status") or "") == "accepted"
+                for item in validated
+            ),
+            "all_claims_submitted": (not claim) or len(claim_results) == count,
+        },
+        "does_not": [
+            "touch production Bittensor",
+            "touch Base mainnet",
+            "use TAO or alpha token transfers",
+        ],
     }
-    state["autoresearch_testnet_reward_seed"] = report
-    state["autoresearch_testnet_faucet_reward"] = report
+    if not all(bool(value) for value in dict(report["checks"]).values()):
+        report["ok"] = False
+        _write_json(report_out, report)
+        raise RuntimeError(f"local miner swarm checks failed; see {report_out}")
+    state["local_miner_swarm"] = {
+        "report_path": str(report_out),
+        "epoch": root_epoch,
+        "root_id": published["root_id"],
+        "miner_count": count,
+        "claimed": bool(claim),
+    }
     _write_json(STATE_PATH, state)
+    _write_json(report_out, report)
     return report
 
 
-def publish_emission_onchain_and_indexer(state: dict[str, Any]) -> dict[str, Any]:
+def swarm_smoke(
+    *,
+    count: int = DEMO_SWARM_MINER_COUNT,
+    report_out: Path = RUN_DIR / "miner-swarm" / "latest.json",
+    timeout_seconds: float = 180.0,
+) -> dict[str, Any]:
+    try:
+        start_stack(website=False, docs=False, hold=False)
+        report = run_local_miner_swarm(
+            count=count,
+            report_out=report_out,
+            claim=True,
+            timeout_seconds=timeout_seconds,
+        )
+        _print("local miner swarm smoke passed")
+        return report
+    finally:
+        stop_stack()
+
+
+def _publish_emission_artifact(
+    state: dict[str, Any],
+    *,
+    root: dict[str, Any],
+    evidence: dict[str, Any],
+    nonce_label: str,
+) -> dict[str, Any]:
     w3 = _wait_rpc()
     contracts = state["contracts"]
     accounts = state["accounts"]
     root_registry = _contract(w3, "SOTARootRegistry", contracts["root_registry"])
     lane_registry = _contract(w3, "SOTALaneRegistry", contracts["lane_registry"])
-    evidence = state["autoresearch"]["evidence"]["bundle"]
-    root = state["autoresearch"]["emission_root"]
-    offchain_lane_id = evidence["subnet"]["offchain_lane_id"]
+    bundle = dict(evidence.get("bundle") or evidence)
+    offchain_lane_id = bundle["subnet"]["offchain_lane_id"]
     policy_hash = root["policy_hash"]
     attestation_hash = "0x" + str(root["evidence_hash"]).removeprefix("0x")[:64]
     if int(attestation_hash, 16) == 0:
@@ -1117,11 +1377,11 @@ def publish_emission_onchain_and_indexer(state: dict[str, Any]) -> dict[str, Any
         budget_cap=int(root["total_amount_units"]),
         policy_hash=policy_hash,
         attestation_hash=attestation_hash,
-        nonce=_hex32(_bytes32_text("local-emission-root-v1")),
+        nonce=_hex32(_bytes32_text(nonce_label)),
     )
     artifact = {
         "subnet": {
-            **dict(evidence.get("subnet") or {}),
+            **dict(bundle.get("subnet") or {}),
             "id": LANE_ID,
             "title": "SOTA local binary frontier",
             "owner": accounts["owner"],
@@ -1138,14 +1398,29 @@ def publish_emission_onchain_and_indexer(state: dict[str, Any]) -> dict[str, Any
             "status": "finalized",
             "validation_status": "accepted",
         },
-        "claim_list": evidence["claim_list"],
-        "leaves": evidence["leaves"],
+        "claim_list": bundle["claim_list"],
+        "leaves": bundle["leaves"],
     }
     _request_json("POST", "http://127.0.0.1:8010/api/v1/base/index/artifact", artifact)
-    state["emission_onchain"] = {
+    return {
         "root_id": root_id,
         "offchain_lane_id": offchain_lane_id,
         "amount": int(root["total_amount_units"]),
+        "artifact": artifact,
+    }
+
+
+def publish_emission_onchain_and_indexer(state: dict[str, Any]) -> dict[str, Any]:
+    published = _publish_emission_artifact(
+        state,
+        root=state["autoresearch"]["emission_root"],
+        evidence=state["autoresearch"]["evidence"],
+        nonce_label="local-emission-root-v1",
+    )
+    state["emission_onchain"] = {
+        "root_id": published["root_id"],
+        "offchain_lane_id": published["offchain_lane_id"],
+        "amount": int(published["amount"]),
     }
     _write_json(STATE_PATH, state)
     return state
@@ -1593,43 +1868,27 @@ def main() -> int:
     sub.add_parser("stop", help="stop processes started by this launcher")
     sub.add_parser("status", help="print the last demo state")
     sub.add_parser("smoke", help="run a noninteractive local E2E smoke and stop")
+    miner_swarm = sub.add_parser(
+        "miner-swarm",
+        help="run multiple local miner processes against an already-running stack and publish/claim their emission root",
+    )
+    miner_swarm.add_argument("--count", type=int, default=DEMO_SWARM_MINER_COUNT)
+    miner_swarm.add_argument("--epoch", type=int, default=0, help="emission epoch; default picks the next local epoch")
+    miner_swarm.add_argument("--report-out", type=Path, default=RUN_DIR / "miner-swarm" / "latest.json")
+    miner_swarm.add_argument("--timeout-seconds", type=float, default=180.0)
+    miner_swarm.add_argument("--skip-claims", action="store_true", help="publish/index the root but do not submit claim txs")
+    miner_swarm.add_argument("--json", action="store_true", help="print the non-secret JSON report")
+    swarm_smoke_parser = sub.add_parser(
+        "swarm-smoke",
+        help="start a fresh local stack, run multiple real miner processes, claim their emissions, and stop",
+    )
+    swarm_smoke_parser.add_argument("--count", type=int, default=DEMO_SWARM_MINER_COUNT)
+    swarm_smoke_parser.add_argument("--report-out", type=Path, default=RUN_DIR / "miner-swarm" / "latest.json")
+    swarm_smoke_parser.add_argument("--timeout-seconds", type=float, default=180.0)
+    swarm_smoke_parser.add_argument("--json", action="store_true", help="print the non-secret JSON report")
     ui_smoke = sub.add_parser("ui-smoke", help="verify the running claims UI, proxy APIs, and self-validation evidence")
     ui_smoke.add_argument("--skip-screenshot", action="store_true", help="skip optional Firefox screenshot")
     ui_smoke.add_argument("--report-out", type=Path, default=RUN_DIR / "ui-smoke" / "report.json")
-    testnet_evidence = sub.add_parser(
-        "seed-testnet-evidence",
-        help="create fresh self-validated emission evidence for a Base Sepolia test reward wallet",
-    )
-    testnet_evidence.add_argument(
-        "--reward-key-file",
-        type=Path,
-        default=TESTNET_RUN_DIR / "fresh-claim-wallet.json",
-        help="testnet wallet key JSON to create or reuse; the private key is not printed",
-    )
-    testnet_evidence.add_argument(
-        "--evidence-out",
-        type=Path,
-        default=TESTNET_RUN_DIR / "base-sota-testnet-emission-evidence-fresh.json",
-        help="where to write the accepted autoresearch evidence bundle",
-    )
-    testnet_evidence.add_argument(
-        "--epoch",
-        type=int,
-        default=0,
-        help="emission epoch to build; default picks the next local epoch",
-    )
-    testnet_evidence.add_argument(
-        "--metric-value",
-        type=float,
-        default=None,
-        help="override the mock heldout_ppl score; default improves on the current local best",
-    )
-    testnet_evidence.add_argument(
-        "--require-single-claim",
-        action="store_true",
-        help="fail if the generated epoch contains any other unclaimed accepted submissions",
-    )
-    testnet_evidence.add_argument("--json", action="store_true", help="print a non-secret JSON report")
     args = parser.parse_args()
     if args.command == "stop":
         stop_stack()
@@ -1643,29 +1902,41 @@ def main() -> int:
     if args.command == "smoke":
         smoke()
         return 0
+    if args.command == "miner-swarm":
+        report = run_local_miner_swarm(
+            count=args.count,
+            epoch=args.epoch or None,
+            report_out=args.report_out,
+            claim=not args.skip_claims,
+            timeout_seconds=args.timeout_seconds,
+        )
+        if args.json:
+            print(json.dumps(report, indent=2, sort_keys=True, default=_json_default))
+        else:
+            _print("local miner swarm passed")
+            _print(f"Report: {args.report_out}")
+            _print(f"Miners: {report['miner_count']}")
+            _print(f"Root id: {report['published']['root_id']}")
+        return 0
+    if args.command == "swarm-smoke":
+        report = swarm_smoke(
+            count=args.count,
+            report_out=args.report_out,
+            timeout_seconds=args.timeout_seconds,
+        )
+        if args.json:
+            print(json.dumps(report, indent=2, sort_keys=True, default=_json_default))
+        else:
+            _print(f"Report: {args.report_out}")
+            _print(f"Miners: {report['miner_count']}")
+            _print(f"Root id: {report['published']['root_id']}")
+        return 0
     if args.command == "ui-smoke":
         smoke_script = DOCS_REPO / "scripts" / "sota_local_claims_ui_smoke.py"
         command = [sys.executable, str(smoke_script), "--report-out", str(args.report_out)]
         if args.skip_screenshot:
             command.append("--skip-screenshot")
         return subprocess.call(command, cwd=DOCS_REPO)
-    if args.command == "seed-testnet-evidence":
-        report = seed_testnet_emission_evidence(
-            reward_key_file=args.reward_key_file,
-            evidence_out=args.evidence_out,
-            epoch=args.epoch or None,
-            metric_value=args.metric_value,
-            require_single_claim=args.require_single_claim,
-        )
-        if args.json:
-            safe_report = {key: value for key, value in report.items() if key != "reward_key_file"}
-            print(json.dumps(safe_report, indent=2, sort_keys=True, default=_json_default))
-        else:
-            _print("fresh Base Sepolia test evidence seeded")
-            _print(f"Reward address: {report['reward_address']}")
-            _print(f"Evidence: {report['evidence_path']}")
-            _print(f"Epoch: {report['epoch']}")
-        return 0
     if args.command == "launch":
         start_stack(
             website=True,

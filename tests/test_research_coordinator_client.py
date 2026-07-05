@@ -1,6 +1,9 @@
 from __future__ import annotations
 
+from pathlib import Path
 from types import SimpleNamespace
+
+from eth_account import Account
 
 from miner.research_coordinator_client import CoordinatorClient
 
@@ -104,3 +107,46 @@ def test_submit_submission_includes_artifact_integrity_fields() -> None:
     assert calls[0][2]["artifact_uri"] == "https://example.com/artifact.bin"
     assert calls[0][2]["artifact_sha256"] == "a" * 64
     assert calls[0][2]["artifact_size_bytes"] == 123
+
+
+def test_submit_submission_attaches_evm_reward_authorization_from_env(monkeypatch) -> None:
+    monkeypatch.syspath_prepend(str(Path(__file__).resolve().parents[2] / "autoresearch-bittensor" / "src"))
+    miner_private_key = "0x" + "11" * 32
+    reward_private_key = "0x" + "22" * 32
+    monkeypatch.setenv("BITSOTA_EVM_MINER_PRIVATE_KEY", miner_private_key)
+    monkeypatch.setenv("BITSOTA_EVM_REWARD_PRIVATE_KEY", reward_private_key)
+    monkeypatch.setenv("BITSOTA_EVM_LANE_ID", "base:sota-local")
+
+    wallet = SimpleNamespace(hotkey=SimpleNamespace(ss58_address="hk-self"))
+    client = CoordinatorClient(base_url="http://127.0.0.1:8000", wallet=wallet)
+    calls: list[tuple[str, str, dict | None, bool]] = []
+
+    class _Response:
+        def json(self) -> dict[str, str]:
+            return {"id": "submission-1", "status": "pending_verification"}
+
+    def _fake_request(method: str, path: str, *, body=None, params=None, sign=False):
+        calls.append((method, path, body, sign))
+        return _Response()
+
+    client._request = _fake_request  # type: ignore[method-assign]
+
+    result = client.submit_submission(
+        claim_id="claim-1",
+        base_ref="abc123",
+        patch="diff --git a/train.py b/train.py\n",
+        summary="evm authorized submission",
+        claimed_metrics={"heldout_ppl": 0.8},
+        competition_id="task-1",
+        lane_id="base:sota-local",
+    )
+
+    assert result["id"] == "submission-1"
+    body = calls[0][2] or {}
+    assert body["evm_miner_address"] == Account.from_key(miner_private_key).address
+    assert body["reward_address"] == Account.from_key(reward_private_key).address
+    assert body["competition_id"] == "task-1"
+    assert body["subnet_id"] == "base:sota-local"
+    assert body["artifact_hash"].startswith("0x")
+    assert body["signature"].startswith("0x")
+    assert body["reward_signature"].startswith("0x")

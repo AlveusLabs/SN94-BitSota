@@ -33,6 +33,7 @@ DEFAULT_READINESS_URL = "https://d5dqb78dur.eu-central-1.awsapprunner.com/base-s
 DEFAULT_INDEXER_ADMIN_SECRET_ID = "base-sota/test/base-sepolia/indexer-admin-token"
 DEFAULT_SPONSOR_KEY_FILE = DEFAULT_ARTIFACTS_DIR / "faucet-wallet.json"
 DEFAULT_OLD_COLDKEY = "5GrwvaEF5zXb26Fz9rcQpDWS57CtERHpNehXCPcNoHGKutQY"
+DEFAULT_SNAPSHOT_DIR = Path("/mnt/4tb/tao_fork_snapshot")
 BASE_SEPOLIA_CHAIN_ID = 84532
 BASE_MAINNET_CHAIN_ID = 8453
 ONE_ETH_WEI = 10**18
@@ -153,6 +154,37 @@ def _assert_ok(result: dict[str, Any], *, label: str) -> None:
 def _wallet_address(path: Path) -> str:
     payload = _load_json(path)
     return str(payload.get("address") or "").strip()
+
+
+def _snapshot_bindings(args: argparse.Namespace) -> list[Path]:
+    return [Path(item) for item in (getattr(args, "snapshot_claim_binding", None) or [])]
+
+
+def _binding_reward_addresses(bindings: list[Path]) -> set[str]:
+    addresses: set[str] = set()
+    for path in bindings:
+        payload = _load_json(path)
+        message = payload.get("message") if isinstance(payload.get("message"), dict) else payload
+        reward_address = str(dict(message).get("reward_address") or "").strip().lower()
+        if not reward_address:
+            raise ValueError(f"{path} is missing message.reward_address")
+        addresses.add(reward_address)
+    return addresses
+
+
+def _assert_snapshot_binding_inputs(args: argparse.Namespace) -> list[Path]:
+    bindings = _snapshot_bindings(args)
+    if not bindings:
+        raise RuntimeError(
+            "Fresh Base Sepolia tester prep now requires a real signed snapshot binding. "
+            "Build a binding message with scripts/sota_snapshot_claim_bridge.py message, sign it with the Bittensor coldkey, "
+            "then rerun with --reward-key-file <known-wallet-key.json> and --snapshot-claim-binding <signed-binding.json>."
+        )
+    if args.reward_key_file is None:
+        raise RuntimeError(
+            "--reward-key-file is required with --snapshot-claim-binding so the coldkey binding can target a known MetaMask wallet."
+        )
+    return bindings
 
 
 def _sponsor_key(path: Path) -> tuple[str, str]:
@@ -288,6 +320,7 @@ def _refresh_website_public_artifacts(args: argparse.Namespace) -> dict[str, Any
 
 def prepare_fresh_tester(args: argparse.Namespace) -> dict[str, Any]:
     args.artifacts_dir.mkdir(parents=True, exist_ok=True)
+    snapshot_bindings = _assert_snapshot_binding_inputs(args)
     stamp = _timestamp()
     reward_key_file = args.reward_key_file or args.artifacts_dir / f"fresh-claim-wallet-{stamp}.json"
     evidence_out = args.evidence_out or args.artifacts_dir / f"base-sota-testnet-emission-evidence-fresh-{stamp}.json"
@@ -317,6 +350,12 @@ def prepare_fresh_tester(args: argparse.Namespace) -> dict[str, Any]:
     _assert_ok(seed_result, label="public autoresearch seed")
     seed_report = _load_json(seed_report_out)
     wallet = str(seed_report.get("reward_address") or _wallet_address(reward_key_file))
+    binding_reward_addresses = _binding_reward_addresses(snapshot_bindings)
+    if binding_reward_addresses != {wallet.lower()}:
+        raise RuntimeError(
+            "snapshot binding reward_address does not match the prepared tester wallet: "
+            f"binding={sorted(binding_reward_addresses)} wallet={wallet}"
+        )
     epoch = str(seed_report.get("epoch") or "")
     funding = _top_up_if_needed(args, reward_key_file=reward_key_file)
     env = os.environ.copy()
@@ -340,6 +379,8 @@ def prepare_fresh_tester(args: argparse.Namespace) -> dict[str, Any]:
         args.readiness_url,
         "--emission-evidence",
         str(evidence_out),
+        "--snapshot-dir",
+        str(args.snapshot_dir),
         "--test-wallet-address",
         wallet,
         "--test-old-coldkey",
@@ -354,6 +395,8 @@ def prepare_fresh_tester(args: argparse.Namespace) -> dict[str, Any]:
         "--import-artifacts",
         "--allow-blocked",
     ]
+    for binding in snapshot_bindings:
+        operator_cmd.extend(["--snapshot-claim-binding", str(binding)])
     operator_result = _run_command(operator_cmd, timeout=args.operator_timeout, env=env)
     _assert_ok(operator_result, label="Base Sepolia operator")
     release_result = _run_command(
@@ -362,6 +405,8 @@ def prepare_fresh_tester(args: argparse.Namespace) -> dict[str, Any]:
             "scripts/sota_base_release_status.py",
             "--testnet-artifacts-dir",
             str(args.artifacts_dir),
+            "--snapshot-dir",
+            str(args.snapshot_dir),
             "--report-out",
             str(args.artifacts_dir / "base-sota-release-status.json"),
             "--allow-blocked",
@@ -422,6 +467,14 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Prepare a fresh claimable Base Sepolia test wallet/root cycle.")
     parser.add_argument("--artifacts-dir", type=Path, default=DEFAULT_ARTIFACTS_DIR)
     parser.add_argument("--reward-key-file", type=Path)
+    parser.add_argument("--snapshot-dir", type=Path, default=DEFAULT_SNAPSHOT_DIR)
+    parser.add_argument(
+        "--snapshot-claim-binding",
+        type=Path,
+        action="append",
+        default=[],
+        help="Signed Bittensor coldkey binding JSON for the tester reward wallet; repeat for multiple claimants.",
+    )
     parser.add_argument("--evidence-out", type=Path)
     parser.add_argument("--seed-report-out", type=Path)
     parser.add_argument("--report-out", type=Path, default=DEFAULT_ARTIFACTS_DIR / "base-sota-fresh-testnet-tester.json")

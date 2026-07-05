@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import os
 from typing import Any, Optional
 from urllib.parse import urlencode, urljoin
 
+from eth_account import Account
 import requests
 
 from miner.research_auth import sign_hotkey_request
@@ -142,7 +144,7 @@ class CoordinatorClient:
             params["task_id"] = str(task_id)
         if status:
             params["status"] = str(status)
-        return list(self._request("GET", "/api/v1/claims", params=params).json() or [])
+        return list(self._request("GET", "/api/v1/claims", params=params, sign=True).json() or [])
 
     def get_onboard_markdown(self, task_id: str) -> str:
         return str(self._request("GET", f"/api/v1/tasks/{task_id}/onboard.md").text or "")
@@ -158,7 +160,7 @@ class CoordinatorClient:
             params["task_id"] = str(task_id)
         if status:
             params["status"] = str(status)
-        return list(self._request("GET", "/api/v1/submissions", params=params).json() or [])
+        return list(self._request("GET", "/api/v1/submissions", params=params, sign=True).json() or [])
 
     def get_submission_detail(self, submission_id: str) -> dict[str, Any]:
         return dict(self._request("GET", f"/api/v1/submissions/{submission_id}/detail").json() or {})
@@ -226,6 +228,8 @@ class CoordinatorClient:
         artifact_sha256: str | None = None,
         artifact_size_bytes: int | None = None,
         execution_log: str | None = None,
+        competition_id: str | None = None,
+        lane_id: str | None = None,
     ) -> dict[str, Any]:
         body: dict[str, Any] = {
             "claim_id": str(claim_id),
@@ -246,17 +250,92 @@ class CoordinatorClient:
             body["artifact_size_bytes"] = int(artifact_size_bytes)
         if execution_log:
             body["execution_log"] = str(execution_log)
+        self._attach_env_evm_authorization(
+            body,
+            claim_id=str(claim_id),
+            competition_id=competition_id,
+            lane_id=lane_id,
+        )
         return dict(self._request("POST", "/api/v1/submissions", body=body, sign=True).json() or {})
 
-    def cancel_claim(self, *, claim_id: str) -> dict[str, Any]:
-        return dict(
-            self._request(
-                "POST",
-                f"/api/v1/claims/{claim_id}/cancel",
-                sign=True,
-            ).json()
-            or {}
+    def _attach_env_evm_authorization(
+        self,
+        body: dict[str, Any],
+        *,
+        claim_id: str,
+        competition_id: str | None,
+        lane_id: str | None,
+    ) -> None:
+        miner_private_key = str(os.getenv("BITSOTA_EVM_MINER_PRIVATE_KEY") or "").strip()
+        if not miner_private_key:
+            return
+        reward_private_key = str(os.getenv("BITSOTA_EVM_REWARD_PRIVATE_KEY") or "").strip() or miner_private_key
+        resolved_competition_id = str(
+            competition_id
+            or os.getenv("BITSOTA_EVM_COMPETITION_ID")
+            or ""
+        ).strip()
+        resolved_lane_id = str(
+            lane_id
+            or os.getenv("BITSOTA_EVM_LANE_ID")
+            or ""
+        ).strip()
+        if not resolved_competition_id:
+            raise CoordinatorApiError("BITSOTA_EVM_MINER_PRIVATE_KEY requires a competition id")
+        if not resolved_lane_id:
+            raise CoordinatorApiError("BITSOTA_EVM_MINER_PRIVATE_KEY requires a SOTA lane id")
+
+        from autoresearch_bittensor.auth.evm import (
+            build_reward_delegation_payload,
+            build_submission_authorization_payload,
+            build_submission_content_hash,
+            sign_payload,
         )
+
+        miner_address = Account.from_key(miner_private_key).address
+        reward_address = Account.from_key(reward_private_key).address
+        content_hash = build_submission_content_hash(
+            claim_id=claim_id,
+            base_ref=str(body["base_ref"]),
+            patch=str(body.get("patch") or ""),
+            summary=str(body.get("summary") or ""),
+            proposed_idea=body.get("proposed_idea"),
+            implemented_submission_id=body.get("implemented_submission_id"),
+            artifact_uri=body.get("artifact_uri"),
+            artifact_sha256=body.get("artifact_sha256"),
+            artifact_size_bytes=body.get("artifact_size_bytes"),
+            claimed_metrics=dict(body.get("claimed_metrics") or {}),
+        )
+        nonce = str(os.getenv("BITSOTA_EVM_NONCE") or f"{resolved_lane_id}:{claim_id}").strip()
+        body.update(
+            {
+                "evm_miner_address": miner_address,
+                "reward_address": reward_address,
+                "nonce": nonce,
+                "competition_id": resolved_competition_id,
+                "subnet_id": resolved_lane_id,
+                "artifact_hash": content_hash,
+            }
+        )
+        authorization_payload = build_submission_authorization_payload(
+            miner_address=miner_address,
+            reward_address=reward_address,
+            nonce=nonce,
+            competition_id=resolved_competition_id,
+            subnet_id=resolved_lane_id,
+            claim_id=claim_id,
+            artifact_hash=content_hash,
+            content_hash=content_hash,
+        )
+        body["signature"] = sign_payload(private_key=miner_private_key, payload=authorization_payload)
+        delegation_payload = build_reward_delegation_payload(
+            miner_address=miner_address,
+            reward_address=reward_address,
+            nonce=nonce,
+            competition_id=resolved_competition_id,
+            subnet_id=resolved_lane_id,
+        )
+        body["reward_signature"] = sign_payload(private_key=reward_private_key, payload=delegation_payload)
 
     def list_peer_evaluations(
         self,

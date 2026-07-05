@@ -93,6 +93,38 @@ def test_plan_public_share_auto_falls_back_to_wallet_safe_localhost(monkeypatch)
     assert "only work on the computer running the demo" in sharing["warning"]
 
 
+def test_local_swarm_miners_are_deterministic_distinct_and_private() -> None:
+    module = _load_module()
+
+    first = module._demo_swarm_miner(1)
+    first_again = module._demo_swarm_miner(1)
+    second = module._demo_swarm_miner(2)
+
+    assert first["hotkey"] == first_again["hotkey"]
+    assert first["miner_address"] == first_again["miner_address"]
+    assert first["reward_address"] == first_again["reward_address"]
+    assert first["hotkey"] != second["hotkey"]
+    assert first["miner_address"] != second["miner_address"]
+    assert first["reward_address"] != second["reward_address"]
+
+    public = {key: value for key, value in first.items() if not key.endswith("_private_key")}
+    assert "miner_private_key" not in public
+    assert "reward_private_key" not in public
+
+
+def test_extract_last_json_object_reads_miner_cli_result() -> None:
+    module = _load_module()
+
+    payload = module._extract_last_json_object(
+        "[research-agent] selected task\n"
+        "[research-agent] submitted task\n"
+        '{\n  "claim": {"id": "claim-1"},\n  "submission": {"id": "sub-1"}\n}\n'
+    )
+
+    assert payload["claim"]["id"] == "claim-1"
+    assert payload["submission"]["id"] == "sub-1"
+
+
 def test_plan_public_share_http_can_expose_tailscale_ip_with_wallet_warning(monkeypatch) -> None:
     module = _load_module()
 

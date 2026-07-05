@@ -147,8 +147,8 @@ The seeded local tester should see these values:
 | TAO genesis credit | `1 SOTA` |
 | Synthetic alpha credit | `0.5 SOTA` |
 | Total genesis claim | `1.5 SOTA` |
-| Mined emission claim | `2 SOTA` |
-| Final SOTA balance after both claims | `3.5 SOTA` |
+| Mined emission claim | `7200 SOTA` testnet-style daily emission budget |
+| Final SOTA balance after both claims | `7201.5 SOTA` |
 | Self-validation evidence | `3/3 accepted` from Bob, Charlie, and Dave |
 
 ## Success Checklist
@@ -278,14 +278,40 @@ cd /home/mekaneeky/repos/SN94-BitSota-live-docs
 ./scripts/sota_local_demo.py smoke
 ```
 
+The multi-miner smoke starts a fresh local stack, spawns multiple local miner
+processes through the research-agent miner entrypoint, signs each submission
+with a distinct EVM miner/reward identity, records committee self-validation,
+publishes an emission root, submits local Anvil emission claim transactions for
+each reward wallet, writes evidence, and stops the stack:
+
+```bash
+cd /home/mekaneeky/repos/SN94-BitSota-live-docs
+./scripts/sota_local_demo.py swarm-smoke --count 5
+```
+
+The evidence report is written to:
+
+```text
+/home/mekaneeky/repos/.sota-base-local/miner-swarm/latest.json
+```
+
+For an already-running local stack, use:
+
+```bash
+./scripts/sota_local_demo.py miner-swarm --count 5
+```
+
 Use these checks for local release readiness:
 
 1. `./scripts/sota_local_demo.py smoke` proves the contract/indexer/backend
    transaction loop without a browser.
-2. `./scripts/sota_local_demo.py launch` proves the running user-facing page,
+2. `./scripts/sota_local_demo.py swarm-smoke --count 5` proves multiple local
+   miner processes, EVM reward authorization, committee self-validation, root
+   publication, indexer import, and local emission claim transactions.
+3. `./scripts/sota_local_demo.py launch` proves the running user-facing page,
    proxy routes, state-changing claim payloads, receipt evidence, reset path,
    docs, and tester handoff.
-3. `./scripts/sota_local_demo.py ui-smoke --skip-screenshot` reruns the
+4. `./scripts/sota_local_demo.py ui-smoke --skip-screenshot` reruns the
    browser-facing readiness checks after code or config changes.
 
 The release status report requires the UI smoke report, the latest local claim

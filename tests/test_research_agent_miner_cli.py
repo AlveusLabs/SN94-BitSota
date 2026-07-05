@@ -85,6 +85,15 @@ def test_submit_workspace_delegates_to_helper(monkeypatch, capsys, tmp_path: Pat
     assert '"id":"submission-1"' in output
 
 
+def test_load_wallet_accepts_hotkey_uri() -> None:
+    args = Namespace(hotkey_uri="//SotaLocalMiner1")
+
+    wallet = research_agent_miner._load_wallet(args)
+
+    assert wallet.hotkey.ss58_address
+    assert wallet.hotkey.ss58_address == research_agent_miner._load_wallet(args).hotkey.ss58_address
+
+
 def test_signed_request_uses_wallet_file(monkeypatch, capsys, tmp_path: Path) -> None:
     wallet_file = tmp_path / "Wallet mine.txt"
     wallet_file.write_text("Hotkey mnemonic: " + "abandon " * 11 + "about\n", encoding="utf-8")

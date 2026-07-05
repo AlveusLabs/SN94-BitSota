@@ -115,6 +115,7 @@ def _add_agent_args(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--execution-attempts", type=int, default=2)
     parser.add_argument("--keep-execution-checkout", action="store_true")
     parser.add_argument("--max-execution-log-chars", type=int, default=32000)
+    parser.add_argument("--hotkey-uri", default="")
     parser.add_argument("--hotkey-mnemonic", default="")
     parser.add_argument("--wallet-name", default="default")
     parser.add_argument("--wallet-hotkey", default="default")
@@ -123,6 +124,11 @@ def _add_agent_args(parser: argparse.ArgumentParser) -> None:
 
 
 def _load_wallet(args: argparse.Namespace) -> EphemeralWallet | Any:
+    hotkey_uri = str(getattr(args, "hotkey_uri", "") or "").strip()
+    if hotkey_uri:
+        from substrateinterface import Keypair
+
+        return EphemeralWallet(hotkey=Keypair.create_from_uri(hotkey_uri))
     return load_wallet(
         hotkey_mnemonic=str(getattr(args, "hotkey_mnemonic", "") or ""),
         wallet_file=str(getattr(args, "wallet_file", "") or ""),

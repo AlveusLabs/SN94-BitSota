@@ -458,6 +458,18 @@ def submit_claimed_workspace(
         and not implemented_submission_id
     ):
         implemented_submission_id = str(idea_candidates[0]["id"])
+    evm_submission_kwargs: dict[str, str] = {}
+    if os.getenv("BITSOTA_EVM_MINER_PRIVATE_KEY"):
+        evm_competition_id = str(os.getenv("BITSOTA_EVM_COMPETITION_ID") or "").strip()
+        evm_lane_id = str(os.getenv("BITSOTA_EVM_LANE_ID") or "").strip()
+        if evm_lane_id:
+            evm_submission_kwargs["lane_id"] = evm_lane_id
+    else:
+        evm_competition_id = ""
+    if os.getenv("BITSOTA_EVM_MINER_PRIVATE_KEY") and not evm_competition_id:
+        evm_competition_id = _claim_task_id(coordinator, claim_id)
+    if evm_competition_id:
+        evm_submission_kwargs["competition_id"] = evm_competition_id
     return dict(
         coordinator.submit_submission(
             claim_id=str(claim_id),
@@ -491,6 +503,7 @@ def submit_claimed_workspace(
                 if payload.get("execution_log") is not None
                 else None
             ),
+            **evm_submission_kwargs,
         )
         or {}
     )
@@ -781,7 +794,11 @@ class ResearchAgentMiner:
                 "falling back to a direct task claim for this run."
             )
         onboard = self.coordinator.get_onboard_markdown(str(task["id"]))
-        submissions = self.coordinator.list_submissions(task_id=str(task["id"]))
+        try:
+            submissions = self.coordinator.list_submissions(task_id=str(task["id"]))
+        except Exception as exc:
+            submissions = []
+            self.log(f"[research-agent] submissions context unavailable: {exc}")
         self.log(
             f"[research-agent] fetched coordinator context onboard_chars={len(onboard)} submissions={len(submissions)}"
         )
@@ -879,6 +896,12 @@ class ResearchAgentMiner:
                 f"[research-agent] submitting claim_id={claim.get('id')} base_ref={current_plan.get('base_ref') or task.get('base_ref')} "
                 f"implemented_submission_id={implemented_submission_id} artifact_uri={artifact_uri}"
             )
+            evm_submission_kwargs = {}
+            if os.getenv("BITSOTA_EVM_MINER_PRIVATE_KEY"):
+                evm_submission_kwargs = {
+                    "competition_id": str(task["id"]),
+                    "lane_id": str(os.getenv("BITSOTA_EVM_LANE_ID") or "").strip() or None,
+                }
             submission = self.coordinator.submit_submission(
                 claim_id=str(claim["id"]),
                 base_ref=str(
@@ -899,6 +922,7 @@ class ResearchAgentMiner:
                 implemented_submission_id=implemented_submission_id,
                 artifact_uri=artifact_uri,
                 execution_log=execution_log,
+                **evm_submission_kwargs,
             )
         except Exception as exc:
             self._cancel_claim_after_failure(claim_id=str(claim.get("id") or ""), reason=str(exc))
@@ -1004,9 +1028,11 @@ class ResearchAgentMiner:
         mode = str(task.get("competition_mode") or CompetitionMode.standard.value)
         idea_candidates = self._idea_candidates(task=task, submissions=submissions)
         claim_description = (
-            str(work_item.get("title") or "").strip()
+            str(os.getenv("BITSOTA_RESEARCH_CLAIM_DESCRIPTION") or "").strip()
+            or str(work_item.get("title") or "").strip()
             if work_item is not None
-            else f"External agent run for {task.get('slug') or task.get('title')}"
+            else str(os.getenv("BITSOTA_RESEARCH_CLAIM_DESCRIPTION") or "").strip()
+            or f"External agent run for {task.get('slug') or task.get('title')}"
         )
         if work_item is not None:
             self.log(
