@@ -724,6 +724,14 @@ def default_gates(*, local_report: Path, local_claim_proof: Path, testnet_dir: P
                     next_action="Clear AWS/DNS/artifact blockers, then rerun scripts/sota_base_testnet_blockers.py.",
                 ),
                 GateSpec(
+                    name="testnet_emission_lane_sync",
+                    phase="base_sepolia",
+                    path=testnet_dir / "base-sota-testnet-emission-lane-sync.json",
+                    expected_schema="sota-base-lane-sync/v1",
+                    required=True,
+                    next_action="Run scripts/sota_base_sync_lane.py and broadcast with the deployer before public emission claims.",
+                ),
+                GateSpec(
                     name="testnet_aws_inventory",
                     phase="base_sepolia",
                     path=testnet_dir / "base-sota-testnet-aws-inventory.json",

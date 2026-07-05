@@ -104,6 +104,10 @@ def _write_claim_evidence(path: Path, *, wallet: str, genesis: str = "150", emis
     )
 
 
+def _write_lane_sync(path: Path, *, ok: bool = True, status: str = "green") -> None:
+    _write_report(path, schema="sota-base-lane-sync/v1", ok=ok, status=status)
+
+
 def _write_miner_swarm(path: Path, *, count: int = 5, ok: bool = True) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(
@@ -348,6 +352,7 @@ def test_release_status_full_requires_all_testnet_gates(tmp_path: Path) -> None:
         "testnet_operator_run",
         "testnet_snapshot_genesis",
         "testnet_blockers",
+        "testnet_emission_lane_sync",
         "testnet_aws_inventory",
         "testnet_funding",
         "testnet_secret_handles",
@@ -365,6 +370,7 @@ def test_release_status_full_green_requires_operator_gate(tmp_path: Path) -> Non
     _write_miner_swarm(args.local_miner_swarm)
     _write_report(args.testnet_artifacts_dir / "base-sota-testnet-operator-run.json", schema="sota-base-testnet-operator-run/v1", ok=True)
     _write_report(args.testnet_artifacts_dir / "base-sota-testnet-blockers.json", schema="sota-base-testnet-blockers/v1", ok=True)
+    _write_lane_sync(args.testnet_artifacts_dir / "base-sota-testnet-emission-lane-sync.json")
     _write_report(args.testnet_artifacts_dir / "base-sota-testnet-aws-inventory.json", schema="sota-base-testnet-aws-inventory/v1", ok=True)
     _write_report(args.testnet_artifacts_dir / "base-sota-testnet-funding.json", schema="sota-base-testnet-funding/v1", ok=True)
     _write_report(args.testnet_artifacts_dir / "base-sota-testnet-secret-handles.json", schema="sota-base-testnet-secret-bootstrap/v1", ok=True)
@@ -393,6 +399,7 @@ def test_release_status_full_green_requires_operator_gate(tmp_path: Path) -> Non
         "testnet_operator_run",
         "testnet_snapshot_genesis",
         "testnet_blockers",
+        "testnet_emission_lane_sync",
         "testnet_aws_inventory",
         "testnet_funding",
         "testnet_secret_handles",
@@ -411,6 +418,7 @@ def test_release_status_rejects_stale_browser_smoke_without_binding_checks(tmp_p
     _write_miner_swarm(args.local_miner_swarm)
     _write_report(args.testnet_artifacts_dir / "base-sota-testnet-operator-run.json", schema="sota-base-testnet-operator-run/v1", ok=True)
     _write_report(args.testnet_artifacts_dir / "base-sota-testnet-blockers.json", schema="sota-base-testnet-blockers/v1", ok=True)
+    _write_lane_sync(args.testnet_artifacts_dir / "base-sota-testnet-emission-lane-sync.json")
     _write_report(args.testnet_artifacts_dir / "base-sota-testnet-aws-inventory.json", schema="sota-base-testnet-aws-inventory/v1", ok=True)
     _write_report(args.testnet_artifacts_dir / "base-sota-testnet-funding.json", schema="sota-base-testnet-funding/v1", ok=True)
     _write_report(args.testnet_artifacts_dir / "base-sota-testnet-secret-handles.json", schema="sota-base-testnet-secret-bootstrap/v1", ok=True)
@@ -448,6 +456,7 @@ def test_release_status_marks_stale_claim_tx_evidence_red(tmp_path: Path) -> Non
     _write_miner_swarm(args.local_miner_swarm)
     _write_report(args.testnet_artifacts_dir / "base-sota-testnet-operator-run.json", schema="sota-base-testnet-operator-run/v1", ok=True)
     _write_report(args.testnet_artifacts_dir / "base-sota-testnet-blockers.json", schema="sota-base-testnet-blockers/v1", ok=True)
+    _write_lane_sync(args.testnet_artifacts_dir / "base-sota-testnet-emission-lane-sync.json")
     _write_report(args.testnet_artifacts_dir / "base-sota-testnet-aws-inventory.json", schema="sota-base-testnet-aws-inventory/v1", ok=True)
     _write_report(args.testnet_artifacts_dir / "base-sota-testnet-funding.json", schema="sota-base-testnet-funding/v1", ok=True)
     _write_report(args.testnet_artifacts_dir / "base-sota-testnet-secret-handles.json", schema="sota-base-testnet-secret-bootstrap/v1", ok=True)
@@ -483,6 +492,7 @@ def test_release_status_claim_evidence_uses_artifact_wallet_over_seed_wallet(tmp
     _write_miner_swarm(args.local_miner_swarm)
     _write_report(args.testnet_artifacts_dir / "base-sota-testnet-operator-run.json", schema="sota-base-testnet-operator-run/v1", ok=True)
     _write_report(args.testnet_artifacts_dir / "base-sota-testnet-blockers.json", schema="sota-base-testnet-blockers/v1", ok=True)
+    _write_lane_sync(args.testnet_artifacts_dir / "base-sota-testnet-emission-lane-sync.json")
     _write_report(args.testnet_artifacts_dir / "base-sota-testnet-aws-inventory.json", schema="sota-base-testnet-aws-inventory/v1", ok=True)
     _write_report(args.testnet_artifacts_dir / "base-sota-testnet-funding.json", schema="sota-base-testnet-funding/v1", ok=True)
     _write_report(args.testnet_artifacts_dir / "base-sota-testnet-secret-handles.json", schema="sota-base-testnet-secret-bootstrap/v1", ok=True)
@@ -527,6 +537,7 @@ def test_release_status_rejects_seeded_genesis_without_snapshot_alpha(tmp_path: 
     _write_miner_swarm(args.local_miner_swarm)
     _write_report(args.testnet_artifacts_dir / "base-sota-testnet-operator-run.json", schema="sota-base-testnet-operator-run/v1", ok=True)
     _write_report(args.testnet_artifacts_dir / "base-sota-testnet-blockers.json", schema="sota-base-testnet-blockers/v1", ok=True)
+    _write_lane_sync(args.testnet_artifacts_dir / "base-sota-testnet-emission-lane-sync.json")
     _write_report(args.testnet_artifacts_dir / "base-sota-testnet-aws-inventory.json", schema="sota-base-testnet-aws-inventory/v1", ok=True)
     _write_report(args.testnet_artifacts_dir / "base-sota-testnet-funding.json", schema="sota-base-testnet-funding/v1", ok=True)
     _write_report(args.testnet_artifacts_dir / "base-sota-testnet-secret-handles.json", schema="sota-base-testnet-secret-bootstrap/v1", ok=True)
@@ -575,6 +586,7 @@ def test_release_status_reports_public_binding_export_count(tmp_path: Path, monk
     _write_miner_swarm(args.local_miner_swarm)
     _write_report(args.testnet_artifacts_dir / "base-sota-testnet-operator-run.json", schema="sota-base-testnet-operator-run/v1", ok=True)
     _write_report(args.testnet_artifacts_dir / "base-sota-testnet-blockers.json", schema="sota-base-testnet-blockers/v1", ok=True)
+    _write_lane_sync(args.testnet_artifacts_dir / "base-sota-testnet-emission-lane-sync.json")
     _write_report(args.testnet_artifacts_dir / "base-sota-testnet-aws-inventory.json", schema="sota-base-testnet-aws-inventory/v1", ok=True)
     _write_report(args.testnet_artifacts_dir / "base-sota-testnet-funding.json", schema="sota-base-testnet-funding/v1", ok=True)
     _write_report(args.testnet_artifacts_dir / "base-sota-testnet-secret-handles.json", schema="sota-base-testnet-secret-bootstrap/v1", ok=True)

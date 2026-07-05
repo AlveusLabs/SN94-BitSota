@@ -306,6 +306,10 @@ def _extract_secret_value(secret_string: str, *, json_key: str, env_name: str) -
 def _deployment_env_overrides(args: argparse.Namespace) -> tuple[dict[str, str], str]:
     if not args.deploy:
         return {}, ""
+    return _deployer_env_overrides(args)
+
+
+def _deployer_env_overrides(args: argparse.Namespace) -> tuple[dict[str, str], str]:
     if os.environ.get(args.private_key_env):
         return {}, ""
     if not args.private_key_secret_id:
@@ -703,6 +707,33 @@ def _publish_cmd(paths: dict[str, Path], *, kind: str, broadcast: bool) -> list[
     return cmd
 
 
+def _lane_sync_cmd(args: argparse.Namespace, paths: dict[str, Path], *, broadcast: bool) -> list[str]:
+    cmd = [
+        sys.executable,
+        "scripts/sota_base_sync_lane.py",
+        "--manifest",
+        str(paths["manifest"]),
+        "--root-artifact",
+        str(paths["emission_root_artifact"]),
+        "--claim-artifact",
+        str(paths["emission_claim_template"]),
+        "--rpc-url",
+        args.rpc_url,
+        "--private-key-env",
+        args.private_key_env,
+        "--out",
+        str(paths["emission_lane_sync"]),
+        "--timeout",
+        str(args.timeout),
+        "--receipt-timeout",
+        str(args.command_timeout),
+        "--allow-blocked",
+    ]
+    if broadcast:
+        cmd.append("--broadcast")
+    return cmd
+
+
 def _finalize_cmd(paths: dict[str, Path]) -> list[str]:
     return [
         sys.executable,
@@ -753,6 +784,8 @@ def _browser_smoke_cmd(args: argparse.Namespace, paths: dict[str, Path]) -> list
         args.test_wallet_address,
         "--test-old-coldkey",
         args.test_old_coldkey,
+        "--test-snapshot-coldkey",
+        args.test_snapshot_coldkey or args.test_old_coldkey,
         "--lane-id",
         args.default_lane_id,
         "--epoch",
@@ -818,6 +851,8 @@ def _paths(artifacts_dir: Path) -> dict[str, Path]:
         "seed_finalized_report": artifacts_dir / "base-sota-testnet-seed-artifacts-finalized.json",
         "genesis_root_artifact": artifacts_dir / "base-sota-testnet-genesis-root-artifact.json",
         "emission_root_artifact": artifacts_dir / "base-sota-testnet-emission-root-artifact.json",
+        "emission_claim_template": artifacts_dir / "base-sota-testnet-emission-claim-template.json",
+        "emission_lane_sync": artifacts_dir / "base-sota-testnet-emission-lane-sync.json",
         "genesis_publish_result": artifacts_dir / "base-sota-testnet-genesis-root-publish-result.json",
         "emission_publish_result": artifacts_dir / "base-sota-testnet-emission-root-publish-result.json",
         "genesis_claim_artifact": artifacts_dir / "base-sota-testnet-genesis-claim-artifact.json",
@@ -1056,6 +1091,47 @@ def _existing_finalized_claim_artifacts_step(paths: dict[str, Path]) -> StepResu
             "emission_claim": str(paths["emission_claim_artifact"]),
             "finalized_report": str(paths["seed_finalized_report"]),
         },
+    )
+
+
+def _sync_emission_lane_step(args: argparse.Namespace, paths: dict[str, Path]) -> StepResult:
+    missing = [
+        path
+        for path in (paths["manifest"], paths["emission_root_artifact"], paths["emission_claim_template"])
+        if not path.exists()
+    ]
+    if missing:
+        return StepResult(
+            "sync_emission_lane",
+            "red",
+            "Emission lane sync inputs are missing: " + ", ".join(str(path) for path in missing),
+            "Build seed artifacts and a Base Sepolia manifest before syncing the emission lane.",
+            artifacts={"report": str(paths["emission_lane_sync"])},
+        )
+    deploy_env, deploy_env_error = _deployer_env_overrides(args) if args.broadcast_roots else ({}, "")
+    if deploy_env_error:
+        return StepResult(
+            "sync_emission_lane",
+            "red",
+            deploy_env_error,
+            "Create the approved Base Sepolia deployer secret handle or export SOTA_DEPLOYER_PRIVATE_KEY before syncing the lane.",
+            artifacts={"report": str(paths["emission_lane_sync"])},
+            command=_lane_sync_cmd(args, paths, broadcast=args.broadcast_roots),
+        )
+    result = _run_report_command(
+        _lane_sync_cmd(args, paths, broadcast=args.broadcast_roots),
+        report_path=paths["emission_lane_sync"],
+        timeout=args.command_timeout,
+        env_overrides=deploy_env,
+    )
+    return _step_from_json_report(
+        "sync_emission_lane",
+        result,
+        report_path=paths["emission_lane_sync"],
+        expected_schema="sota-base-lane-sync/v1",
+        success_detail="Emission lane cap is synced to the emission root budget.",
+        failure_remediation="Broadcast the lane sync with the Base Sepolia deployer before public emission claims.",
+        artifacts={"report": str(paths["emission_lane_sync"])},
     )
 
 
@@ -1429,10 +1505,11 @@ def run_operator(args: argparse.Namespace) -> dict[str, Any]:
             )
         )
 
-    if paths["genesis_root_artifact"].exists() and paths["emission_root_artifact"].exists():
-        publish_env, publish_env_error = _root_publisher_env_overrides(args)
-        if publish_env_error:
-            for kind in ("genesis", "emission"):
+    publish_env, publish_env_error = _root_publisher_env_overrides(args)
+    if publish_env_error:
+        for kind in ("genesis", "emission"):
+            artifact_path = paths["genesis_root_artifact"] if kind == "genesis" else paths["emission_root_artifact"]
+            if artifact_path.exists():
                 steps.append(
                     StepResult(
                         f"publish_{kind}_root",
@@ -1447,32 +1524,35 @@ def run_operator(args: argparse.Namespace) -> dict[str, Any]:
                         command=_publish_cmd(paths, kind=kind, broadcast=args.broadcast_roots),
                     )
                 )
-        else:
-            for kind in ("genesis", "emission"):
-                existing_publish = None if args.broadcast_roots else _existing_publish_step(paths, kind=kind)
-                if existing_publish is not None:
-                    steps.append(existing_publish)
-                else:
-                    steps.append(_publish_step(paths, kind=kind, broadcast=args.broadcast_roots, timeout=args.command_timeout, env_overrides=publish_env))
     else:
-        steps.append(
-            StepResult(
-                "publish_genesis_root",
-                "red",
-                "Genesis root artifact is missing.",
-                "Build seed artifacts before publishing roots.",
-            )
-        )
-        steps.append(
-            StepResult(
-                "publish_emission_root",
-                "red",
-                "Emission root artifact is missing.",
-                "Build seed artifacts before publishing roots.",
-            )
-        )
+        for kind in ("genesis", "emission"):
+            artifact_path = paths["genesis_root_artifact"] if kind == "genesis" else paths["emission_root_artifact"]
+            if not artifact_path.exists():
+                steps.append(
+                    StepResult(
+                        f"publish_{kind}_root",
+                        "red",
+                        f"{kind.title()} root artifact is missing.",
+                        "Build seed artifacts before publishing roots.",
+                    )
+                )
+                continue
+            existing_publish = None if args.broadcast_roots else _existing_publish_step(paths, kind=kind)
+            if existing_publish is not None:
+                steps.append(existing_publish)
+            else:
+                steps.append(
+                    _publish_step(
+                        paths,
+                        kind=kind,
+                        broadcast=args.broadcast_roots,
+                        timeout=args.command_timeout,
+                        env_overrides=publish_env,
+                    )
+                )
 
     if args.broadcast_roots:
+        steps.append(_sync_emission_lane_step(args, paths))
         finalize = _run_command(_finalize_cmd(paths), timeout=args.timeout)
         steps.append(
             _step_from_result(
@@ -1621,6 +1701,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--local-report", type=Path, default=DEFAULT_LOCAL_REPORT)
     parser.add_argument("--test-wallet-address", default=os.environ.get("SOTA_TEST_WALLET_ADDRESS", ""))
     parser.add_argument("--test-old-coldkey", default=os.environ.get("SOTA_TEST_OLD_COLDKEY", ""))
+    parser.add_argument("--test-snapshot-coldkey", default=os.environ.get("SOTA_TEST_SNAPSHOT_COLDKEY", ""))
     parser.add_argument("--test-epoch", default=os.environ.get("SOTA_TEST_EPOCH", "1"))
     parser.add_argument("--min-accepted-count", type=int, default=3)
     parser.add_argument("--min-committee-count", type=int, default=3)

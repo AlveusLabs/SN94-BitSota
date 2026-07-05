@@ -50,6 +50,7 @@ def _args(tmp_path: Path, **overrides):
         "local_report": tmp_path / "local-report.json",
         "test_wallet_address": "0x00000000000000000000000000000000000000aa",
         "test_old_coldkey": "5GrwvaEF5zXb26Fz9rcQpDWS57CtERHpNehXCPcNoHGKutQY",
+        "test_snapshot_coldkey": "5C4hrfjw9DjXZTzV3MwzrrAr9P1MJhSrvWGWqi1eSuyUpnhM",
         "test_epoch": "1",
         "min_accepted_count": 3,
         "min_committee_count": 3,
@@ -185,6 +186,11 @@ def _write_standard_reports(module, paths: dict[str, Path], cmd: list[str]) -> N
             paths["browser_smoke"],
             {"schema": "sota-base-testnet-browser-smoke/v1", "ok": True, "status": "green"},
         )
+    if _has_cmd(cmd, "sota_base_sync_lane.py"):
+        module._write_json(
+            paths["emission_lane_sync"],
+            {"schema": "sota-base-lane-sync/v1", "ok": True, "status": "green"},
+        )
     if _has_cmd(cmd, "sota_base_release_status.py"):
         module._write_json(
             paths["release_status"],
@@ -197,6 +203,13 @@ def _write_standard_reports(module, paths: dict[str, Path], cmd: list[str]) -> N
         )
         paths["tester_handoff_md"].write_text("# SOTA Base Tester Handoff\n", encoding="utf-8")
         paths["tester_handoff_html"].write_text("<!doctype html><title>SOTA Base Tester Handoff</title>\n", encoding="utf-8")
+
+
+def _write_emission_claim_template(module, paths: dict[str, Path]) -> None:
+    module._write_json(
+        paths["emission_claim_template"],
+        {"claim_list": [{"offchain_lane_id": "0x" + "33" * 32}]},
+    )
 
 
 def test_operator_report_is_red_without_deployment_or_evidence(tmp_path: Path, monkeypatch) -> None:
@@ -353,6 +366,40 @@ def test_operator_refreshes_tester_handoff_after_release_status(tmp_path: Path, 
     assert "--mirror-local" in seen["handoff"]
 
 
+def test_operator_passes_snapshot_coldkey_to_browser_smoke(tmp_path: Path, monkeypatch) -> None:
+    module = _load_module()
+    args = _args(
+        tmp_path,
+        deployment=tmp_path / "compact.json",
+        emission_evidence=tmp_path / "evidence.json",
+        skip_browser_smoke=False,
+    )
+    args.deployment.write_text("{}\n", encoding="utf-8")
+    args.emission_evidence.write_text("{}\n", encoding="utf-8")
+    paths = module._paths(args.artifacts_dir)
+    seen = {}
+
+    def fake_run(cmd: list[str], **kwargs) -> dict:
+        _write_standard_reports(module, paths, cmd)
+        if _has_cmd(cmd, "sota_base_testnet_rehearsal.py"):
+            module._write_json(paths["rehearsal_report"], {"ok": True, "status": "green"})
+            module._write_json(paths["manifest"], {"environment": "base-sepolia", "chain": {"chain_id": 84532}})
+            paths["env"].write_text("SOTA_CLAIMS_API_URL=https://claims-api-test.example.invalid\n", encoding="utf-8")
+        if _has_cmd(cmd, "sota_base_testnet_seed_artifacts.py") and "build" in cmd:
+            module._write_json(paths["genesis_root_artifact"], {"root": {"root": "0x" + "11" * 32}})
+            module._write_json(paths["emission_root_artifact"], {"root": {"root": "0x" + "12" * 32}})
+            _write_emission_claim_template(module, paths)
+        if _has_cmd(cmd, "sota_base_testnet_browser_smoke.py"):
+            seen["browser"] = cmd
+        return _command_result(cmd)
+
+    monkeypatch.setattr(module, "_run_command", fake_run)
+    module.run_operator(args)
+
+    assert "--test-snapshot-coldkey" in seen["browser"]
+    assert seen["browser"][seen["browser"].index("--test-snapshot-coldkey") + 1] == args.test_snapshot_coldkey
+
+
 def test_operator_does_not_reuse_stale_json_report_after_timeout(tmp_path: Path, monkeypatch) -> None:
     module = _load_module()
     args = _args(tmp_path, command_timeout=17.0)
@@ -490,6 +537,7 @@ def test_operator_dry_run_roots_keeps_claim_import_yellow(tmp_path: Path, monkey
         if _has_cmd(cmd, "sota_base_testnet_seed_artifacts.py") and "build" in cmd:
             module._write_json(paths["genesis_root_artifact"], {"root": {"root": "0x" + "11" * 32}})
             module._write_json(paths["emission_root_artifact"], {"root": {"root": "0x" + "12" * 32}})
+            _write_emission_claim_template(module, paths)
         return _command_result(cmd)
 
     monkeypatch.setattr(module, "_run_command", fake_run)
@@ -526,6 +574,7 @@ def test_operator_without_snapshot_binding_refuses_seeded_genesis_by_default(tmp
             module._write_json(paths["seed_report"], {"status": "ready_to_publish_roots"})
             module._write_json(paths["genesis_root_artifact"], {"root": {"root": "0x" + "11" * 32}})
             module._write_json(paths["emission_root_artifact"], {"root": {"root": "0x" + "12" * 32}})
+            _write_emission_claim_template(module, paths)
         return _command_result(cmd)
 
     monkeypatch.setattr(module, "_run_command", fake_run)
@@ -586,6 +635,7 @@ def test_operator_default_rerun_uses_existing_finalized_claim_artifacts(tmp_path
         if _has_cmd(cmd, "sota_base_testnet_seed_artifacts.py") and "build" in cmd:
             module._write_json(paths["genesis_root_artifact"], {"root": {"root": "0x" + "11" * 32}})
             module._write_json(paths["emission_root_artifact"], {"root": {"root": "0x" + "12" * 32}})
+            _write_emission_claim_template(module, paths)
             write_finalized_artifacts()
         if _has_cmd(cmd, "sota_base_release_status.py"):
             module._write_json(
@@ -632,6 +682,7 @@ def test_operator_full_broadcast_finalize_import_path_can_be_green(tmp_path: Pat
             module._write_json(paths["seed_report"], {"status": "ready_to_publish_roots"})
             module._write_json(paths["genesis_root_artifact"], {"root": {"root": "0x" + "11" * 32}})
             module._write_json(paths["emission_root_artifact"], {"root": {"root": "0x" + "12" * 32}})
+            _write_emission_claim_template(module, paths)
         if _has_cmd(cmd, "sota_base_publish_root.py"):
             out = Path(cmd[cmd.index("--out") + 1])
             kind = cmd[cmd.index("--kind") + 1]
@@ -652,6 +703,7 @@ def test_operator_full_broadcast_finalize_import_path_can_be_green(tmp_path: Pat
     assert report["ok"] is True
     assert report["status"] == "green"
     assert steps["publish_genesis_root"]["status"] == "green"
+    assert steps["sync_emission_lane"]["status"] == "green"
     assert steps["finalize_claim_artifacts"]["status"] == "green"
     assert steps["import_claim_artifacts"]["status"] == "green"
     assert report["read_only_default"] is False
@@ -688,6 +740,7 @@ def test_operator_snapshot_binding_replaces_seed_genesis_root_and_claim(tmp_path
             module._write_json(paths["seed_report"], {"status": "ready_to_publish_roots"})
             module._write_json(paths["genesis_root_artifact"], {"root": {"root": seed_genesis_root}})
             module._write_json(paths["emission_root_artifact"], {"root": {"root": "0x" + "12" * 32}})
+            _write_emission_claim_template(module, paths)
         if _has_cmd(cmd, "sota_snapshot_claim_bridge.py") and "build" in cmd:
             seen["snapshot_build"] = cmd
             module._write_json(paths["snapshot_claim_report"], {"status": "ready_to_publish_root"})
@@ -807,6 +860,7 @@ def test_operator_can_export_snapshot_bindings_from_claims_api(tmp_path: Path, m
             module._write_json(paths["seed_report"], {"status": "ready_to_publish_roots"})
             module._write_json(paths["genesis_root_artifact"], {"root": {"root": "0x" + "11" * 32}})
             module._write_json(paths["emission_root_artifact"], {"root": {"root": "0x" + "12" * 32}})
+            _write_emission_claim_template(module, paths)
         if _has_cmd(cmd, "sota_snapshot_claim_bridge.py") and "build" in cmd:
             seen["snapshot_build"] = cmd
             module._write_json(paths["snapshot_claim_report"], {"status": "ready_to_publish_root"})
@@ -951,6 +1005,7 @@ def test_operator_loads_root_publisher_private_key_from_secret_handle(tmp_path: 
             module._write_json(paths["seed_report"], {"status": "ready_to_publish_roots"})
             module._write_json(paths["genesis_root_artifact"], {"root": {"root": "0x" + "11" * 32}})
             module._write_json(paths["emission_root_artifact"], {"root": {"root": "0x" + "12" * 32}})
+            _write_emission_claim_template(module, paths)
         if _has_cmd(cmd, "sota_base_publish_root.py"):
             seen_publish_envs.append(kwargs.get("env_overrides") or {})
             out = Path(cmd[cmd.index("--out") + 1])
