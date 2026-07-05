@@ -943,7 +943,7 @@ def render_html(handoff: dict[str, Any]) -> str:
                 "</section>",
                 '<section class="journey">',
                 f'<div><b>Claim genesis</b><span>{escape(str(local.get("genesis_claim_amount")))} from seeded TAO plus alpha accounting credit.</span></div>',
-                f'<div><b>Mine locally</b><span>Alice miner submission creates a {escape(str(local.get("emission_claim_amount")))} SOTA emission.</span></div>',
+                f'<div><b>Mine locally</b><span>Alice miner submission creates a {escape(str(local.get("emission_claim_amount")))} emission.</span></div>',
                 f'<div><b>Self-validate</b><span>{escape(str(local.get("self_validation_summary") or "0/0 accepted"))} from the local peer committee before claiming.</span></div>',
                 "</section>",
                 '<div class="flow">',

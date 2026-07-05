@@ -302,6 +302,7 @@ def test_tester_handoff_contains_local_urls_and_warning(tmp_path: Path) -> None:
     assert "needs 0.02000000 ETH" in markdown
     assert "Base Sepolia Faucet Sources" in markdown
     assert "<title>SOTA Base Tester Handoff</title>" in html
+    assert "SOTA SOTA" not in html
     assert "Local demo blocked" in html
     assert "Local MetaMask ready" in html
     assert "Remote Tailscale MetaMask ready" in html
