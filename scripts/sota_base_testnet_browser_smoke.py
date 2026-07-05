@@ -260,14 +260,30 @@ def _config(args: argparse.Namespace) -> tuple[dict[str, Any], dict[str, str], d
         or env.get("SOTA_READINESS_URL")
         or ""
     )
+    test_wallet_address = args.test_wallet_address or env.get("SOTA_TEST_WALLET_ADDRESS") or env.get("TEST_WALLET_ADDRESS") or ""
+    test_old_coldkey = args.test_old_coldkey or env.get("SOTA_TEST_OLD_COLDKEY") or env.get("TEST_OLD_COLDKEY") or ""
+    test_genesis_wallet_address = (
+        getattr(args, "test_genesis_wallet_address", "")
+        or env.get("SOTA_TEST_GENESIS_WALLET_ADDRESS")
+        or env.get("SOTA_TEST_SNAPSHOT_REWARD_ADDRESS")
+        or test_wallet_address
+    )
+    test_genesis_coldkey = (
+        getattr(args, "test_genesis_coldkey", "")
+        or env.get("SOTA_TEST_GENESIS_COLDKEY")
+        or env.get("SOTA_TEST_SNAPSHOT_COLDKEY")
+        or test_old_coldkey
+    )
     values = {
         "claims_url": claims_ui,
         "claims_api_url": claims_api.rstrip("/") if claims_api else "",
         "autoresearch_url": autoresearch.rstrip("/") if autoresearch else "",
         "readiness_url": readiness_url,
-        "test_wallet_address": args.test_wallet_address or env.get("SOTA_TEST_WALLET_ADDRESS") or env.get("TEST_WALLET_ADDRESS") or "",
-        "test_old_coldkey": args.test_old_coldkey or env.get("SOTA_TEST_OLD_COLDKEY") or env.get("TEST_OLD_COLDKEY") or "",
-        "snapshot_coldkey": getattr(args, "test_snapshot_coldkey", "") or env.get("SOTA_TEST_SNAPSHOT_COLDKEY") or env.get("SOTA_TEST_OLD_COLDKEY") or env.get("TEST_OLD_COLDKEY") or "",
+        "test_wallet_address": test_wallet_address,
+        "test_old_coldkey": test_old_coldkey,
+        "test_genesis_wallet_address": test_genesis_wallet_address,
+        "test_genesis_coldkey": test_genesis_coldkey,
+        "snapshot_coldkey": getattr(args, "test_snapshot_coldkey", "") or env.get("SOTA_TEST_SNAPSHOT_COLDKEY") or test_genesis_coldkey,
         "lane_id": args.lane_id or env.get("SOTA_TEST_LANE_ID") or env.get("NEXT_PUBLIC_SOTA_DEFAULT_LANE_ID") or LANE_ID,
         "epoch": str(args.epoch or env.get("SOTA_TEST_EPOCH") or "1"),
         "env_chain_id": env.get("NEXT_PUBLIC_SOTA_BASE_CHAIN_ID") or env.get("SOTA_BASE_CHAIN_ID") or "",
@@ -323,6 +339,8 @@ def _config_checks(values: dict[str, str]) -> list[Check]:
         _result_check("autoresearch_url", bool(values["autoresearch_url"]), "Autoresearch/coordinator URL is configured.", "Autoresearch/coordinator URL is missing.", remediation="Set the public Base Sepolia autoresearch coordinator URL."),
         _result_check("readiness_url", bool(values["readiness_url"]), "Public readiness URL is configured.", "Public readiness URL is missing.", remediation="Publish and configure base-sota-testnet-readiness.json."),
         _result_check("test_old_coldkey", bool(values["test_old_coldkey"]), "Seeded test old coldkey is configured.", "Seeded test old coldkey is missing.", remediation="Set SOTA_TEST_OLD_COLDKEY for the public test claim."),
+        _result_check("test_genesis_coldkey", bool(values["test_genesis_coldkey"]), "Genesis snapshot coldkey is configured.", "Genesis snapshot coldkey is missing.", remediation="Set SOTA_TEST_GENESIS_COLDKEY to a real coldkey from the locked snapshot."),
+        _result_check("test_genesis_wallet_address", _is_evm_address(values["test_genesis_wallet_address"]), "Genesis reward wallet address is configured.", f"Genesis reward wallet address is missing or invalid: {values['test_genesis_wallet_address'] or 'missing'}.", remediation="Set SOTA_TEST_GENESIS_WALLET_ADDRESS to the EVM reward wallet for the signed snapshot binding."),
         _result_check("snapshot_coldkey", bool(values["snapshot_coldkey"]), "Snapshot binding smoke coldkey is configured.", "Snapshot binding smoke coldkey is missing.", remediation="Set SOTA_TEST_SNAPSHOT_COLDKEY to a real coldkey from the locked snapshot."),
         _result_check("test_wallet_address", _is_evm_address(values["test_wallet_address"]), "Seeded test wallet address is configured.", f"Seeded test wallet address is missing or invalid: {values['test_wallet_address'] or 'missing'}.", remediation="Set SOTA_TEST_WALLET_ADDRESS to a public funded Base Sepolia wallet."),
         _result_check("test_lane_id", bool(values["lane_id"]), "Seeded emission lane id is configured.", "Seeded emission lane id is missing.", remediation="Set NEXT_PUBLIC_SOTA_DEFAULT_LANE_ID or SOTA_TEST_LANE_ID."),
@@ -454,7 +472,7 @@ def _claims_api_checks(values: dict[str, str], *, timeout: float) -> list[Check]
 def _binding_route_checks(values: dict[str, str], *, timeout: float) -> list[Check]:
     checks: list[Check] = []
     base = values["claims_api_url"]
-    wallet = values["test_wallet_address"]
+    wallet = values["test_genesis_wallet_address"]
     snapshot_coldkey = values["snapshot_coldkey"]
     if not base or not _is_evm_address(wallet) or not snapshot_coldkey:
         return [
@@ -548,22 +566,23 @@ def _binding_route_checks(values: dict[str, str], *, timeout: float) -> list[Che
 def _claim_lookup_checks(values: dict[str, str], *, timeout: float) -> list[Check]:
     checks: list[Check] = []
     base = values["claims_api_url"]
-    wallet = values["test_wallet_address"]
-    old_coldkey = values["test_old_coldkey"]
+    emission_wallet = values["test_wallet_address"]
+    genesis_wallet = values["test_genesis_wallet_address"]
+    old_coldkey = values["test_genesis_coldkey"]
     lane_id = values["lane_id"]
-    if not base or not _is_evm_address(wallet) or not old_coldkey:
+    if not base or not _is_evm_address(emission_wallet) or not _is_evm_address(genesis_wallet) or not old_coldkey:
         return [
             Check(
                 "seeded_claim_inputs",
                 "red",
-                "Claims API URL, funded test wallet, and old coldkey are required for public browser smoke.",
+                "Claims API URL, emission wallet, genesis reward wallet, and genesis coldkey are required for public browser smoke.",
                 "Set public test claim inputs before inviting a nontechnical tester.",
             )
         ]
-    genesis_query = urlencode({"old_coldkey": old_coldkey, "reward_address": wallet, "subnet_id": "genesis"})
-    emission_query = urlencode({"evm_address": wallet, "subnet_id": lane_id})
+    genesis_query = urlencode({"old_coldkey": old_coldkey, "reward_address": genesis_wallet, "subnet_id": "genesis"})
+    emission_query = urlencode({"evm_address": emission_wallet, "subnet_id": lane_id})
     try:
-        genesis = dict(_http_json("GET", f"{_join_url(base, f'/api/v1/base/eligibility/{quote(wallet)}')}?{genesis_query}", timeout=timeout) or {})
+        genesis = dict(_http_json("GET", f"{_join_url(base, f'/api/v1/base/eligibility/{quote(genesis_wallet)}')}?{genesis_query}", timeout=timeout) or {})
     except Exception as exc:
         checks.append(Check("genesis_lookup", "red", f"Genesis lookup failed: {exc}", "Publish/import the Base Sepolia genesis claim artifact."))
         genesis = {}
@@ -577,7 +596,7 @@ def _claim_lookup_checks(values: dict[str, str], *, timeout: float) -> list[Chec
         )
     )
     try:
-        emission = dict(_http_json("GET", f"{_join_url(base, f'/api/v1/base/eligibility/{quote(wallet)}')}?{emission_query}", timeout=timeout) or {})
+        emission = dict(_http_json("GET", f"{_join_url(base, f'/api/v1/base/eligibility/{quote(emission_wallet)}')}?{emission_query}", timeout=timeout) or {})
     except Exception as exc:
         checks.append(Check("emission_lookup", "red", f"Emission lookup failed: {exc}", "Publish/import the Base Sepolia emission claim artifact."))
         emission = {}
@@ -594,13 +613,13 @@ def _claim_lookup_checks(values: dict[str, str], *, timeout: float) -> list[Chec
         (
             "genesis",
             genesis,
-            {"program": "genesis", "rewardAddress": wallet},
+            {"program": "genesis", "rewardAddress": genesis_wallet},
             "Fix genesis distributor address, proof args, or chain id in the claims API.",
         ),
         (
             "emission",
             emission,
-            {"program": "emission", "evmAddress": wallet, "laneId": lane_id},
+            {"program": "emission", "evmAddress": emission_wallet, "laneId": lane_id},
             "Fix emission distributor address, proof args, or chain id in the claims API.",
         ),
     ):
@@ -756,6 +775,8 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--readiness-url", default="")
     parser.add_argument("--test-wallet-address", default="")
     parser.add_argument("--test-old-coldkey", default="")
+    parser.add_argument("--test-genesis-wallet-address", default="")
+    parser.add_argument("--test-genesis-coldkey", default="")
     parser.add_argument("--test-snapshot-coldkey", default="")
     parser.add_argument("--lane-id", default="")
     parser.add_argument("--epoch", default="")

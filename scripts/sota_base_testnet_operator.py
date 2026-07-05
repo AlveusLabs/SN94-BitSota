@@ -784,8 +784,12 @@ def _browser_smoke_cmd(args: argparse.Namespace, paths: dict[str, Path]) -> list
         args.test_wallet_address,
         "--test-old-coldkey",
         args.test_old_coldkey,
+        "--test-genesis-wallet-address",
+        args.test_genesis_wallet_address or args.test_wallet_address,
+        "--test-genesis-coldkey",
+        args.test_genesis_coldkey or args.test_snapshot_coldkey or args.test_old_coldkey,
         "--test-snapshot-coldkey",
-        args.test_snapshot_coldkey or args.test_old_coldkey,
+        args.test_snapshot_coldkey or args.test_genesis_coldkey or args.test_old_coldkey,
         "--lane-id",
         args.default_lane_id,
         "--epoch",
@@ -1701,6 +1705,8 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--local-report", type=Path, default=DEFAULT_LOCAL_REPORT)
     parser.add_argument("--test-wallet-address", default=os.environ.get("SOTA_TEST_WALLET_ADDRESS", ""))
     parser.add_argument("--test-old-coldkey", default=os.environ.get("SOTA_TEST_OLD_COLDKEY", ""))
+    parser.add_argument("--test-genesis-wallet-address", default=os.environ.get("SOTA_TEST_GENESIS_WALLET_ADDRESS", ""))
+    parser.add_argument("--test-genesis-coldkey", default=os.environ.get("SOTA_TEST_GENESIS_COLDKEY", ""))
     parser.add_argument("--test-snapshot-coldkey", default=os.environ.get("SOTA_TEST_SNAPSHOT_COLDKEY", ""))
     parser.add_argument("--test-epoch", default=os.environ.get("SOTA_TEST_EPOCH", "1"))
     parser.add_argument("--min-accepted-count", type=int, default=3)

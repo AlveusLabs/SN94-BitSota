@@ -33,6 +33,9 @@ def _args(tmp_path: Path, **overrides):
         "readiness_url": "",
         "test_wallet_address": "",
         "test_old_coldkey": "",
+        "test_genesis_wallet_address": "",
+        "test_genesis_coldkey": "",
+        "test_snapshot_coldkey": "",
         "lane_id": "",
         "epoch": "",
         "timeout": 0.1,
@@ -68,6 +71,9 @@ def _write_artifacts(args: argparse.Namespace, *, readiness_ok: bool = True, env
                 "NEXT_PUBLIC_SOTA_READINESS_URL=https://claims-test.example.invalid/base-sota-testnet-readiness.json",
                 "SOTA_TEST_WALLET_ADDRESS=0x5555555555555555555555555555555555555555",
                 "SOTA_TEST_OLD_COLDKEY=5GrwvaEF5zXb26Fz9rcQpDWS57CtERHpNehXCPcNoHGKutQY",
+                "SOTA_TEST_GENESIS_WALLET_ADDRESS=0x6666666666666666666666666666666666666666",
+                "SOTA_TEST_GENESIS_COLDKEY=5C4hrfjw9DjXZTzV3MwzrrAr9P1MJhSrvWGWqi1eSuyUpnhM",
+                "SOTA_TEST_SNAPSHOT_COLDKEY=5C4hrfjw9DjXZTzV3MwzrrAr9P1MJhSrvWGWqi1eSuyUpnhM",
                 "SOTA_TEST_EPOCH=1",
             ]
         )
@@ -123,8 +129,8 @@ def _install_green_http(module, monkeypatch) -> None:
                 "schema": "sota-snapshot-binding-message/v1",
                 "status": "message_ready",
                 "message": {
-                    "coldkey": "5GrwvaEF5zXb26Fz9rcQpDWS57CtERHpNehXCPcNoHGKutQY",
-                    "reward_address": "0x5555555555555555555555555555555555555555",
+                    "coldkey": payload["coldkey"],
+                    "reward_address": payload["reward_address"],
                     "base_chain_id": 84532,
                     "allocation_amount": 1500000000000000000,
                 },
@@ -193,6 +199,8 @@ def test_browser_smoke_green_for_public_testnet_fixture(tmp_path: Path, monkeypa
     assert names["genesis_calldata"]["status"] == "green"
     assert names["emission_calldata"]["status"] == "green"
     assert names["self_validation_evidence"]["status"] == "green"
+    assert report["targets"]["test_wallet_address"] == "0x5555555555555555555555555555555555555555"
+    assert report["targets"]["test_genesis_wallet_address"] == "0x6666666666666666666666666666666666666666"
 
 
 def test_browser_smoke_accepts_already_claimed_seeded_wallet(tmp_path: Path, monkeypatch) -> None:
@@ -272,6 +280,28 @@ def test_browser_smoke_requires_seeded_old_coldkey(tmp_path: Path, monkeypatch) 
 
     assert report["ok"] is False
     assert old_coldkey["status"] == "red"
+
+
+def test_browser_smoke_defaults_genesis_inputs_from_seeded_fixture(tmp_path: Path, monkeypatch) -> None:
+    module = _load_module()
+    args = _args(tmp_path)
+    _write_artifacts(args)
+    env = args.env_file.read_text(encoding="utf-8")
+    env = env.replace("SOTA_TEST_GENESIS_WALLET_ADDRESS=0x6666666666666666666666666666666666666666\n", "")
+    env = env.replace("SOTA_TEST_GENESIS_COLDKEY=5C4hrfjw9DjXZTzV3MwzrrAr9P1MJhSrvWGWqi1eSuyUpnhM\n", "")
+    env = env.replace("SOTA_TEST_SNAPSHOT_COLDKEY=5C4hrfjw9DjXZTzV3MwzrrAr9P1MJhSrvWGWqi1eSuyUpnhM\n", "")
+    args.env_file.write_text(env, encoding="utf-8")
+    args.test_genesis_wallet_address = ""
+    args.test_genesis_coldkey = ""
+    _install_green_http(module, monkeypatch)
+
+    report = module.run_browser_smoke(args)
+    names = {check["name"]: check for check in report["checks"]}
+
+    assert report["ok"] is True
+    assert names["test_genesis_wallet_address"]["status"] == "green"
+    assert names["test_genesis_coldkey"]["status"] == "green"
+    assert report["targets"]["test_genesis_wallet_address"] == report["targets"]["test_wallet_address"]
 
 
 def test_browser_smoke_rejects_claims_page_missing_wallet_copy(tmp_path: Path, monkeypatch) -> None:

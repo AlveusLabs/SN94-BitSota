@@ -50,6 +50,8 @@ def _args(tmp_path: Path, **overrides):
         "local_report": tmp_path / "local-report.json",
         "test_wallet_address": "0x00000000000000000000000000000000000000aa",
         "test_old_coldkey": "5GrwvaEF5zXb26Fz9rcQpDWS57CtERHpNehXCPcNoHGKutQY",
+        "test_genesis_wallet_address": "0x00000000000000000000000000000000000000cc",
+        "test_genesis_coldkey": "5C4hrfjw9DjXZTzV3MwzrrAr9P1MJhSrvWGWqi1eSuyUpnhM",
         "test_snapshot_coldkey": "5C4hrfjw9DjXZTzV3MwzrrAr9P1MJhSrvWGWqi1eSuyUpnhM",
         "test_epoch": "1",
         "min_accepted_count": 3,
@@ -398,6 +400,10 @@ def test_operator_passes_snapshot_coldkey_to_browser_smoke(tmp_path: Path, monke
 
     assert "--test-snapshot-coldkey" in seen["browser"]
     assert seen["browser"][seen["browser"].index("--test-snapshot-coldkey") + 1] == args.test_snapshot_coldkey
+    assert "--test-genesis-wallet-address" in seen["browser"]
+    assert seen["browser"][seen["browser"].index("--test-genesis-wallet-address") + 1] == args.test_genesis_wallet_address
+    assert "--test-genesis-coldkey" in seen["browser"]
+    assert seen["browser"][seen["browser"].index("--test-genesis-coldkey") + 1] == args.test_genesis_coldkey
 
 
 def test_operator_does_not_reuse_stale_json_report_after_timeout(tmp_path: Path, monkeypatch) -> None:
