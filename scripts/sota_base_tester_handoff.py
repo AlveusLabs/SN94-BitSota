@@ -750,6 +750,7 @@ def render_markdown(handoff: dict[str, Any]) -> str:
             lines.append("```")
         lines.append("")
     if testnet:
+        deferred_holder = bool(testnet.get("real_holder_test_deferred"))
         lines.append("## Base Sepolia")
         lines.append("")
         lines.append(f"- Claim test ready: {str(testnet.get('ready')).lower()}")
@@ -771,7 +772,14 @@ def render_markdown(handoff: dict[str, Any]) -> str:
             lines.append(f"- Readiness: {testnet.get('readiness_url')}")
         lines.append(f"- Browser smoke: {testnet.get('browser_smoke_status')} ({_summary_text(dict(testnet.get('browser_smoke_summary') or {}))})")
         if testnet.get("test_wallet_address"):
-            lines.append(f"- Test wallet: `{testnet.get('test_wallet_address')}`")
+            if deferred_holder:
+                lines.append(
+                    "- Seeded evidence wallet: "
+                    f"`{testnet.get('test_wallet_address')}` "
+                    "(already used for operator evidence; use your own Base Sepolia wallet for a real holder test)"
+                )
+            else:
+                lines.append(f"- Test wallet: `{testnet.get('test_wallet_address')}`")
         if testnet.get("old_coldkey"):
             lines.append(f"- Old coldkey lookup: `{testnet.get('old_coldkey')}`")
         if testnet.get("lane_id"):
@@ -793,7 +801,12 @@ def render_markdown(handoff: dict[str, Any]) -> str:
             lines.append(f"- Chain ID: {network_fields.get('chain_id')}")
             lines.append(f"- Currency symbol: {network_fields.get('currency_symbol')}")
             lines.append(f"- Explorer: {network_fields.get('explorer_url')}")
-            lines.append(f"- Expected selected account: `{testnet.get('test_wallet_address')}`")
+            expected_account = (
+                "your own Base Sepolia wallet with test ETH"
+                if deferred_holder
+                else f"`{testnet.get('test_wallet_address')}`"
+            )
+            lines.append(f"- Expected selected account: {expected_account}")
         fresh_tester = dict(testnet.get("fresh_tester") or {})
         if fresh_tester:
             lines.append("")
@@ -1129,6 +1142,14 @@ def render_html(handoff: dict[str, Any]) -> str:
             ]
         )
     if testnet:
+        deferred_holder = bool(testnet.get("real_holder_test_deferred"))
+        testnet_wallet_label = "Seeded evidence wallet" if deferred_holder else "Test wallet"
+        copy_wallet_label = "Copy evidence wallet" if deferred_holder else "Copy testnet wallet"
+        expected_selected_account = (
+            "your own Base Sepolia wallet with test ETH"
+            if deferred_holder
+            else str(testnet.get("test_wallet_address") or "")
+        )
         gate_lines = []
         for gate in testnet.get("gates") or []:
             gate = dict(gate)
@@ -1166,7 +1187,7 @@ def render_html(handoff: dict[str, Any]) -> str:
                 f'<div class="card"><div class="label">Claims UI</div><div class="value"><a href="{escape(str(testnet.get("claims_ui_url") or ""))}">{escape(str(testnet.get("claims_ui_url") or ""))}</a></div></div>',
                 f'<div class="card"><div class="label">Claims API</div><div class="value">{escape(str(testnet.get("claims_api_url") or ""))}</div></div>',
                 f'<div class="card"><div class="label">Readiness</div><div class="value"><a href="{escape(str(testnet.get("readiness_url") or ""))}">{escape(str(testnet.get("readiness_url") or ""))}</a></div></div>',
-                f'<div class="card"><div class="label">Test wallet</div><div class="value"><code>{escape(str(testnet.get("test_wallet_address") or ""))}</code></div></div>',
+                f'<div class="card"><div class="label">{escape(testnet_wallet_label)}</div><div class="value"><code>{escape(str(testnet.get("test_wallet_address") or ""))}</code></div></div>',
                 f'<div class="card"><div class="label">Old coldkey lookup</div><div class="value"><code>{escape(str(testnet.get("old_coldkey") or ""))}</code></div></div>',
                 f'<div class="card"><div class="label">Emission lane</div><div class="value"><code>{escape(str(testnet.get("lane_id") or ""))}</code><br>Epoch {escape(str(testnet.get("epoch") or ""))}</div></div>',
                 f'<div class="card"><div class="label">Genesis claim</div><div class="value">{escape(str(testnet.get("genesis_claim_amount") or ""))}</div></div>',
@@ -1176,7 +1197,7 @@ def render_html(handoff: dict[str, Any]) -> str:
                 "</section>",
                 '<div class="actions">',
                 f'<a class="button secondary" href="{escape(str(testnet.get("claims_ui_url") or ""))}">Open Base Sepolia claims UI</a>',
-                '<button id="copy-testnet-wallet" class="secondary" type="button">Copy testnet wallet</button>',
+                f'<button id="copy-testnet-wallet" class="secondary" type="button">{escape(copy_wallet_label)}</button>',
                 "</div>",
             ]
         )
@@ -1188,7 +1209,7 @@ def render_html(handoff: dict[str, Any]) -> str:
                 f"Chain ID: {network_fields.get('chain_id')}",
                 f"Currency symbol: {network_fields.get('currency_symbol')}",
                 f"Explorer: {network_fields.get('explorer_url')}",
-                f"Expected selected account: {testnet.get('test_wallet_address')}",
+                f"Expected selected account: {expected_selected_account}",
             ]
             blocks.extend(["<h3>Base Sepolia MetaMask Network Fields</h3>", f"<ul>{_html_list(network_lines)}</ul>"])
         fresh_tester = dict(testnet.get("fresh_tester") or {})

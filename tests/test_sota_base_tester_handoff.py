@@ -578,6 +578,87 @@ def test_tester_handoff_testnet_only_omits_local_private_key(tmp_path: Path) -> 
     assert handoff["testnet"]["blocked_gates"][0]["name"] == "testnet_blockers"
 
 
+def test_tester_handoff_deferred_holder_uses_own_wallet_language(tmp_path: Path) -> None:
+    module = _load_module()
+    args = _args(tmp_path, environment="testnet")
+    artifacts_dir = args.release_status.parent
+    seeded_wallet = "0x13761911b9be377680a664fa0cd153864a2878bc"
+    _write_json(
+        args.release_status,
+        {
+            "schema": "sota-base-release-status/v1",
+            "ok": True,
+            "status": "green",
+            "testnet_ok": True,
+            "real_holder_test_deferred": True,
+            "local_stack_ok": True,
+            "local_ok": True,
+            "local_wallet_ok": True,
+            "local_remote_wallet_ok": False,
+            "summary": {"green": 3, "yellow": 0, "red": 0},
+            "gates": [
+                {
+                    "name": "testnet_operator_run",
+                    "phase": "base_sepolia",
+                    "status": "green",
+                    "required": True,
+                    "summary": {"green": 1, "yellow": 0, "red": 0},
+                    "message": "scheduled genesis and emission publishers are active and idle/ready",
+                },
+                {
+                    "name": "claim_tx_evidence",
+                    "phase": "base_sepolia",
+                    "status": "green",
+                    "required": True,
+                    "summary": {"green": 1, "yellow": 0, "red": 0},
+                },
+            ],
+            "blocked_gates": [],
+        },
+    )
+    _write_json(
+        artifacts_dir / "base-sota-testnet-seed-artifacts-finalized.json",
+        {
+            "seeded_claims": {
+                "test_wallet_address": seeded_wallet,
+                "test_old_coldkey": "5GrwvaEF5zXb26Fz9rcQpDWS57CtERHpNehXCPcNoHGKutQY",
+                "lane_id": "base:sota-local",
+                "epoch": 6,
+                "genesis_total_units": "1500000000000000000",
+                "emission_total_units": "7200000000000000000000",
+            },
+            "root_ids": {"genesis": "0x" + "11" * 32, "emission": "0x" + "22" * 32},
+        },
+    )
+    _write_json(
+        artifacts_dir / "base-sepolia-deployment-manifest.json",
+        {
+            "services": {
+                "claims_ui": {"public_url": "https://claims.example.test"},
+                "indexer_api": {"public_base_url": "https://api.example.test"},
+            }
+        },
+    )
+    _write_json(
+        artifacts_dir / "base-sota-testnet-browser-smoke.json",
+        {"status": "green", "summary": {"green": 27, "yellow": 0, "red": 0}},
+    )
+
+    handoff = module.build_handoff(args)
+    markdown = module.render_markdown(handoff)
+    html = module.render_html(handoff)
+
+    assert handoff["testnet"]["ready"] is True
+    assert "Seeded evidence wallet" in markdown
+    assert "use your own Base Sepolia wallet for a real holder test" in markdown
+    assert "Expected selected account: your own Base Sepolia wallet with test ETH" in markdown
+    assert f"Expected selected account: `{seeded_wallet}`" not in markdown
+    assert "Seeded evidence wallet" in html
+    assert "Expected selected account: your own Base Sepolia wallet with test ETH" in html
+    assert f"Expected selected account: {seeded_wallet}" not in html
+    assert "Copy evidence wallet" in html
+
+
 def test_tester_handoff_local_not_ready_when_claim_proof_gate_is_red(tmp_path: Path) -> None:
     module = _load_module()
     args = _args(tmp_path, environment="local")
