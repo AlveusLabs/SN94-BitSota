@@ -222,6 +222,14 @@ A miner submission carries:
 The reward address is the claim account. After self-validation accepts the
 submission, the backend can include it in an emission claim root.
 
+On Base Sepolia, `base-sota-emission-publisher.timer` runs the guarded
+`scripts/run_sota_base_emission_batch_publisher_once.sh` wrapper about every 10
+minutes. It checks the autoresearch coordinator for the latest accepted
+emission root, skips roots already indexed by the claims API, publishes a new
+root through `SOTARootRegistry`, finalizes the claim artifact with the emitted
+`root_id`, and imports it into the claims API. It does not test real holder
+claims or touch Base mainnet.
+
 The emission claim uses:
 
 ```solidity

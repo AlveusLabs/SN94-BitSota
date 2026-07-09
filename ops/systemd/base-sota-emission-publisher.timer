@@ -1,0 +1,12 @@
+[Unit]
+Description=Check Base SOTA testnet autoresearch emissions every 10 minutes
+
+[Timer]
+OnBootSec=3min
+OnUnitActiveSec=10min
+RandomizedDelaySec=30s
+Persistent=true
+Unit=base-sota-emission-publisher.service
+
+[Install]
+WantedBy=timers.target

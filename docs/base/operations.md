@@ -168,6 +168,17 @@ For Base Sepolia, the preferred path is the scheduled genesis batch publisher:
 It reads accepted unrooted bindings from the claims API, publishes one genesis
 root for the batch, imports the finalized claim artifact, and marks those
 bindings as included so they are not republished.
+
+Ongoing autoresearch emissions use a separate scheduled publisher:
+`base-sota-emission-publisher.timer` runs
+`scripts/run_sota_base_emission_batch_publisher_once.sh` roughly every 10
+minutes. It checks the coordinator for accepted self-validation emission roots,
+skips the latest root if the claims API already indexes that Merkle root,
+publishes a new emission root when needed, finalizes the claim artifact with
+the emitted `root_id`, and imports it into the claims API. The wrapper loads
+the indexer admin token, root-publisher key, and deployer key from AWS Secrets
+Manager at runtime.
+
 If Base Sepolia is still using the old seeded demo genesis artifact,
 `sota_base_release_status.py` marks
 `testnet_snapshot_genesis` red and reports the accepted signed binding count
@@ -562,6 +573,23 @@ The finalized report prints the exact `curl` commands for importing
 `base-sota-testnet-genesis-claim-artifact.json` and
 `base-sota-testnet-emission-claim-artifact.json` into the claims indexer. Do not
 import the pending templates; they intentionally lack root IDs.
+
+For normal Base Sepolia autoresearch emissions, prefer the scheduled publisher
+over this manual seed-artifact path:
+
+```bash
+scripts/run_sota_base_emission_batch_publisher_once.sh
+```
+
+Dry-run checks that should not broadcast:
+
+```bash
+python3 scripts/sota_base_emission_batch_publisher.py --once --json
+```
+
+The publisher validates the coordinator evidence, recomputes the Merkle root,
+requires accepted self-validation consensus for each claim, and skips roots the
+claims API already indexes.
 
 ## Base Sepolia Root Publisher
 

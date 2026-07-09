@@ -247,7 +247,7 @@ def _assert_self_validated(bundle: dict[str, Any], *, min_accepted: int, min_com
 def _normalized_emission_artifact_inputs(
     evidence_payload: dict[str, Any],
     *,
-    expected_wallet: str,
+    expected_wallet: str = "",
     min_accepted: int,
     min_committee: int,
 ) -> dict[str, Any]:
@@ -276,7 +276,8 @@ def _normalized_emission_artifact_inputs(
 
     normalized_claims: list[dict[str, Any]] = []
     leaves: list[str] = []
-    has_expected_wallet = False
+    expected_wallet = str(expected_wallet or "").strip().lower()
+    has_expected_wallet = not expected_wallet
     for position, raw_claim in enumerate(claim_list):
         if not isinstance(raw_claim, dict):
             raise ValueError(f"claim_list[{position}] must be an object")
@@ -311,7 +312,7 @@ def _normalized_emission_artifact_inputs(
                 "leaf": leaf,
             }
         )
-        has_expected_wallet = has_expected_wallet or reward_address == expected_wallet.lower()
+        has_expected_wallet = has_expected_wallet or reward_address == expected_wallet
         normalized_claims.append(claim)
         leaves.append(leaf)
 

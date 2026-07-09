@@ -52,10 +52,17 @@ it builds one genesis Merkle root for the batch, publishes the root, imports the
 claim artifact, and marks those bindings as included. Then the tester can
 refresh the Genesis tab and claim.
 
+Mined emission claims use a separate publisher. After autoresearch
+self-validation accepts miner work, the emission publisher checks about every
+10 minutes for the latest accepted emission root, publishes it if it is not
+already indexed, imports the claim artifact, and the tester can refresh the
+Emission tab.
+
 If the timer is stopped, the fallback operator action is:
 
 1. Run `scripts/run_sota_base_genesis_batch_publisher_once.sh`.
-2. Rerun browser smoke and refresh the handoff.
+2. Run `scripts/run_sota_base_emission_batch_publisher_once.sh`.
+3. Rerun browser smoke and refresh the handoff.
 
 ## MetaMask Network
 
