@@ -1,0 +1,12 @@
+[Unit]
+Description=Run Base SOTA testnet genesis binding batch publisher every 10 minutes
+
+[Timer]
+OnBootSec=2min
+OnUnitActiveSec=10min
+RandomizedDelaySec=30s
+Persistent=true
+Unit=base-sota-genesis-publisher.service
+
+[Install]
+WantedBy=timers.target

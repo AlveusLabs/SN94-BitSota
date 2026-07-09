@@ -1,0 +1,10 @@
+[Unit]
+Description=Base SOTA testnet genesis binding batch publisher
+Documentation=https://docs.bitsota.ai/
+
+[Service]
+Type=oneshot
+WorkingDirectory=/home/mekaneeky/repos/SN94-BitSota-live-docs
+Environment=AWS_PROFILE=moonrocklab-frankfurt
+Environment=AWS_REGION=eu-central-1
+ExecStart=/home/mekaneeky/repos/SN94-BitSota-live-docs/scripts/run_sota_base_genesis_batch_publisher_once.sh
