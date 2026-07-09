@@ -27,6 +27,7 @@ def _args(tmp_path: Path, **overrides):
         "manifest": artifacts_dir / "base-sepolia-deployment-manifest.json",
         "env_file": artifacts_dir / "base-sota.env.testnet",
         "readiness_file": artifacts_dir / "base-sota-testnet-readiness.json",
+        "snapshot_dir": artifacts_dir / "snapshot",
         "claims_url": "",
         "claims_api_url": "",
         "autoresearch_url": "",
@@ -286,6 +287,11 @@ def test_browser_smoke_defaults_genesis_inputs_from_seeded_fixture(tmp_path: Pat
     module = _load_module()
     args = _args(tmp_path)
     _write_artifacts(args)
+    args.snapshot_dir.mkdir(parents=True)
+    args.snapshot_dir.joinpath("coldkeys.csv").write_text(
+        "coldkey,included\n5SnapshotColdkeyFromCsv111111111111111111111111111111111111111,True\n",
+        encoding="utf-8",
+    )
     env = args.env_file.read_text(encoding="utf-8")
     env = env.replace("SOTA_TEST_GENESIS_WALLET_ADDRESS=0x6666666666666666666666666666666666666666\n", "")
     env = env.replace("SOTA_TEST_GENESIS_COLDKEY=5C4hrfjw9DjXZTzV3MwzrrAr9P1MJhSrvWGWqi1eSuyUpnhM\n", "")
@@ -302,6 +308,7 @@ def test_browser_smoke_defaults_genesis_inputs_from_seeded_fixture(tmp_path: Pat
     assert names["test_genesis_wallet_address"]["status"] == "green"
     assert names["test_genesis_coldkey"]["status"] == "green"
     assert report["targets"]["test_genesis_wallet_address"] == report["targets"]["test_wallet_address"]
+    assert report["targets"]["snapshot_coldkey"] == "5SnapshotColdkeyFromCsv111111111111111111111111111111111111111"
 
 
 def test_browser_smoke_rejects_claims_page_missing_wallet_copy(tmp_path: Path, monkeypatch) -> None:

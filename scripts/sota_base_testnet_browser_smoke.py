@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import argparse
+import csv
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from html import unescape
@@ -16,6 +17,7 @@ from urllib.request import Request, urlopen
 
 REPOS = Path("/home/mekaneeky/repos")
 DEFAULT_ARTIFACTS_DIR = REPOS / ".sota-base-testnet"
+DEFAULT_SNAPSHOT_DIR = Path("/mnt/4tb/tao_fork_snapshot")
 BASE_SEPOLIA_CHAIN_ID = 84532
 BASE_MAINNET_CHAIN_ID = 8453
 ZERO_ADDRESS = "0x0000000000000000000000000000000000000000"
@@ -104,6 +106,22 @@ def _load_env(path: Path | None) -> dict[str, str]:
         key, value = line.split("=", 1)
         values[key.strip()] = value.strip().strip('"').strip("'")
     return values
+
+
+def _first_snapshot_coldkey(snapshot_dir: Path) -> str:
+    path = snapshot_dir / "coldkeys.csv"
+    if not path.exists():
+        return ""
+    first_coldkey = ""
+    with path.open(newline="", encoding="utf-8") as handle:
+        for row in csv.DictReader(handle):
+            coldkey = str(row.get("coldkey") or "").strip()
+            if not coldkey:
+                continue
+            first_coldkey = first_coldkey or coldkey
+            if str(row.get("included") or "").strip().lower() in {"true", "1", "yes"}:
+                return coldkey
+    return first_coldkey
 
 
 def _join_url(base: str, path: str) -> str:
@@ -274,6 +292,12 @@ def _config(args: argparse.Namespace) -> tuple[dict[str, Any], dict[str, str], d
         or env.get("SOTA_TEST_SNAPSHOT_COLDKEY")
         or test_old_coldkey
     )
+    snapshot_coldkey = (
+        getattr(args, "test_snapshot_coldkey", "")
+        or env.get("SOTA_TEST_SNAPSHOT_COLDKEY")
+        or _first_snapshot_coldkey(Path(getattr(args, "snapshot_dir", DEFAULT_SNAPSHOT_DIR) or DEFAULT_SNAPSHOT_DIR))
+        or test_genesis_coldkey
+    )
     values = {
         "claims_url": claims_ui,
         "claims_api_url": claims_api.rstrip("/") if claims_api else "",
@@ -283,7 +307,7 @@ def _config(args: argparse.Namespace) -> tuple[dict[str, Any], dict[str, str], d
         "test_old_coldkey": test_old_coldkey,
         "test_genesis_wallet_address": test_genesis_wallet_address,
         "test_genesis_coldkey": test_genesis_coldkey,
-        "snapshot_coldkey": getattr(args, "test_snapshot_coldkey", "") or env.get("SOTA_TEST_SNAPSHOT_COLDKEY") or test_genesis_coldkey,
+        "snapshot_coldkey": snapshot_coldkey,
         "lane_id": args.lane_id or env.get("SOTA_TEST_LANE_ID") or env.get("NEXT_PUBLIC_SOTA_DEFAULT_LANE_ID") or LANE_ID,
         "epoch": str(args.epoch or env.get("SOTA_TEST_EPOCH") or "1"),
         "env_chain_id": env.get("NEXT_PUBLIC_SOTA_BASE_CHAIN_ID") or env.get("SOTA_BASE_CHAIN_ID") or "",
@@ -769,6 +793,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--manifest", type=Path)
     parser.add_argument("--env-file", type=Path)
     parser.add_argument("--readiness-file", type=Path)
+    parser.add_argument("--snapshot-dir", type=Path, default=DEFAULT_SNAPSHOT_DIR)
     parser.add_argument("--claims-url", default="")
     parser.add_argument("--claims-api-url", default="")
     parser.add_argument("--autoresearch-url", default="")
