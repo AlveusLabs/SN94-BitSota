@@ -81,6 +81,10 @@ def _append_claims_path(url: str) -> str:
     return url if url.endswith("/claims") else f"{url}/claims"
 
 
+def _same_address(left: str, right: str) -> bool:
+    return str(left or "").strip().lower() == str(right or "").strip().lower()
+
+
 def _funding_target(funding_targets: list[dict[str, str]], label: str) -> dict[str, str]:
     for target in funding_targets:
         if str(target.get("label") or "") == label:
@@ -168,9 +172,13 @@ def _local_section(state: dict[str, Any], release: dict[str, Any], local_report:
     ]
     smoke_gate = next((gate for gate in local_gates if gate.get("name") == "local_demo"), {})
     claim_proof_gate = next((gate for gate in local_gates if gate.get("name") == "local_claim_proof"), {})
+    miner_swarm_gate = next((gate for gate in local_gates if gate.get("name") == "local_miner_swarm"), {})
     claim_proof_payload = {}
     if claim_proof_gate.get("path"):
         claim_proof_payload = _load_json(Path(str(claim_proof_gate.get("path"))))
+    miner_swarm_payload = {}
+    if miner_swarm_gate.get("path"):
+        miner_swarm_payload = _load_json(Path(str(miner_swarm_gate.get("path"))))
     claim_proof_reset_after = bool(claim_proof_payload.get("reset_after"))
     claim_proof_scope = (
         "archived pre-reset evidence; the current local stack was reset for the next tester"
@@ -209,6 +217,13 @@ def _local_section(state: dict[str, Any], release: dict[str, Any], local_report:
         "claim_proof_report": claim_proof_gate.get("path") or str(LOCAL_RUN_DIR / "claim-proof" / "latest.json"),
         "claim_proof_scope": claim_proof_scope,
         "claim_proof_reset_after": claim_proof_reset_after,
+        "miner_swarm_status": miner_swarm_gate.get("status") or "missing",
+        "miner_swarm_summary": miner_swarm_gate.get("summary") or {},
+        "miner_swarm_report": miner_swarm_gate.get("path") or str(LOCAL_RUN_DIR / "miner-swarm" / "latest.json"),
+        "miner_swarm_miner_count": int(miner_swarm_payload.get("miner_count") or 0),
+        "miner_swarm_accepted_count": int(miner_swarm_payload.get("accepted_count") or 0),
+        "miner_swarm_matching_claim_count": int(miner_swarm_payload.get("matching_claim_count") or 0),
+        "miner_swarm_claim_tx_count": len(miner_swarm_payload.get("claim_transactions") or []),
         "claims_ui_url": urls.get("claims_ui") or "",
         "docs_url": urls.get("docs") or "",
         "autoresearch_dashboard_url": urls.get("autoresearch_dashboard") or "",
@@ -285,6 +300,23 @@ def _required_testnet_infra_ready(testnet_gates: list[dict[str, Any]]) -> bool:
         if required:
             required_infra.append(gate)
     return bool(required_infra) and all(str(dict(gate).get("status") or "red") == "green" for gate in required_infra)
+
+
+def _fresh_tester_claim_usage(testnet_dir: Path, reward_address: str) -> dict[str, Any]:
+    if not reward_address:
+        return {"already_claimed": False, "claimed_programs": [], "path": ""}
+    submitted_path = testnet_dir / "base-sota-submitted-claim-txs.json"
+    submitted = _load_json(submitted_path)
+    if not submitted or not _same_address(str(submitted.get("wallet_address") or ""), reward_address):
+        return {"already_claimed": False, "claimed_programs": [], "path": str(submitted_path)}
+    transactions = [dict(tx) for tx in submitted.get("transactions") or [] if isinstance(tx, dict)]
+    claimed_programs = sorted({str(tx.get("program") or "") for tx in transactions if tx.get("program")})
+    return {
+        "already_claimed": bool(claimed_programs),
+        "claimed_programs": claimed_programs,
+        "path": str(submitted_path),
+        "generated_at": str(submitted.get("generated_at") or ""),
+    }
 
 
 def _testnet_section(release: dict[str, Any], testnet_dir: Path = TESTNET_RUN_DIR) -> dict[str, Any]:
@@ -410,18 +442,28 @@ def _testnet_section(release: dict[str, Any], testnet_dir: Path = TESTNET_RUN_DI
         if dict(gate).get("name") or dict(gate).get("next_action")
     )
     fresh_funding = dict(fresh_tester_report.get("funding") or {})
+    fresh_reward_address = str(fresh_tester_report.get("reward_address") or "")
+    fresh_claim_usage = _fresh_tester_claim_usage(testnet_dir, fresh_reward_address)
+    fresh_already_claimed = bool(fresh_claim_usage.get("already_claimed"))
     fresh_tester = {
-        "status": str(fresh_tester_report.get("status") or "missing"),
-        "ok": bool(fresh_tester_report.get("ok")),
+        "status": "claimed" if fresh_already_claimed else str(fresh_tester_report.get("status") or "missing"),
+        "ok": bool(fresh_tester_report.get("ok")) and not fresh_already_claimed,
         "path": str(fresh_tester_report_path),
-        "reward_address": str(fresh_tester_report.get("reward_address") or ""),
+        "reward_address": fresh_reward_address,
         "reward_key_file": str(fresh_tester_report.get("reward_key_file") or ""),
         "private_key_printed": bool(fresh_tester_report.get("private_key_printed")),
         "epoch": str(fresh_tester_report.get("epoch") or ""),
         "funding_status": str(fresh_funding.get("status") or ""),
         "funding_tx_hash": str(fresh_funding.get("tx_hash") or ""),
         "funding_balance_after_eth": str(fresh_funding.get("balance_after_eth") or ""),
-        "next_action": str(fresh_tester_report.get("next_action") or ""),
+        "already_claimed": fresh_already_claimed,
+        "claimed_programs": fresh_claim_usage.get("claimed_programs") or [],
+        "claim_usage_report": fresh_claim_usage.get("path") or "",
+        "next_action": (
+            "This seeded wallet already submitted its claim transactions. Prepare a new real signed snapshot binding and fresh root cycle before giving a seeded wallet to another tester."
+            if fresh_already_claimed
+            else str(fresh_tester_report.get("next_action") or "")
+        ),
     } if fresh_tester_report else {}
     genesis_total = int(seeded_claims.get("genesis_total_units") or 0)
     emission_total = int(seeded_claims.get("emission_total_units") or 0)
@@ -643,6 +685,13 @@ def render_markdown(handoff: dict[str, Any]) -> str:
         lines.append(f"- UI smoke: {local.get('smoke_status')} ({_summary_text(dict(local.get('smoke_summary') or {}))})")
         lines.append(f"- State-changing claim proof: {local.get('claim_proof_status')} ({_summary_text(dict(local.get('claim_proof_summary') or {}))}); {local.get('claim_proof_scope')}")
         lines.append(f"- Claim proof report: {local.get('claim_proof_report')}")
+        lines.append(
+            f"- Local miner swarm: {local.get('miner_swarm_status')} "
+            f"({int(local.get('miner_swarm_miner_count') or 0)} miners, "
+            f"{int(local.get('miner_swarm_accepted_count') or 0)} accepted, "
+            f"{int(local.get('miner_swarm_claim_tx_count') or 0)} claim txs)"
+        )
+        lines.append(f"- Local miner swarm report: {local.get('miner_swarm_report')}")
         lines.append(f"- Claims UI: {local.get('claims_ui_url')}")
         lines.append(f"- Docs: {local.get('docs_url')}")
         lines.append(f"- Autoresearch dashboard: {local.get('autoresearch_dashboard_url')}")
@@ -755,6 +804,11 @@ def render_markdown(handoff: dict[str, Any]) -> str:
             if fresh_tester.get("reward_key_file"):
                 lines.append(f"- Operator-only wallet key file: `{fresh_tester.get('reward_key_file')}`")
             lines.append(f"- Private key printed by prep command: {str(fresh_tester.get('private_key_printed')).lower()}")
+            if fresh_tester.get("already_claimed"):
+                programs = ", ".join(str(item) for item in fresh_tester.get("claimed_programs") or [])
+                lines.append(f"- Already claimed by this seeded wallet: {programs or 'yes'}")
+                if fresh_tester.get("claim_usage_report"):
+                    lines.append(f"- Claim usage report: {fresh_tester.get('claim_usage_report')}")
             if fresh_tester.get("funding_status"):
                 funding_line = f"- Funding: {fresh_tester.get('funding_status')}"
                 if fresh_tester.get("funding_balance_after_eth"):
@@ -1000,6 +1054,7 @@ def render_html(handoff: dict[str, Any]) -> str:
                 f'<div class="card"><div class="label">UI smoke</div><div class="value">{escape(str(local.get("smoke_status") or "unknown"))} ({escape(_summary_text(dict(local.get("smoke_summary") or {})))})</div></div>',
                 f'<div class="card"><div class="label">State-changing claim proof</div><div class="value">{escape(str(local.get("claim_proof_status") or "missing"))} ({escape(_summary_text(dict(local.get("claim_proof_summary") or {})))})<br>{escape(str(local.get("claim_proof_scope") or ""))}</div></div>',
                 f'<div class="card"><div class="label">Claim proof report</div><div class="value">{escape(str(local.get("claim_proof_report") or ""))}</div></div>',
+                f'<div class="card"><div class="label">Local miner swarm</div><div class="value">{escape(str(local.get("miner_swarm_status") or "missing"))}<br>{escape(str(int(local.get("miner_swarm_miner_count") or 0)))} miners, {escape(str(int(local.get("miner_swarm_accepted_count") or 0)))} accepted, {escape(str(int(local.get("miner_swarm_claim_tx_count") or 0)))} claim txs</div></div>',
                 f'<div class="card"><div class="label">Claims UI</div><div class="value"><a href="{escape(str(local.get("claims_ui_url")))}">{escape(str(local.get("claims_ui_url")))}</a></div></div>',
                 f'<div class="card"><div class="label">Docs</div><div class="value"><a href="{escape(str(local.get("docs_url")))}">{escape(str(local.get("docs_url")))}</a></div></div>',
                 f'<div class="card"><div class="label">Autoresearch dashboard</div><div class="value"><a href="{escape(str(local.get("autoresearch_dashboard_url")))}">{escape(str(local.get("autoresearch_dashboard_url")))}</a></div></div>',
@@ -1145,6 +1200,11 @@ def render_html(handoff: dict[str, Any]) -> str:
             ]
             if fresh_tester.get("reward_key_file"):
                 fresh_lines.append(f"Operator-only wallet key file: {fresh_tester.get('reward_key_file')}")
+            if fresh_tester.get("already_claimed"):
+                programs = ", ".join(str(item) for item in fresh_tester.get("claimed_programs") or [])
+                fresh_lines.append(f"Already claimed by this seeded wallet: {programs or 'yes'}")
+                if fresh_tester.get("claim_usage_report"):
+                    fresh_lines.append(f"Claim usage report: {fresh_tester.get('claim_usage_report')}")
             if fresh_tester.get("funding_status"):
                 funding_line = f"Funding: {fresh_tester.get('funding_status')}"
                 if fresh_tester.get("funding_balance_after_eth"):

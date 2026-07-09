@@ -41,6 +41,7 @@ def _args(tmp_path: Path, *, environment: str = "both"):
 
 def _write_inputs(args: argparse.Namespace) -> None:
     claim_proof_report = args.local_report.parent / "local-claim-proof.json"
+    miner_swarm_report = args.local_report.parent / "miner-swarm.json"
     blocker_report = args.local_report.parent / "blockers.json"
     funding_report = args.local_report.parent / "funding.json"
     _write_json(
@@ -146,6 +147,13 @@ def _write_inputs(args: argparse.Namespace) -> None:
                     "path": str(claim_proof_report),
                 },
                 {
+                    "name": "local_miner_swarm",
+                    "phase": "local",
+                    "status": "green",
+                    "summary": {"green": 1, "yellow": 0, "red": 0},
+                    "path": str(miner_swarm_report),
+                },
+                {
                     "name": "testnet_blockers",
                     "phase": "base_sepolia",
                     "status": "red",
@@ -184,6 +192,17 @@ def _write_inputs(args: argparse.Namespace) -> None:
             "status": "green",
             "summary": {"green": 8, "yellow": 0, "red": 0},
             "reset_after": True,
+        },
+    )
+    _write_json(
+        miner_swarm_report,
+        {
+            "schema": "sota-local-multi-miner/v1",
+            "ok": True,
+            "miner_count": 5,
+            "accepted_count": 5,
+            "matching_claim_count": 5,
+            "claim_transactions": [{"tx_hash": "0x" + str(index) * 64} for index in range(5)],
         },
     )
     _write_json(
@@ -259,11 +278,15 @@ def test_tester_handoff_contains_local_urls_and_warning(tmp_path: Path) -> None:
     assert handoff["local"]["chain_id_hex"] == "0x7a69"
     assert handoff["local"]["share_mode"] == "http"
     assert handoff["local"]["wallet_rpc_browser_safe"] is False
-    assert [item["name"] for item in handoff["local"]["local_gates"]] == ["local_demo", "local_claim_proof"]
+    assert [item["name"] for item in handoff["local"]["local_gates"]] == ["local_demo", "local_claim_proof", "local_miner_swarm"]
     assert handoff["local"]["smoke_status"] == "green"
     assert handoff["local"]["claim_proof_status"] == "green"
     assert handoff["local"]["claim_proof_report"] == str(args.local_report.parent / "local-claim-proof.json")
     assert "archived pre-reset evidence" in handoff["local"]["claim_proof_scope"]
+    assert handoff["local"]["miner_swarm_status"] == "green"
+    assert handoff["local"]["miner_swarm_miner_count"] == 5
+    assert handoff["local"]["miner_swarm_accepted_count"] == 5
+    assert handoff["local"]["miner_swarm_claim_tx_count"] == 5
     assert handoff["local"]["local_only_private_key"].startswith("0x5de411")
     assert handoff["local"]["genesis_claim_amount"] == "1.5 SOTA"
     assert handoff["local"]["emission_claim_amount"] == "2 SOTA"
@@ -292,6 +315,7 @@ def test_tester_handoff_contains_local_urls_and_warning(tmp_path: Path) -> None:
     assert "Local same-machine: false" not in markdown
     assert "Local-only private key" in markdown
     assert "State-changing claim proof: green" in markdown
+    assert "Local miner swarm: green (5 miners, 5 accepted, 5 claim txs)" in markdown
     assert f"Claim proof report: {args.local_report.parent / 'local-claim-proof.json'}" in markdown
     assert "archived pre-reset evidence" in markdown
     assert "Genesis claim amount: 1.5 SOTA" in markdown
@@ -327,6 +351,7 @@ def test_tester_handoff_contains_local_urls_and_warning(tmp_path: Path) -> None:
     assert "Self-validation" in html
     assert "Peer validators" in html
     assert "State-changing claim proof" in html
+    assert "Local miner swarm" in html
     assert "Expected final balance" in html
     assert "Manual MetaMask Network Fields" in html
     assert "Immediate Base Sepolia Blockers" in html
@@ -514,6 +539,29 @@ def test_tester_handoff_marks_testnet_ready_for_claim_tester_when_only_tx_eviden
     assert "Base Sepolia Evidence To Send Back" in html
     assert "Copy testnet wallet" in html
     assert "Remaining Evidence Gate" in html
+
+    _write_json(
+        artifacts_dir / "base-sota-submitted-claim-txs.json",
+        {
+            "schema": "sota-base-submitted-claim-txs/v1",
+            "wallet_address": "0xE93daE9Bb94aa2f2abA57C7CadEC822b800461Fc",
+            "transactions": [
+                {"program": "genesis", "tx_hash": "0x" + "44" * 32},
+                {"program": "emission", "tx_hash": "0x" + "55" * 32},
+            ],
+        },
+    )
+    stale_handoff = module.build_handoff(args)
+    stale_markdown = module.render_markdown(stale_handoff)
+    stale_html = module.render_html(stale_handoff)
+
+    assert stale_handoff["testnet"]["fresh_tester"]["status"] == "claimed"
+    assert stale_handoff["testnet"]["fresh_tester"]["ok"] is False
+    assert stale_handoff["testnet"]["fresh_tester"]["already_claimed"] is True
+    assert stale_handoff["testnet"]["fresh_tester"]["claimed_programs"] == ["emission", "genesis"]
+    assert "Already claimed by this seeded wallet: emission, genesis" in stale_markdown
+    assert "Prepare a new real signed snapshot binding and fresh root cycle" in stale_markdown
+    assert "Already claimed by this seeded wallet: emission, genesis" in stale_html
 
 
 def test_tester_handoff_testnet_only_omits_local_private_key(tmp_path: Path) -> None:
