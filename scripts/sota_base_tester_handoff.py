@@ -465,6 +465,8 @@ def _testnet_section(release: dict[str, Any], testnet_dir: Path = TESTNET_RUN_DI
             else str(fresh_tester_report.get("next_action") or "")
         ),
     } if fresh_tester_report else {}
+    if real_holder_test_deferred:
+        fresh_tester = {}
     fresh_emission_report_path = testnet_dir / "base-sota-fresh-emission-tester.json"
     fresh_emission_report = _load_json(fresh_emission_report_path)
     fresh_emission_funding = dict(fresh_emission_report.get("funding") or {})

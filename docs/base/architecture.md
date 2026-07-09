@@ -69,9 +69,10 @@ sequenceDiagram
   self-validation.
 - Base Sepolia has a deployment manifest, deployed test contracts, public
   claims UI/API services, finalized test-only claim artifacts, and green
-  browser smoke for the current seeded wallet/root cycle.
-- The Base Sepolia dry run is still not a mainnet launch. Full testnet evidence
-  turns green only after the current seeded MetaMask wallet submits both the
-  genesis and emission claim transactions and those hashes verify.
+  browser smoke for seeded evidence plus a fresh emission tester wallet.
+- The Base Sepolia dry run is still not a mainnet launch. Real holder genesis
+  evidence is deferred; the current no-real-key path proves a fresh
+  self-validated emission can be looked up and converted into unsigned
+  MetaMask calldata.
 - No final multisig/timelock ownership transfer, external audit signoff, or
   Base mainnet release evidence is claimed by these testnet artifacts.
