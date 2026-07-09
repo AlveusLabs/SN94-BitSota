@@ -422,6 +422,40 @@ def _verify_tx(
             remediation="Use the matching genesis/emission claim transaction.",
         )
     )
+    try:
+        replay_result = _json_rpc(
+            rpc_url,
+            "eth_call",
+            [
+                {
+                    "from": evidence["from"],
+                    "to": evidence["to"],
+                    "data": input_data,
+                    "value": "0x0",
+                },
+                "latest",
+            ],
+            timeout=timeout,
+        )
+    except Exception as exc:
+        evidence["double_spend_replay"] = {"rejected": True, "error": str(exc)[:300]}
+        checks.append(
+            Check(
+                f"{label}_double_spend_rejected",
+                "green",
+                f"{label} replayed claim calldata is rejected at latest state.",
+            )
+        )
+    else:
+        evidence["double_spend_replay"] = {"rejected": False, "result": str(replay_result)[:300]}
+        checks.append(
+            Check(
+                f"{label}_double_spend_rejected",
+                "red",
+                f"{label} replayed claim calldata did not revert.",
+                "Check claim accounting; the same root/index must not be claimable twice.",
+            )
+        )
     checks.append(
         _check(
             f"{label}_claim_event",

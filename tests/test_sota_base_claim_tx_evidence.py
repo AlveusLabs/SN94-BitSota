@@ -160,7 +160,15 @@ def _tx(module, *, label: str, chain_id: str = "0x14a34", to: str | None = None)
     }
 
 
-def _install_rpc(module, monkeypatch, *, chain_id: str = "0x14a34", emission_transfer: bool = True, emission_to: str | None = None):
+def _install_rpc(
+    module,
+    monkeypatch,
+    *,
+    chain_id: str = "0x14a34",
+    emission_transfer: bool = True,
+    emission_to: str | None = None,
+    replay_rejects: bool = True,
+):
     def fake_rpc(rpc_url: str, method: str, params=None, timeout: float = 0.1):
         if method == "eth_chainId":
             return chain_id
@@ -175,6 +183,12 @@ def _install_rpc(module, monkeypatch, *, chain_id: str = "0x14a34", emission_tra
             if params[0] == EMISSION_TX:
                 return _tx(module, label="emission", chain_id=chain_id, to=emission_to)
         if method == "eth_call":
+            call = dict((params or [{}])[0] or {})
+            data = str(call.get("data") or "")
+            if data.startswith((module.GENESIS_CLAIM_SELECTOR, module.EMISSION_CLAIM_SELECTOR)):
+                if replay_rejects:
+                    raise RuntimeError("execution reverted")
+                return "0x"
             return hex(3_500_000_000_000_000_000)
         raise AssertionError(f"unexpected rpc {method} {params}")
 
@@ -195,6 +209,8 @@ def test_claim_tx_evidence_green_for_valid_receipts(tmp_path: Path, monkeypatch)
     names = {check["name"]: check for check in report["checks"]}
     assert names["genesis_claim_event"]["status"] == "green"
     assert names["emission_claim_event"]["status"] == "green"
+    assert names["genesis_double_spend_rejected"]["status"] == "green"
+    assert names["emission_double_spend_rejected"]["status"] == "green"
     assert names["sota_balance"]["status"] == "green"
 
 
@@ -236,6 +252,20 @@ def test_claim_tx_evidence_rejects_missing_transfer_event(tmp_path: Path, monkey
 
     assert report["ok"] is False
     assert transfer["status"] == "red"
+
+
+def test_claim_tx_evidence_rejects_replayable_claim_calldata(tmp_path: Path, monkeypatch) -> None:
+    module = _load_module()
+    args = _args(tmp_path)
+    _write_artifacts(args)
+    _install_rpc(module, monkeypatch, replay_rejects=False)
+
+    report = module.run_evidence(args)
+    names = {check["name"]: check for check in report["checks"]}
+
+    assert report["ok"] is False
+    assert names["genesis_double_spend_rejected"]["status"] == "red"
+    assert names["emission_double_spend_rejected"]["status"] == "red"
 
 
 def test_claim_tx_evidence_supports_local_state_config(tmp_path: Path, monkeypatch) -> None:
