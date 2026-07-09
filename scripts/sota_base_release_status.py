@@ -7,6 +7,7 @@ from datetime import datetime, timezone
 import json
 import os
 from pathlib import Path
+import subprocess
 from typing import Any
 from urllib.error import HTTPError
 from urllib.request import Request, urlopen
@@ -16,6 +17,10 @@ REPOS = Path("/home/mekaneeky/repos")
 LOCAL_RUN_DIR = REPOS / ".sota-base-local"
 TESTNET_RUN_DIR = REPOS / ".sota-base-testnet"
 DEFAULT_SNAPSHOT_DIR = Path("/mnt/4tb/tao_fork_snapshot")
+PUBLISHER_TIMERS = {
+    "genesis": ("base-sota-genesis-publisher.timer", "base-sota-genesis-publisher.service"),
+    "emission": ("base-sota-emission-publisher.timer", "base-sota-emission-publisher.service"),
+}
 
 
 @dataclass(frozen=True)
@@ -334,6 +339,92 @@ def _publisher_report(path: Path, *, expected_schema: str) -> dict[str, Any]:
     }
 
 
+def _systemctl_show(unit: str, properties: list[str], *, timeout: float) -> dict[str, str]:
+    cmd = ["systemctl", "--user", "show", unit, "--no-pager"]
+    for prop in properties:
+        cmd.extend(["-p", prop])
+    values: dict[str, str] = {}
+    try:
+        result = subprocess.run(cmd, check=False, text=True, capture_output=True, timeout=timeout)
+    except Exception as exc:
+        values["__error__"] = str(exc)
+        return values
+    if result.returncode != 0:
+        values["__error__"] = (result.stderr or result.stdout or f"systemctl exited {result.returncode}").strip()
+        return values
+    for line in result.stdout.splitlines():
+        if "=" not in line:
+            continue
+        key, value = line.split("=", 1)
+        values[key] = value
+    return values
+
+
+def _publisher_timers_gate(*, timeout: float) -> dict[str, Any]:
+    timer_statuses: dict[str, Any] = {}
+    reasons: list[str] = []
+    for label, (timer_unit, service_unit) in PUBLISHER_TIMERS.items():
+        timer = _systemctl_show(
+            timer_unit,
+            ["ActiveState", "SubState", "UnitFileState"],
+            timeout=timeout,
+        )
+        service = _systemctl_show(
+            service_unit,
+            ["ActiveState", "SubState", "Result", "ExecMainStatus"],
+            timeout=timeout,
+        )
+        active = timer.get("ActiveState") == "active"
+        enabled = timer.get("UnitFileState") == "enabled"
+        service_success = service.get("Result") in {"success", ""} and service.get("ExecMainStatus") in {"0", ""}
+        ok = active and enabled and service_success and "__error__" not in timer and "__error__" not in service
+        if not ok:
+            detail_parts = []
+            if timer.get("__error__"):
+                detail_parts.append(f"timer error: {timer['__error__']}")
+            if service.get("__error__"):
+                detail_parts.append(f"service error: {service['__error__']}")
+            if not active:
+                detail_parts.append(f"timer ActiveState={timer.get('ActiveState') or 'missing'}")
+            if not enabled:
+                detail_parts.append(f"timer UnitFileState={timer.get('UnitFileState') or 'missing'}")
+            if not service_success:
+                detail_parts.append(
+                    f"service Result={service.get('Result') or 'missing'} ExecMainStatus={service.get('ExecMainStatus') or 'missing'}"
+                )
+            reasons.append(f"{label}: " + "; ".join(detail_parts))
+        timer_statuses[label] = {
+            "ok": ok,
+            "timer_unit": timer_unit,
+            "service_unit": service_unit,
+            "timer": timer,
+            "service": service,
+        }
+    ok = not reasons
+    return {
+        "name": "testnet_publisher_timers",
+        "phase": "base_sepolia",
+        "required": True,
+        "path": "systemctl --user",
+        "expected_schema": "systemd-user-timers",
+        "schema": "systemd-user-timers",
+        "ok": ok,
+        "status": "green" if ok else "red",
+        "summary": {"green": 1 if ok else 0, "yellow": 0, "red": 0 if ok else 1},
+        "message": (
+            "Genesis and emission publisher timers are active, enabled, and last service result is success."
+            if ok
+            else "; ".join(reasons)
+        ),
+        "next_action": (
+            ""
+            if ok
+            else "Install/enable ops/systemd/base-sota-*-publisher.timer under the user systemd instance and confirm the last service result is success."
+        ),
+        "timers": timer_statuses,
+    }
+
+
 def _deferred_holder_readiness(
     *,
     testnet_dir: Path,
@@ -598,6 +689,9 @@ def _operator_gate_with_deferred_holder_test(
         if item.get("status") == "green"
     }
     if "testnet_blockers" not in green_names or "testnet_browser_smoke" not in green_names:
+        return gate
+    timer_gate = next((item for item in gate_reports if item.get("name") == "testnet_publisher_timers"), None)
+    if timer_gate is not None and not bool(timer_gate.get("ok")):
         return gate
     try:
         report = _load_report(testnet_dir / "base-sota-testnet-operator-run.json") or {}
@@ -1060,6 +1154,19 @@ def run_status(args: argparse.Namespace) -> dict[str, Any]:
             testnet_insert_at,
             _snapshot_genesis_gate(args.testnet_artifacts_dir, args.snapshot_dir, args),
         )
+        if bool(getattr(args, "check_publisher_timers", False)):
+            timer_insert_at = next(
+                (
+                    index + 1
+                    for index, gate in enumerate(gate_reports)
+                    if gate["name"] == "testnet_snapshot_genesis"
+                ),
+                len(gate_reports),
+            )
+            gate_reports.insert(
+                timer_insert_at,
+                _publisher_timers_gate(timeout=float(getattr(args, "timer_check_timeout", 5.0) or 5.0)),
+            )
         gate_reports = [
             _claim_tx_evidence_current_gate(args.testnet_artifacts_dir, gate)
             for gate in gate_reports
@@ -1187,7 +1294,15 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--snapshot-claim-bindings-url", default="", help="Optional claims API export URL for accepted signed snapshot bindings.")
     parser.add_argument("--indexer-admin-token-env", default="SOTA_BASE_INDEXER_ADMIN_TOKEN", help="Environment variable containing the claims API admin token or JSON secret payload.")
     parser.add_argument("--timeout", type=float, default=10.0)
+    parser.add_argument("--timer-check-timeout", type=float, default=5.0)
     parser.add_argument("--local-only", action="store_true", help="Only require the local demo gate.")
+    parser.add_argument(
+        "--skip-publisher-timer-check",
+        dest="check_publisher_timers",
+        action="store_false",
+        help="Do not require live user-systemd publisher timers in the aggregate testnet status.",
+    )
+    parser.set_defaults(check_publisher_timers=True)
     parser.add_argument(
         "--defer-real-holder-test",
         action="store_true",

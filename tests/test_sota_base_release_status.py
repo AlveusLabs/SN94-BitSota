@@ -260,9 +260,27 @@ def _args(tmp_path: Path, *, local_only: bool = False):
         snapshot_claim_bindings_url="",
         indexer_admin_token_env="SOTA_BASE_INDEXER_ADMIN_TOKEN",
         timeout=0.1,
+        timer_check_timeout=0.1,
+        check_publisher_timers=False,
         local_only=local_only,
         defer_real_holder_test=False,
     )
+
+
+def _mock_publisher_systemctl(module, monkeypatch, *, emission_timer_active: bool = True) -> None:
+    def fake_run(cmd, check, text, capture_output, timeout):
+        assert cmd[:3] == ["systemctl", "--user", "show"]
+        unit = cmd[3]
+        if unit.endswith(".timer"):
+            active_state = "active"
+            if unit == "base-sota-emission-publisher.timer" and not emission_timer_active:
+                active_state = "inactive"
+            stdout = f"ActiveState={active_state}\nSubState=waiting\nUnitFileState=enabled\n"
+        else:
+            stdout = "ActiveState=inactive\nSubState=dead\nResult=success\nExecMainStatus=0\n"
+        return type("Result", (), {"returncode": 0, "stdout": stdout, "stderr": ""})()
+
+    monkeypatch.setattr(module.subprocess, "run", fake_run)
 
 
 def test_release_status_local_only_green(tmp_path: Path) -> None:
@@ -443,6 +461,69 @@ def test_release_status_full_green_requires_operator_gate(tmp_path: Path) -> Non
         "testnet_browser_smoke",
         "claim_tx_evidence",
     ]
+
+
+def test_release_status_checks_publisher_timers_when_enabled(tmp_path: Path, monkeypatch) -> None:
+    module = _load_module()
+    _mock_publisher_systemctl(module, monkeypatch)
+    args = _args(tmp_path)
+    args.check_publisher_timers = True
+    _write_report(args.local_report, schema="sota-local-claims-ui-smoke/v1", ok=True, checks=[_wallet_check()])
+    _write_report(args.local_claim_proof, schema="sota-local-claim-proof/v1", ok=True)
+    _write_miner_swarm(args.local_miner_swarm)
+    _write_report(args.testnet_artifacts_dir / "base-sota-testnet-operator-run.json", schema="sota-base-testnet-operator-run/v1", ok=True)
+    _write_report(args.testnet_artifacts_dir / "base-sota-testnet-blockers.json", schema="sota-base-testnet-blockers/v1", ok=True)
+    _write_lane_sync(args.testnet_artifacts_dir / "base-sota-testnet-emission-lane-sync.json")
+    _write_report(args.testnet_artifacts_dir / "base-sota-testnet-aws-inventory.json", schema="sota-base-testnet-aws-inventory/v1", ok=True)
+    _write_report(args.testnet_artifacts_dir / "base-sota-testnet-funding.json", schema="sota-base-testnet-funding/v1", ok=True)
+    _write_report(args.testnet_artifacts_dir / "base-sota-testnet-secret-handles.json", schema="sota-base-testnet-secret-bootstrap/v1", ok=True)
+    _write_report(args.testnet_artifacts_dir / "base-sota-testnet-apprunner-source-pack.json", schema="sota-base-testnet-apprunner-source-pack/v1", ok=True)
+    _write_report(args.testnet_artifacts_dir / "base-sota-testnet-container-pack.json", schema="sota-base-testnet-container-pack/v1", ok=False, status="yellow")
+    _write_report(args.testnet_artifacts_dir / "base-sota-testnet-browser-smoke.json", schema="sota-base-testnet-browser-smoke/v1", ok=True)
+    _write_snapshot_source(args.snapshot_dir)
+    _write_snapshot_genesis_artifact(args.testnet_artifacts_dir / "base-sota-testnet-genesis-claim-artifact.json")
+    _write_claim_evidence(
+        args.testnet_artifacts_dir / "base-sota-claim-tx-evidence.json",
+        wallet="0x1111111111111111111111111111111111111111",
+        genesis="350",
+        emission="200",
+    )
+
+    report = module.run_status(args)
+    timer_gate = next(gate for gate in report["gates"] if gate["name"] == "testnet_publisher_timers")
+
+    assert report["ok"] is True
+    assert timer_gate["status"] == "green"
+    assert timer_gate["timers"]["genesis"]["timer"]["ActiveState"] == "active"
+    assert [gate["name"] for gate in report["gates"]] == [
+        "local_demo",
+        "local_claim_proof",
+        "local_miner_swarm",
+        "local_wallet",
+        "testnet_operator_run",
+        "testnet_snapshot_genesis",
+        "testnet_publisher_timers",
+        "testnet_blockers",
+        "testnet_emission_lane_sync",
+        "testnet_aws_inventory",
+        "testnet_funding",
+        "testnet_secret_handles",
+        "testnet_apprunner_source_pack",
+        "testnet_container_pack",
+        "testnet_browser_smoke",
+        "claim_tx_evidence",
+    ]
+
+
+def test_release_status_blocks_when_publisher_timer_is_inactive(tmp_path: Path, monkeypatch) -> None:
+    module = _load_module()
+    _mock_publisher_systemctl(module, monkeypatch, emission_timer_active=False)
+    gate = module._publisher_timers_gate(timeout=0.1)
+
+    assert gate["ok"] is False
+    assert gate["status"] == "red"
+    assert "emission" in gate["message"]
+    assert "ActiveState=inactive" in gate["message"]
 
 
 def test_release_status_can_defer_real_holder_test_when_binding_path_is_ready(tmp_path: Path) -> None:

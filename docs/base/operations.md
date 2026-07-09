@@ -95,10 +95,13 @@ python3 scripts/sota_base_release_status.py \
 This command reads the local UI smoke report, the local state-changing claim
 proof report, the local multi-miner self-validation/claim report, Base Sepolia
 operator report, blocker report, public browser-smoke report, and claim
-transaction evidence report. It does not deploy contracts, sign messages,
-broadcast transactions, or touch production Bittensor. Green means the
-required gates are green. Red means at least one required gate still blocks
-nontechnical testing.
+transaction evidence report. By default it also checks the user-systemd
+genesis and emission publisher timers directly; use
+`--skip-publisher-timer-check` only when reviewing offline artifacts on a host
+that is not responsible for publishing. It does not deploy contracts, sign
+messages, broadcast transactions, or touch production Bittensor. Green means
+the required gates are green. Red means at least one required gate still
+blocks nontechnical testing.
 
 If `--snapshot-claim-bindings-url` is supplied and
 `SOTA_BASE_INDEXER_ADMIN_TOKEN` is set, the report also records the public
@@ -193,6 +196,9 @@ publishes a new emission root when needed, finalizes the claim artifact with
 the emitted `root_id`, and imports it into the claims API. The wrapper loads
 the indexer admin token, root-publisher key, and deployer key from AWS Secrets
 Manager at runtime.
+The aggregate release-status command fails `testnet_publisher_timers` if these
+user-systemd timers are not active/enabled or if the last oneshot service result
+is not success.
 
 If Base Sepolia is still using the old seeded demo genesis artifact,
 `sota_base_release_status.py` marks
