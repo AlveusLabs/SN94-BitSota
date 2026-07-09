@@ -85,7 +85,7 @@
   </a>
   <a class="bitsota-card" href="base-sepolia-tester/">
     <strong>Base Sepolia tester</strong>
-    <span>Use an operator-provided seeded test wallet to claim on Base Sepolia and send back transaction evidence.</span>
+    <span>Use your own Base Sepolia wallet and snapshot coldkey, or an operator-seeded wallet when the handoff says so.</span>
   </a>
   <a class="bitsota-card" href="architecture/">
     <strong>Technical reviewer</strong>

@@ -590,8 +590,15 @@ def render_markdown(handoff: dict[str, Any]) -> str:
             lines.append(f"- Tailscale preflight report: {tailscale_preflight.get('path')}")
     testnet = handoff.get("testnet") if isinstance(handoff.get("testnet"), dict) else None
     if testnet:
+        deferred = bool(dict(testnet).get("real_holder_test_deferred"))
         lines.append(f"- Base Sepolia claim test ready: {str(dict(testnet).get('ready')).lower()}")
-        lines.append(f"- Base Sepolia full release ready: {str(release.get('testnet_ok')).lower()}")
+        lines.append(
+            f"- Base Sepolia infrastructure ready: {str(release.get('testnet_ok')).lower()}"
+            if deferred
+            else f"- Base Sepolia full release ready: {str(release.get('testnet_ok')).lower()}"
+        )
+        if deferred:
+            lines.append("- Real holder claim evidence: deferred")
         lines.append(f"- Full local + Base Sepolia status: {release.get('status')}")
     else:
         lines.append("- Handoff scope: local demo only")
@@ -682,7 +689,11 @@ def render_markdown(handoff: dict[str, Any]) -> str:
         lines.append("## Base Sepolia")
         lines.append("")
         lines.append(f"- Claim test ready: {str(testnet.get('ready')).lower()}")
-        lines.append(f"- Full release ready: {str(testnet.get('release_ready')).lower()}")
+        if testnet.get("real_holder_test_deferred"):
+            lines.append(f"- Infrastructure ready: {str(testnet.get('release_ready')).lower()}")
+            lines.append("- Real holder claim evidence: deferred")
+        else:
+            lines.append(f"- Full release ready: {str(testnet.get('release_ready')).lower()}")
         lines.append(f"- Claim test status: {testnet.get('status')}")
         lines.append(f"- Release status: {testnet.get('release_status')}")
         lines.append(f"- Tester message: {testnet.get('tester_message')}")
@@ -904,10 +915,15 @@ def render_html(handoff: dict[str, Any]) -> str:
         f'<div class="card"><div class="label">Tailscale preflight</div><div class="value">{escape(str(dict(release.get("local_tailscale_preflight") or {}).get("status") or "unknown"))}</div></div>',
     ]
     if testnet:
+        deferred = bool(dict(testnet or {}).get("real_holder_test_deferred"))
         blocks.extend(
             [
                 f'<div class="card"><div class="label">Base Sepolia claim test ready</div><div class="value">{escape(str(dict(testnet or {}).get("ready")).lower())}</div></div>',
-                f'<div class="card"><div class="label">Base Sepolia full release ready</div><div class="value">{escape(str(release.get("testnet_ok")).lower())}</div></div>',
+                (
+                    f'<div class="card"><div class="label">Base Sepolia infrastructure ready</div><div class="value">{escape(str(release.get("testnet_ok")).lower())}<br>Real holder claim evidence: deferred</div></div>'
+                    if deferred
+                    else f'<div class="card"><div class="label">Base Sepolia full release ready</div><div class="value">{escape(str(release.get("testnet_ok")).lower())}</div></div>'
+                ),
             ]
         )
     else:
@@ -1054,7 +1070,11 @@ def render_html(handoff: dict[str, Any]) -> str:
                 f'<div class="flow warning"><h3>Testnet wallet access</h3><p>{escape(str(testnet.get("wallet_access_note") or ""))}</p></div>',
                 '<section class="grid">',
                 f'<div class="card"><div class="label">Claim test ready</div><div class="value">{escape(str(testnet.get("ready")).lower())}</div></div>',
-                f'<div class="card"><div class="label">Full release ready</div><div class="value">{escape(str(testnet.get("release_ready")).lower())}</div></div>',
+                (
+                    f'<div class="card"><div class="label">Infrastructure ready</div><div class="value">{escape(str(testnet.get("release_ready")).lower())}<br>Real holder claim evidence: deferred</div></div>'
+                    if testnet.get("real_holder_test_deferred")
+                    else f'<div class="card"><div class="label">Full release ready</div><div class="value">{escape(str(testnet.get("release_ready")).lower())}</div></div>'
+                ),
                 f'<div class="card"><div class="label">Browser smoke</div><div class="value">{escape(str(testnet.get("browser_smoke_status") or "missing"))} ({escape(_summary_text(dict(testnet.get("browser_smoke_summary") or {})))})</div></div>',
                 f'<div class="card"><div class="label">Claims UI</div><div class="value"><a href="{escape(str(testnet.get("claims_ui_url") or ""))}">{escape(str(testnet.get("claims_ui_url") or ""))}</a></div></div>',
                 f'<div class="card"><div class="label">Claims API</div><div class="value">{escape(str(testnet.get("claims_api_url") or ""))}</div></div>',

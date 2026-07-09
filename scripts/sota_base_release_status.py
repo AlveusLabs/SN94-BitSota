@@ -1122,6 +1122,9 @@ def run_status(args: argparse.Namespace) -> dict[str, Any]:
         "testnet_ok": testnet_ok,
         "real_holder_test_deferred": bool(getattr(args, "defer_real_holder_test", False)),
         "message": (
+            "Local and Base Sepolia infrastructure gates are green; real holder claim testing is deferred."
+            if ok and bool(getattr(args, "defer_real_holder_test", False)) and not args.local_only
+            else
             "Local and Base Sepolia gates are green."
             if ok
             else "Local and/or Base Sepolia gates are not complete."
