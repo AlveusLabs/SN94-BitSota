@@ -162,6 +162,12 @@ API with `--snapshot-claim-bindings-url "$SOTA_CLAIMS_API_URL/api/v1/base/genesi
 For API export, load the claims API admin token as
 `SOTA_BASE_INDEXER_ADMIN_TOKEN`; the operator keeps a fallback for the older
 `SOTA_INDEXER_ADMIN_TOKEN` local-script name.
+For Base Sepolia, the preferred path is the scheduled genesis batch publisher:
+`base-sota-genesis-publisher.timer` runs
+`scripts/run_sota_base_genesis_batch_publisher_once.sh` roughly every 10 minutes.
+It reads accepted unrooted bindings from the claims API, publishes one genesis
+root for the batch, imports the finalized claim artifact, and marks those
+bindings as included so they are not republished.
 If Base Sepolia is still using the old seeded demo genesis artifact,
 `sota_base_release_status.py` marks
 `testnet_snapshot_genesis` red and reports the accepted signed binding count

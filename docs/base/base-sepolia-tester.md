@@ -46,14 +46,16 @@ The snapshot holder should use the Genesis binding panel in the claims UI:
 The page must never ask for a seed phrase or private key. The binding only
 proves coldkey control and chooses the Base wallet that will receive SOTA.
 
-After the binding is accepted, the operator still has to publish and import a
-new genesis root before a tester can claim:
+After the binding is accepted, the Base Sepolia batch publisher checks for
+unbatched accepted bindings about every 10 minutes. When it finds one or more,
+it builds one genesis Merkle root for the batch, publishes the root, imports the
+claim artifact, and marks those bindings as included. Then the tester can
+refresh the Genesis tab and claim.
 
-1. Export the accepted binding or pass the signed binding file to the operator.
-2. Build the genesis artifact from `/mnt/4tb/tao_fork_snapshot`.
-3. Publish the genesis root on Base Sepolia.
-4. Import the finalized claim artifact into the claims API.
-5. Rerun browser smoke and refresh the handoff.
+If the timer is stopped, the fallback operator action is:
+
+1. Run `scripts/run_sota_base_genesis_batch_publisher_once.sh`.
+2. Rerun browser smoke and refresh the handoff.
 
 ## MetaMask Network
 

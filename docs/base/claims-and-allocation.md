@@ -98,6 +98,9 @@ genesis root. The website exposes the same flow from the Genesis tab with the
 
 After submitting, the claimant can use `Binding status` in the Genesis tab to
 check whether that exact coldkey and Base reward wallet has an accepted binding.
+On Base Sepolia, accepted bindings are batched about every 10 minutes by the
+genesis batch publisher. The status changes from accepted/waiting to included
+after the published root and claim artifact are imported.
 The public API route is:
 
 ```bash
@@ -161,10 +164,23 @@ python3 scripts/sota_base_testnet_operator.py \
   --import-artifacts
 ```
 
-If claimants submitted signed bindings through the claims API, the operator can
-export the accepted bindings instead of passing local files. Load the claims
-API admin token into `SOTA_BASE_INDEXER_ADMIN_TOKEN`; the operator also accepts
-the older `SOTA_INDEXER_ADMIN_TOKEN` name for local scripts.
+If claimants submitted signed bindings through the claims API, the scheduled
+Base Sepolia publisher can batch only unrooted accepted bindings:
+
+```bash
+scripts/run_sota_base_genesis_batch_publisher_once.sh
+```
+
+The systemd user timer `base-sota-genesis-publisher.timer` runs that wrapper
+about every 10 minutes on the operator host. It fetches the claims API admin
+token and root-publisher private key from AWS Secrets Manager at runtime,
+builds one root for the batch, publishes it, imports the artifact, and marks
+the included binding hashes in the claims API.
+
+The older manual operator path can still export accepted bindings instead of
+passing local files. Load the claims API admin token into
+`SOTA_BASE_INDEXER_ADMIN_TOKEN`; the operator also accepts the older
+`SOTA_INDEXER_ADMIN_TOKEN` name for local scripts.
 
 ```bash
 python3 scripts/sota_base_testnet_operator.py \
