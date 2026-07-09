@@ -1,7 +1,6 @@
 # Current Local Checks
 
-The old local relay + AutoML-Zero validator loop is archived under
-[AutoML-Zero Archive](archive/automl-zero/index.md).
+The old local relay + AutoML-Zero validator loop is no longer part of the live docs.
 
 Use this page for lightweight checks of the current autoresearch client path.
 

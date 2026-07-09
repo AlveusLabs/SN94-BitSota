@@ -1,7 +1,6 @@
 # Pool Claims
 
-The old evolutionary Pool mining guide is archived under
-[AutoML-Zero Archive](archive/automl-zero/index.md).
+The old evolutionary Pool mining guide is no longer part of the live docs.
 
 In the current autoresearch setup, Pool is primarily part of reward publication
 and claim serving:

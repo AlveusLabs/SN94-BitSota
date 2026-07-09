@@ -16,7 +16,6 @@ you add or change a public workflow, update the relevant page here.
 - Architecture: [Architecture Overview](architecture.md)
 - Current requirements: [Mining](mining.md), [Problem Posting](problem-posting.md)
 - Product direction: [Future Roadmap](roadmap.md)
-- Archive: [AutoML-Zero Archive](archive/automl-zero/index.md)
 
 ## Components
 

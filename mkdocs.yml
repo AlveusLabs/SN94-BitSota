@@ -85,8 +85,6 @@ plugins:
             Claims And Rewards: Claims 与奖励
             Contributing: 贡献
             Docs Coverage: 文档覆盖率
-            Archive: 归档
-            AutoML-Zero Archive: AutoML-Zero 归档
   - search
 
 markdown_extensions:
@@ -167,8 +165,6 @@ nav:
       - Backend Reward Snapshot: reward-modes.md
       - Claim Rewards: claim-rewards.md
       - Pool Claims: pool-mining.md
-  - Archive:
-      - AutoML-Zero Archive: archive/automl-zero/index.md
   - Disclaimer: disclaimer.md
   - Contributing: contributing.md
   - Docs Coverage: coverage.md

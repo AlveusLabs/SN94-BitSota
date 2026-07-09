@@ -1,151 +1,64 @@
 # BitSota
 
-**Decentralized Research Network on Bittensor**
+BitSota is now organized around the Base SOTA fork path: SOTA claims settle on
+Base-compatible EVM contracts, genesis allocation comes from the approved
+TAO/alpha snapshot formula, and ongoing emissions are released only for accepted
+self-validated research work.
 
-BitSota is a decentralized research network that evolves machine learning algorithms through competitive optimization. We're a problem agnostic platform and enable the optimization of different categories of problems, with a focus on self-improving and self-generating AI.
-Currently, Miners develop ML algorithms using genetic programming, while validators evaluate performance and distribute rewards through smart contract voting on the Bittensor network.
+The old SN94/Bittensor subnet code is still present where it is needed for
+current production or historical reference, but it is not the product direction
+for the Base SOTA fork. New work should prefer the Base SOTA docs, local demo,
+EVM contracts, autoresearch coordinator flow, and lane-based emission language.
 
-## Overview
+## Start Here
 
-Bitsota is a platform that allows for decentralized open research problems to continuously evolve machine learning algorithms, state of the art results and self-improving AI. The system supports multiple participation modes to accommodate different hardware capabilities and preferences. BitSota is running without a miner cap and can support a theoretically infinite number of miners.
-
-### Core Components
-
-**Miners:** Evolve ML algorithms using genetic programming and self-improving methods on our fixed CIFAR-10 binary evaluation pipeline, research benchmarks or hidden evaluation criteria. Can operate in direct or pool mining modes.
-
-**Validators:** Evaluate miner submissions independently, verify algorithm performance, and distribute rewards by setting on-chain weights via Yuma consensus.
-
-## Inspiration
-
-BitSota builds on concepts from Google's [AutoML-Zero](https://research.google/blog/automl-zero-evolving-code-that-learns/) research, Schmidhuber's [Goedel Machines] (https://people.idsia.ch/~juergen/goedelmachine.html) and Jeff Clune's [AI generating Algorithms](https://arxiv.org/abs/1905.10985). We build on this approach by:
-
-- Decentralizing the evolution process across a distributed network of miners
-- Using blockchain incentives to drive continuous algorithm improvement
-- Implementing competitive markets where miners evolve algorithms in parallel
-- Applying cryptoeconomic mechanisms to ensure honest evaluation and quality control
-
-Where AutoML-Zero showed that algorithm evolution is possible in a research setting, Bitsota explores whether market incentives and distributed competition can sustainably produce novel ML algorithms and solve research problems at scale.
-
-## Participation Modes
-
-### Direct Mining
-
-Individual miners evolve algorithms locally and submit breakthroughs to validators. Requires higher compute but offers larger individual rewards.
-
-**Best for:** Experienced miners with dedicated hardware
-
-**[→ Direct Mining Guide](docs/mining.md)**
-
-### Pool Mining
-
-Collaborative mining where participants handle smaller evolution and evaluation tasks. Pool aggregates results and submits to validators on behalf of all participants.
-
-**Best for:** New miners or those with limited compute resources
-
-**[→ Pool Mining Guide](docs/pool-mining.md)**
-
-### Validation
-
-Validators evaluate algorithm submissions, verify performance claims, and vote on rewards through multi-signature smart contracts.
-
-**[→ Validation Guide](docs/validation.md)**
-
-### Experimental Research-Agent Mining
-
-SN94 now also includes an additive, coordinator-backed research miner that can launch an external agent CLI, with the older OpenAI-compatible chat-completions path kept as a fallback.
-
-This path is separate from the existing AutoML-Zero style evolutionary contest and does not replace the current direct mining, pool mining, GUI, or validator flows.
-
-The new path supports coordinator-backed research competitions with `direct` and `pool` participation styles across `standard`, `centerless`, and `peer_evaluation` task modes.
-
-See [Research-Agent Mining](docs/research-agent-mining.md).
-
-## Architecture
-
-### Direct Mining Flow
-
-```
-Miner → Evolve Locally → Beat SOTA → Submit to Relay → Validators Verify → Relay Consensus → Weight Update → Emissions
-```
-
-1. Miner runs genetic programming engine for up to 150 generations
-2. When algorithm beats State-of-the-Art threshold, submits to relay
-3. Validators download submission and independently re-evaluate
-4. Validators choose weight setting mode:
-   - Relay mode: Vote on relay, wait for consensus, then set weights
-   - Local mode: Set weights immediately based on own evaluation
-5. Validators set on-chain weights: 90% burn, 10% winner
-6. Network emissions flow to winner via Yuma consensus
-
-### Pool Mining Flow
-
-```
-Pool → Assigns Tasks → Miners Execute → Pool Consensus → Submit to Validators → Epoch Rewards
-```
-
-1. Pool distributes evolution and evaluation tasks to participants
-2. Multiple miners evaluate each algorithm (3+ required)
-3. Pool computes median consensus with 10% tolerance
-4. Rewards distributed based on reputation at epoch boundaries
-5. Pool submits best algorithms to validators on behalf of participants
-
-**[→ Detailed Rewards Guide](docs/rewards.md)**
-
-## Quick Start
-
-### For Miners
-
-**Desktop GUI (Recommended):**
-1. Download from [bitsota.ai](https://bitsota.ai)
-2. Install for your platform
-3. Import your Bittensor hotkey
-4. Choose mining mode (Direct or Pool)
-5. Start mining
-
-See detailed setup guides:
-- [Direct Mining Setup](docs/mining.md#setup)
-- [Pool Mining Setup](docs/pool-mining.md#setup)
-
-### For Validators
+Run the complete local Base SOTA loop:
 
 ```bash
-git clone https://github.com/AlveusLabs/SN94-BitSota.git
-cd SN94-BitSota
-pip install -r requirements.txt
-pip install -e .
-
-cp validator_config.yaml.example validator_config.yaml
-# Edit validator_config.yaml with your wallet and burn_hotkey
-
-python neurons/validator_node.py
+cd /home/mekaneeky/repos/SN94-BitSota-live-docs
+./scripts/sota_local_demo.py launch
 ```
 
-**[→ Full Validator Setup](docs/validation.md#setup)**
+That one command starts:
 
-## Requirements
+- local Base-compatible EVM node;
+- SOTA token, vault, root registry, lane registry, and claim distributor
+  contracts;
+- local claims indexer;
+- autoresearch backend;
+- seeded genesis claim;
+- seeded miner submission with self-validation evidence;
+- claims UI and local docs.
 
-**Minimum:**
-- Python 3.10+
-- 4GB RAM
-- 2GB storage
-- Stable internet connection
+For a multi-miner local swarm against a running stack:
 
-**For Validation:**
-- 16GB RAM
-- 8+ CPU cores
+```bash
+./scripts/sota_local_demo.py miner-swarm --count 5
+```
 
-## Documentation
+For a fresh start-to-finish swarm smoke:
 
-- **[Mining Guide](docs/mining.md)** - Direct mining setup and strategies
-- **[Pool Mining Guide](docs/pool-mining.md)** - Collaborative mining details
-- **[Validation Guide](docs/validation.md)** - Running a validator node
-- **[Research-Agent Mining](docs/research-agent-mining.md)** - Experimental coordinator-backed miner and launcher for external agents, with the older OpenAI-compatible planner path kept as a fallback
-- **[Local Testing Guide](docs/local-testing.md)** - Run GUI + local relay + local validator
-- **[Rewards Guide](docs/rewards.md)** - Understanding incentive mechanisms
+```bash
+./scripts/sota_local_demo.py swarm-smoke --count 5
+```
 
-### Docs website
+## Current Model
 
-If you prefer a rendered docs website instead of reading markdown files:
+Base SOTA has two reward paths:
+
+- Genesis: eligible legacy holders claim SOTA from the snapshot. Direct TAO
+  converts 1:1, plus synthetic alpha value from the approved pro-rata pool
+  formula.
+- Ongoing emissions: miners submit research work with an EVM miner identity and
+  optional reward address. Accepted self-validation evidence becomes a Merkle
+  claim root. Rewards are paid in SOTA.
+
+Base SOTA does not use Bittensor subnet registration, netuids, validator
+weights, Yuma emissions, or protocol alpha tokens for ongoing rewards.
+
+## Docs
+
+Rendered docs:
 
 ```bash
 python3 -m venv .venv-docs
@@ -155,30 +68,27 @@ python3 -m pip install -r requirements-docs.txt
 mkdocs serve -a 127.0.0.1:9001
 ```
 
-## Links
+Useful pages:
 
-- **Website:** [bitsota.ai](https://bitsota.ai)
-- **Discord:** [discord.gg/bitsota](https://discord.gg/jkJWJtPuw7)
+- [Base SOTA start](docs/base/index.md)
+- [New user guide](docs/base/new-users.md)
+- [Bittensor migration guide](docs/base/bittensor-migrants.md)
+- [Local E2E demo](docs/base/local-e2e.md)
+- [Self-validation](docs/base/self-validation.md)
+- [Contracts](docs/base/contracts.md)
 
-## Security Best Practices
+## Repo Boundaries
 
-**Key Management:**
-- Never share private keys or seed phrases
-- Keep coldkeys offline
-- Backup Bittensor wallet securely
-- Protect validator hotkeys on server
+- `scripts/sota_local_demo.py` owns the local Base SOTA tester loop.
+- `scripts/sota_base_testnet_*.py` owns Base Sepolia/testnet operator work.
+- `miner/` and `neurons/` contain public miner/client helpers.
+- `validator/` and `bittensor_network/` remain for current production SN94
+  validator paths and should not be expanded for new Base SOTA work.
 
-## Contributing
+## Safety
 
-This subnet is under active development. Contributions welcome through:
-- Bug reports and feature requests via GitHub issues
-- Code contributions via pull requests
-- Community discussion on Discord
+The local demo uses deterministic local keys and chain ID `31337`. It does not
+touch production Bittensor, production TAO, Base Sepolia, or Base mainnet.
 
-## License
-
-See LICENSE file for details.
-
----
-
-**Disclaimer:** This is experimental software. Use at your own risk. Always backup your keys and start with small amounts when testing. Cryptocurrency rewards involve financial risk.
+Do not put real seed phrases, production private keys, or mainnet funds into the
+local demo.

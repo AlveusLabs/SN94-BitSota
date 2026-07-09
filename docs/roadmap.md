@@ -86,9 +86,3 @@ Reward visibility should make these facts easy to answer:
 - which Merkle epoch contains the claim;
 - whether the claim is blocked by veto/challenge state;
 - which validator weight policy is currently active.
-
-## Archived Work
-
-The old AutoML-Zero relay, local SOTA, and evolutionary pool docs are preserved
-in [AutoML-Zero Archive](archive/automl-zero/index.md). They are historical
-context and should not be used for current production setup.

@@ -1,1 +1,0 @@
---8<-- "full-compose-test.md"

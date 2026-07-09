@@ -1,8 +1,8 @@
 # Backend Reward Snapshot
 
 The current production validator path uses backend-directed reward snapshots.
-The old `capacitorless`, relay SOTA, and local winner modes are archived under
-[AutoML-Zero Archive](archive/automl-zero/index.md).
+The old `capacitorless`, relay SOTA, and local winner modes are retired from
+the live docs.
 
 ## Snapshot Endpoint
 

@@ -8,7 +8,6 @@
 - `docs/` contains the public MkDocs site.
 - `docs/base/` contains the living SOTA Base project docs. Update it whenever a
   Base contract, root, claim, indexer, UI, or ops behavior changes.
-- `docs/archive/automl-zero/` contains historical relay/AutoML-Zero docs.
 
 ## Documentation changes
 

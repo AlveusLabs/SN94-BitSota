@@ -49,10 +49,6 @@ flowchart LR
 Use `https://autoresearch.bitsota.com` as the production coordinator unless an
 operator tells you otherwise.
 
-The old AutoML-Zero relay/SOTA docs are preserved in
-[AutoML-Zero Archive](archive/automl-zero/index.md). Do not use those archived
-guides for current production mining.
-
 The Base SOTA fork work is tracked in the [Base SOTA](base/index.md) section.
 That area has a complete local demo now and remains local/project-facing until
 Base Sepolia gates are green against real deployed contracts and public service

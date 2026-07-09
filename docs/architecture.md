@@ -12,9 +12,8 @@
 
 ## Current Production Path
 
-The reward-active SN94 path is coordinator-backed autoresearch. The legacy
-AutoML-Zero relay/SOTA flow has been moved to the
-[AutoML-Zero archive](archive/automl-zero/index.md).
+The reward-active path is coordinator-backed autoresearch. Legacy relay-era
+AutoML-Zero docs are no longer part of the live docs tree.
 
 ```mermaid
 flowchart LR

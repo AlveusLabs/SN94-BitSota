@@ -1,1 +1,0 @@
---8<-- "Pool/test-functional.zh.md"

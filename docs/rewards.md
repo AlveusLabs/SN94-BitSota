@@ -1,8 +1,7 @@
 # Rewards And Claims
 
 Current rewards are driven by accepted autoresearch outcomes and backend reward
-snapshots. The old relay SOTA reward-mode docs are archived under
-[AutoML-Zero Archive](archive/automl-zero/index.md).
+snapshots. The old relay SOTA reward-mode docs are retired from the live docs.
 
 ## Current Model
 

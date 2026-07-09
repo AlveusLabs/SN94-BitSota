@@ -6,7 +6,7 @@ with open("README.md", "r") as fh:
 setuptools.setup(
     name="bitsota",
     version="0.0.1",
-    description="A distributed AutoML package",
+    description="Base SOTA fork and autoresearch miner tooling",
     long_description=long_description,
     long_description_content_type="text/markdown",
     url="https://github.com/AlveusLabs/SN94-BitSota/",

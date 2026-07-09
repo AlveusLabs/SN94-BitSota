@@ -1,7 +1,7 @@
 # Legacy Relay
 
-The relay/SOTA component belonged to the old AutoML-Zero flow and is archived
-under [AutoML-Zero Archive](../archive/automl-zero/index.md).
+The relay/SOTA component belonged to the old AutoML-Zero flow and is retired
+from the live docs.
 
 Current production uses the autoresearch backend:
 
