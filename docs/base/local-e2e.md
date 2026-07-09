@@ -112,9 +112,14 @@ same computer that started the launcher. For another computer on Tailscale,
 first enable Tailscale Serve/HTTPS for this node, then rerun:
 
 ```bash
+sudo tailscale set --operator=$USER
 cd /home/mekaneeky/repos/SN94-BitSota-live-docs
 ./scripts/sota_local_demo.py launch --share-mode tailscale-https
 ```
+
+If `tailscale cert` says access is denied, the sudo operator command above is
+the missing local host step. If the launcher prints a Tailscale admin-console
+URL, open that URL and enable Serve/HTTPS certificates for this node.
 
 `--share-mode http` exposes HTTP Tailscale-IP URLs for reading docs or the
 handoff from another tailnet computer, but wallet extensions can reject that RPC

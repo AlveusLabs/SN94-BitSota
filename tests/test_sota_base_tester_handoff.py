@@ -123,6 +123,10 @@ def _write_inputs(args: argparse.Namespace) -> None:
                 "status": "red",
                 "message": "Tailscale HTTPS sharing is not ready for remote MetaMask testing.",
                 "summary": {"green": 3, "yellow": 2, "red": 1},
+                "next_actions": [
+                    "Run `sudo tailscale set --operator=$USER` once on this host, then rerun "
+                    "the local demo with `--share-mode tailscale-https`."
+                ],
             },
             "testnet_ok": False,
             "summary": {"green": 2, "yellow": 0, "red": 3},
@@ -279,7 +283,9 @@ def test_tester_handoff_contains_local_urls_and_warning(tmp_path: Path) -> None:
     assert "Local MetaMask detail: tester wallet RPC may be rejected" in markdown
     assert "Remote Tailscale MetaMask ready: false" in markdown
     assert "Remote Tailscale MetaMask detail: Tailscale HTTPS sharing is not ready" in markdown
+    assert "Remote Tailscale MetaMask next action: Enable Tailscale Serve/HTTPS." in markdown
     assert "Tailscale preflight: red" in markdown
+    assert "Tailscale next action: Run `sudo tailscale set --operator=$USER`" in markdown
     assert "Tester Decision" in markdown
     assert "Local same-machine: false" not in markdown
     assert "Local-only private key" in markdown
@@ -307,6 +313,8 @@ def test_tester_handoff_contains_local_urls_and_warning(tmp_path: Path) -> None:
     assert "Local MetaMask ready" in html
     assert "Remote Tailscale MetaMask ready" in html
     assert "Tailscale preflight" in html
+    assert "Remote Tailscale MetaMask not ready" in html
+    assert "Next action: Enable Tailscale Serve/HTTPS." in html
     assert "Aggregate status: red" not in html
     assert "http://100.0.0.1:3000/claims" in html
     assert "Add SOTA Local Base network" in html

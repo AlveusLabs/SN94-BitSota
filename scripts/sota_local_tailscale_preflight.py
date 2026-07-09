@@ -8,6 +8,7 @@ import json
 from pathlib import Path
 import shutil
 import subprocess
+import tempfile
 from typing import Any
 
 
@@ -64,6 +65,68 @@ def _run_json(command: list[str], *, timeout: float) -> tuple[dict[str, Any], st
     except json.JSONDecodeError as exc:
         return {}, f"{' '.join(command)} returned invalid JSON: {exc}"
     return payload if isinstance(payload, dict) else {}, ""
+
+
+def _run_text(command: list[str], *, timeout: float, cwd: Path | None = None) -> tuple[int, str]:
+    try:
+        result = subprocess.run(
+            command,
+            check=False,
+            capture_output=True,
+            text=True,
+            timeout=timeout,
+            cwd=cwd,
+        )
+    except subprocess.TimeoutExpired as exc:
+        detail = exc.stderr or exc.stdout or f"{' '.join(command)} timed out after {timeout:.0f}s"
+        return 124, str(detail).strip()
+    return int(result.returncode), (result.stderr.strip() or result.stdout.strip())
+
+
+def _operator_access_check(tailscale: str | None, dns_name: str, *, timeout: float) -> Check:
+    if not tailscale:
+        return Check(
+            "tailscale_local_operator",
+            "red",
+            "tailscale CLI is unavailable, so local operator access cannot be checked.",
+            "Install and authenticate Tailscale on the demo host.",
+        )
+    if not dns_name:
+        return Check(
+            "tailscale_local_operator",
+            "red",
+            "Tailscale MagicDNS name is unavailable, so local operator access cannot be checked.",
+            "Enable Tailscale MagicDNS for the tailnet and reconnect this node.",
+        )
+    with tempfile.TemporaryDirectory(prefix="sota-tailscale-cert-") as temp_dir:
+        code, detail = _run_text([tailscale, "cert", dns_name], timeout=timeout, cwd=Path(temp_dir))
+    lower = detail.lower()
+    if code == 0:
+        return Check(
+            "tailscale_local_operator",
+            "green",
+            "This Unix user can request Tailscale HTTPS certificates for the local node.",
+        )
+    if "access denied" in lower or "sudo tailscale set --operator" in lower:
+        return Check(
+            "tailscale_local_operator",
+            "red",
+            "This Unix user cannot configure Tailscale Serve/HTTPS for the local node.",
+            "Run `sudo tailscale set --operator=$USER` once on this host, then rerun the local demo with `--share-mode tailscale-https`.",
+        )
+    if "serve is not enabled" in lower or "/f/serve" in lower or "enable" in lower:
+        return Check(
+            "tailscale_local_operator",
+            "yellow",
+            "This Unix user can reach Tailscale, but HTTPS/Serve is not enabled for this node.",
+            "Enable Tailscale Serve/HTTPS certificates for this node in the Tailscale admin console, then rerun with `--share-mode tailscale-https`.",
+        )
+    return Check(
+        "tailscale_local_operator",
+        "red",
+        f"Tailscale HTTPS certificate probe failed: {detail or f'exit {code}'}.",
+        "Fix Tailscale local operator access and HTTPS/Serve configuration, then rerun the preflight.",
+    )
 
 
 def _status_rank(status: str) -> int:
@@ -144,6 +207,7 @@ def run_preflight(args: argparse.Namespace) -> dict[str, Any]:
             "" if dns_name else "Enable Tailscale MagicDNS for the tailnet and reconnect this node.",
         )
     )
+    checks.append(_operator_access_check(tailscale, dns_name, timeout=args.timeout))
     cert_domains = _cert_domains(status_payload)
     https_enabled = bool(dns_name and dns_name in cert_domains)
     enable_url = _serve_enable_url(status_payload)

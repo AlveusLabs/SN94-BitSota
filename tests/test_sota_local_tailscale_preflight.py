@@ -71,6 +71,8 @@ def test_tailscale_preflight_green_when_https_and_serve_are_configured(tmp_path:
             )
         if command[:3] == ["/usr/bin/tailscale", "serve", "status"]:
             return SimpleNamespace(returncode=0, stdout=json.dumps({"TCP": {"443": {}}}), stderr="")
+        if command[:2] == ["/usr/bin/tailscale", "cert"]:
+            return SimpleNamespace(returncode=0, stdout="", stderr="")
         raise AssertionError(command)
 
     monkeypatch.setattr(module.subprocess, "run", fake_run)
@@ -109,6 +111,8 @@ def test_tailscale_preflight_reports_disabled_https_and_http_share(tmp_path: Pat
             )
         if command[:3] == ["/usr/bin/tailscale", "serve", "status"]:
             return SimpleNamespace(returncode=0, stdout="{}", stderr="")
+        if command[:2] == ["/usr/bin/tailscale", "cert"]:
+            return SimpleNamespace(returncode=1, stdout="", stderr="Access denied: cert access denied")
         raise AssertionError(command)
 
     monkeypatch.setattr(module.subprocess, "run", fake_run)
@@ -119,5 +123,7 @@ def test_tailscale_preflight_reports_disabled_https_and_http_share(tmp_path: Pat
     assert report["ok"] is False
     assert report["status"] == "red"
     assert checks["tailscale_https_certificates"]["status"] == "red"
+    assert checks["tailscale_local_operator"]["status"] == "red"
+    assert "sudo tailscale set --operator" in checks["tailscale_local_operator"]["remediation"]
     assert checks["local_wallet_rpc_share"]["status"] == "yellow"
     assert "https://login.tailscale.com/f/serve?node=node123" in checks["tailscale_https_certificates"]["remediation"]

@@ -54,6 +54,14 @@ def _worst_status(statuses: list[str]) -> str:
     return max(statuses, key=_status_rank)
 
 
+def _first_nonempty(items: list[Any]) -> str:
+    for item in items:
+        text = str(item or "").strip()
+        if text:
+            return text
+    return ""
+
+
 def _format_sota_units(value: Any) -> str:
     try:
         raw = int(value or 0)
@@ -579,13 +587,20 @@ def render_markdown(handoff: dict[str, Any]) -> str:
         lines.append(f"- Local MetaMask status: {local_wallet.get('status') or 'unknown'}")
         if local_wallet.get("message"):
             lines.append(f"- Local MetaMask detail: {local_wallet.get('message')}")
+        if local_wallet.get("next_action"):
+            lines.append(f"- Local MetaMask next action: {local_wallet.get('next_action')}")
     tailscale_preflight = dict(release.get("local_tailscale_preflight") or {})
     if remote_wallet:
         lines.append(f"- Remote Tailscale MetaMask status: {remote_wallet.get('status') or 'unknown'}")
         if remote_wallet.get("message"):
             lines.append(f"- Remote Tailscale MetaMask detail: {remote_wallet.get('message')}")
+        if remote_wallet.get("next_action"):
+            lines.append(f"- Remote Tailscale MetaMask next action: {remote_wallet.get('next_action')}")
     if tailscale_preflight:
         lines.append(f"- Tailscale preflight: {tailscale_preflight.get('status') or 'unknown'}")
+        tailscale_next = _first_nonempty(list(tailscale_preflight.get("next_actions") or []))
+        if tailscale_next:
+            lines.append(f"- Tailscale next action: {tailscale_next}")
         if tailscale_preflight.get("path"):
             lines.append(f"- Tailscale preflight report: {tailscale_preflight.get('path')}")
     testnet = handoff.get("testnet") if isinstance(handoff.get("testnet"), dict) else None
@@ -950,6 +965,23 @@ def render_html(handoff: dict[str, Any]) -> str:
                 "</section>",
             ]
         )
+    remote_wallet = dict(release.get("local_remote_wallet") or {})
+    tailscale_preflight = dict(release.get("local_tailscale_preflight") or {})
+    remote_next = _first_nonempty(
+        [remote_wallet.get("next_action")]
+        + list(tailscale_preflight.get("next_actions") or [])
+    )
+    if remote_wallet and not bool(release.get("local_remote_wallet_ok")):
+        blocks.extend(
+            [
+                '<div class="flow warning">',
+                "<h3>Remote Tailscale MetaMask not ready</h3>",
+                f"<p>{escape(str(remote_wallet.get('message') or 'Tailscale HTTPS sharing is not ready for remote MetaMask testing.'))}</p>",
+            ]
+        )
+        if remote_next:
+            blocks.append(f"<p>Next action: {escape(remote_next)}</p>")
+        blocks.append("</div>")
     if local:
         if local.get("same_machine_only"):
             blocks.extend(
