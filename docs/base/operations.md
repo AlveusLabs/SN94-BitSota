@@ -753,7 +753,9 @@ The script is read-only. It does not deploy contracts, sign messages, broadcast
 transactions, or touch production Bittensor. A green report means the public UI
 and APIs are ready for the human MetaMask step: connect the tester wallet,
 submit the genesis claim, then submit the mined-emission claim. Red means do
-not invite a nontechnical tester yet.
+not invite a nontechnical tester yet. The default timeout is long enough for a
+fresh App Runner deploy to sync the public indexer before eligibility and
+calldata checks run.
 
 The generated testnet env must include:
 

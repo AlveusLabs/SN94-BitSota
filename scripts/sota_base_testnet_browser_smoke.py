@@ -805,7 +805,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--test-snapshot-coldkey", default="")
     parser.add_argument("--lane-id", default="")
     parser.add_argument("--epoch", default="")
-    parser.add_argument("--timeout", type=float, default=10.0)
+    parser.add_argument("--timeout", type=float, default=90.0)
     parser.add_argument("--json", action="store_true", help="Print machine-readable JSON.")
     parser.add_argument("--report-out", type=Path)
     parser.add_argument("--allow-yellow", action="store_true", help="Treat yellow-only reports as exit 0.")
