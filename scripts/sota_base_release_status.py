@@ -8,6 +8,7 @@ import json
 import os
 from pathlib import Path
 from typing import Any
+from urllib.error import HTTPError
 from urllib.request import Request, urlopen
 
 
@@ -237,6 +238,16 @@ def _public_binding_export_evidence(url: str, *, token_env: str, timeout: float)
             "token_env": token_env,
             "used_auth_header": bool(token),
         }
+    except HTTPError as exc:
+        status = "auth_required" if exc.code in {401, 403} else "red"
+        return {
+            "status": status,
+            "url": url,
+            "http_status": exc.code,
+            "error": str(exc),
+            "token_env": token_env,
+            "used_auth_header": bool(token),
+        }
     except Exception as exc:
         return {
             "status": "red",
@@ -380,6 +391,8 @@ def _snapshot_genesis_gate(testnet_dir: Path, snapshot_dir: Path, args: argparse
         public_count = public_export.get("accepted_signed_binding_count")
         if public_export.get("status") == "green":
             suffix += f"; public claims API accepted binding count is {int(public_count or 0)}"
+        elif public_export.get("status") == "auth_required":
+            suffix += f"; claims API binding export requires {public_export.get('token_env') or 'admin token'}"
         elif public_export.get("status") == "red":
             suffix += "; public claims API binding count could not be read"
         reasons.insert(0, f"accepted signed snapshot binding count is 0{suffix}")

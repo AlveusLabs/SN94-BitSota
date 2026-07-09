@@ -955,7 +955,7 @@ def _export_snapshot_bindings(args: argparse.Namespace, paths: dict[str, Path]) 
             "snapshot_binding_export",
             "red",
             f"Could not export accepted snapshot bindings from {source}: {exc}",
-            "Fix the claims API binding export route or pass --snapshot-claim-binding files directly.",
+            f"Set {args.indexer_admin_token_env} for the claims API export route or pass --snapshot-claim-binding files directly.",
             artifacts={"source": source},
         )
     if not written:
