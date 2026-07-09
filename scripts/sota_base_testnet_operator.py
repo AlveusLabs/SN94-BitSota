@@ -963,7 +963,7 @@ def _export_snapshot_bindings(args: argparse.Namespace, paths: dict[str, Path]) 
             "snapshot_binding_export",
             "red",
             f"No accepted snapshot bindings were returned by {source}.",
-            "Have a snapshot holder submit a signed coldkey binding, then rerun the operator.",
+            "Have the holder use the claims UI Genesis binding panel or scripts/sota_sign_snapshot_binding.py to submit a signed coldkey binding, then rerun the operator.",
             artifacts={"source": source},
         )
     return StepResult(
