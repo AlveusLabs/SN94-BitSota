@@ -95,7 +95,9 @@ python3 scripts/sota_base_release_status.py \
 This command reads the local UI smoke report, the local state-changing claim
 proof report, the local multi-miner self-validation/claim report, Base Sepolia
 operator report, blocker report, public browser-smoke report, and claim
-transaction evidence report. By default it also checks the user-systemd
+transaction evidence report. It also requires the fresh emission tester report,
+which proves a new funded testnet wallet has a real self-validated emission
+claim and unsigned MetaMask calldata. By default it also checks the user-systemd
 genesis and emission publisher timers directly; use
 `--skip-publisher-timer-check` only when reviewing offline artifacts on a host
 that is not responsible for publishing. It does not deploy contracts, sign

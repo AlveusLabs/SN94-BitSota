@@ -272,6 +272,7 @@ def prepare_emission_tester(args: argparse.Namespace) -> dict[str, Any]:
         "generated_at": datetime.now(timezone.utc).isoformat(),
         "ok": ok,
         "status": "green" if ok else "red",
+        "summary": {"green": 1 if ok else 0, "yellow": 0, "red": 0 if ok else 1},
         "message": (
             "Fresh Base Sepolia emission tester wallet is funded, self-validated, indexed, and claimable."
             if ok

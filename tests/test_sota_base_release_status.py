@@ -248,6 +248,25 @@ def _write_publisher_report(path: Path, *, schema: str, status: str = "idle", ok
     )
 
 
+def _write_fresh_emission_tester(path: Path, *, ok: bool = True, status: str = "green") -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(
+        json.dumps(
+            {
+                "schema": "sota-base-fresh-emission-tester/v1",
+                "ok": ok,
+                "status": status,
+                "reward_address": "0x3333333333333333333333333333333333333333",
+                "epoch": 12,
+                "eligibility": {"eligible": ok, "claim_state": {"status": "claimable" if ok else "not_claimable"}},
+                "claim_transaction": {"ok": ok, "chain_id": "84532", "to": "0x4444444444444444444444444444444444444444"},
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+
 def _args(tmp_path: Path, *, local_only: bool = False):
     return argparse.Namespace(
         local_report=tmp_path / "local" / "report.json",
@@ -409,6 +428,7 @@ def test_release_status_full_requires_all_testnet_gates(tmp_path: Path) -> None:
         "testnet_secret_handles",
         "testnet_apprunner_source_pack",
         "testnet_browser_smoke",
+        "testnet_fresh_emission_tester",
         "claim_tx_evidence",
     }
     operator_gate = next(gate for gate in report["blocked_gates"] if gate["name"] == "testnet_operator_run")
@@ -430,6 +450,7 @@ def test_release_status_full_green_requires_operator_gate(tmp_path: Path) -> Non
     _write_report(args.testnet_artifacts_dir / "base-sota-testnet-apprunner-source-pack.json", schema="sota-base-testnet-apprunner-source-pack/v1", ok=True)
     _write_report(args.testnet_artifacts_dir / "base-sota-testnet-container-pack.json", schema="sota-base-testnet-container-pack/v1", ok=False, status="yellow")
     _write_report(args.testnet_artifacts_dir / "base-sota-testnet-browser-smoke.json", schema="sota-base-testnet-browser-smoke/v1", ok=True)
+    _write_fresh_emission_tester(args.testnet_artifacts_dir / "base-sota-fresh-emission-tester.json")
     _write_snapshot_source(args.snapshot_dir)
     _write_snapshot_genesis_artifact(args.testnet_artifacts_dir / "base-sota-testnet-genesis-claim-artifact.json")
     _write_claim_evidence(
@@ -459,6 +480,7 @@ def test_release_status_full_green_requires_operator_gate(tmp_path: Path) -> Non
         "testnet_apprunner_source_pack",
         "testnet_container_pack",
         "testnet_browser_smoke",
+        "testnet_fresh_emission_tester",
         "claim_tx_evidence",
     ]
 
@@ -480,6 +502,7 @@ def test_release_status_checks_publisher_timers_when_enabled(tmp_path: Path, mon
     _write_report(args.testnet_artifacts_dir / "base-sota-testnet-apprunner-source-pack.json", schema="sota-base-testnet-apprunner-source-pack/v1", ok=True)
     _write_report(args.testnet_artifacts_dir / "base-sota-testnet-container-pack.json", schema="sota-base-testnet-container-pack/v1", ok=False, status="yellow")
     _write_report(args.testnet_artifacts_dir / "base-sota-testnet-browser-smoke.json", schema="sota-base-testnet-browser-smoke/v1", ok=True)
+    _write_fresh_emission_tester(args.testnet_artifacts_dir / "base-sota-fresh-emission-tester.json")
     _write_snapshot_source(args.snapshot_dir)
     _write_snapshot_genesis_artifact(args.testnet_artifacts_dir / "base-sota-testnet-genesis-claim-artifact.json")
     _write_claim_evidence(
@@ -511,6 +534,7 @@ def test_release_status_checks_publisher_timers_when_enabled(tmp_path: Path, mon
         "testnet_apprunner_source_pack",
         "testnet_container_pack",
         "testnet_browser_smoke",
+        "testnet_fresh_emission_tester",
         "claim_tx_evidence",
     ]
 
@@ -555,6 +579,7 @@ def test_release_status_can_defer_real_holder_test_when_binding_path_is_ready(tm
     _write_report(args.testnet_artifacts_dir / "base-sota-testnet-apprunner-source-pack.json", schema="sota-base-testnet-apprunner-source-pack/v1", ok=True)
     _write_report(args.testnet_artifacts_dir / "base-sota-testnet-container-pack.json", schema="sota-base-testnet-container-pack/v1", ok=False, status="yellow")
     _write_report(args.testnet_artifacts_dir / "base-sota-testnet-browser-smoke.json", schema="sota-base-testnet-browser-smoke/v1", ok=True)
+    _write_fresh_emission_tester(args.testnet_artifacts_dir / "base-sota-fresh-emission-tester.json")
     _write_publisher_report(
         args.testnet_artifacts_dir / "base-sota-genesis-batch-publisher.json",
         schema="sota-base-genesis-batch-publisher/v1",
@@ -605,6 +630,7 @@ def test_release_status_rejects_stale_browser_smoke_without_binding_checks(tmp_p
         ok=True,
         checks=[{"name": "claims_page_text", "status": "green"}],
     )
+    _write_fresh_emission_tester(args.testnet_artifacts_dir / "base-sota-fresh-emission-tester.json")
     _write_snapshot_source(args.snapshot_dir)
     _write_snapshot_genesis_artifact(args.testnet_artifacts_dir / "base-sota-testnet-genesis-claim-artifact.json")
     _write_claim_evidence(
@@ -638,6 +664,7 @@ def test_release_status_marks_stale_claim_tx_evidence_red(tmp_path: Path) -> Non
     _write_report(args.testnet_artifacts_dir / "base-sota-testnet-apprunner-source-pack.json", schema="sota-base-testnet-apprunner-source-pack/v1", ok=True)
     _write_report(args.testnet_artifacts_dir / "base-sota-testnet-container-pack.json", schema="sota-base-testnet-container-pack/v1", ok=False, status="yellow")
     _write_report(args.testnet_artifacts_dir / "base-sota-testnet-browser-smoke.json", schema="sota-base-testnet-browser-smoke/v1", ok=True)
+    _write_fresh_emission_tester(args.testnet_artifacts_dir / "base-sota-fresh-emission-tester.json")
     _write_snapshot_source(args.snapshot_dir)
     _write_snapshot_genesis_artifact(args.testnet_artifacts_dir / "base-sota-testnet-genesis-claim-artifact.json")
     _write_seed_report(
@@ -674,6 +701,7 @@ def test_release_status_claim_evidence_uses_artifact_wallet_over_seed_wallet(tmp
     _write_report(args.testnet_artifacts_dir / "base-sota-testnet-apprunner-source-pack.json", schema="sota-base-testnet-apprunner-source-pack/v1", ok=True)
     _write_report(args.testnet_artifacts_dir / "base-sota-testnet-container-pack.json", schema="sota-base-testnet-container-pack/v1", ok=False, status="yellow")
     _write_report(args.testnet_artifacts_dir / "base-sota-testnet-browser-smoke.json", schema="sota-base-testnet-browser-smoke/v1", ok=True)
+    _write_fresh_emission_tester(args.testnet_artifacts_dir / "base-sota-fresh-emission-tester.json")
     _write_snapshot_source(args.snapshot_dir)
     _write_snapshot_genesis_artifact(args.testnet_artifacts_dir / "base-sota-testnet-genesis-claim-artifact.json")
     emission_artifact = {
@@ -719,6 +747,7 @@ def test_release_status_rejects_seeded_genesis_without_snapshot_alpha(tmp_path: 
     _write_report(args.testnet_artifacts_dir / "base-sota-testnet-apprunner-source-pack.json", schema="sota-base-testnet-apprunner-source-pack/v1", ok=True)
     _write_report(args.testnet_artifacts_dir / "base-sota-testnet-container-pack.json", schema="sota-base-testnet-container-pack/v1", ok=False, status="yellow")
     _write_report(args.testnet_artifacts_dir / "base-sota-testnet-browser-smoke.json", schema="sota-base-testnet-browser-smoke/v1", ok=True)
+    _write_fresh_emission_tester(args.testnet_artifacts_dir / "base-sota-fresh-emission-tester.json")
     _write_report(args.testnet_artifacts_dir / "base-sota-claim-tx-evidence.json", schema="sota-base-claim-tx-evidence/v1", ok=True)
     _write_snapshot_source(args.snapshot_dir)
     seeded = {
@@ -769,6 +798,7 @@ def test_release_status_reports_public_binding_export_count(tmp_path: Path, monk
     _write_report(args.testnet_artifacts_dir / "base-sota-testnet-apprunner-source-pack.json", schema="sota-base-testnet-apprunner-source-pack/v1", ok=True)
     _write_report(args.testnet_artifacts_dir / "base-sota-testnet-container-pack.json", schema="sota-base-testnet-container-pack/v1", ok=False, status="yellow")
     _write_report(args.testnet_artifacts_dir / "base-sota-testnet-browser-smoke.json", schema="sota-base-testnet-browser-smoke/v1", ok=True)
+    _write_fresh_emission_tester(args.testnet_artifacts_dir / "base-sota-fresh-emission-tester.json")
     _write_report(args.testnet_artifacts_dir / "base-sota-claim-tx-evidence.json", schema="sota-base-claim-tx-evidence/v1", ok=True)
     _write_snapshot_source(args.snapshot_dir)
     seeded = {

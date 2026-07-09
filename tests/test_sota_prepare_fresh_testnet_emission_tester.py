@@ -128,6 +128,7 @@ def test_prepare_fresh_emission_tester_runs_real_seed_publish_shape(tmp_path: Pa
 
     assert report["ok"] is True
     assert report["status"] == "green"
+    assert report["summary"] == {"green": 1, "yellow": 0, "red": 0}
     assert report["private_key_printed"] is False
     assert report["reward_key_file"] == str(args.reward_key_file)
     assert report["epoch"] == 12

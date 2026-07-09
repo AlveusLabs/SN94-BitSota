@@ -1103,6 +1103,14 @@ def default_gates(*, local_report: Path, local_claim_proof: Path, testnet_dir: P
                     next_action="Deploy public testnet services/artifacts, then rerun scripts/sota_base_testnet_browser_smoke.py.",
                 ),
                 GateSpec(
+                    name="testnet_fresh_emission_tester",
+                    phase="base_sepolia",
+                    path=testnet_dir / "base-sota-fresh-emission-tester.json",
+                    expected_schema="sota-base-fresh-emission-tester/v1",
+                    required=True,
+                    next_action="Run scripts/sota_prepare_fresh_testnet_emission_tester.py so a fresh funded wallet has a real self-validated emission claim and unsigned MetaMask calldata.",
+                ),
+                GateSpec(
                     name="claim_tx_evidence",
                     phase="base_sepolia",
                     path=testnet_dir / "base-sota-claim-tx-evidence.json",
