@@ -92,6 +92,26 @@ def _write_artifacts(args: argparse.Namespace, *, readiness_ok: bool = True, env
         + "\n",
         encoding="utf-8",
     )
+    args.artifacts_dir.joinpath("base-sota-fresh-emission-tester.json").write_text(
+        json.dumps(
+            {
+                "schema": "sota-base-fresh-emission-tester/v1",
+                "ok": True,
+                "status": "green",
+                "reward_address": "0x7777777777777777777777777777777777777777",
+                "lane_id": "base:sota-local",
+                "epoch": 2,
+                "private_key_printed": False,
+                "claim_transaction": {
+                    "ok": True,
+                    "chain_id": "84532",
+                    "data_prefix": "0x12",
+                },
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
 
 
 def _install_green_http(module, monkeypatch) -> None:
@@ -199,6 +219,9 @@ def test_browser_smoke_green_for_public_testnet_fixture(tmp_path: Path, monkeypa
     assert names["genesis_binding_submit_route"]["status"] == "green"
     assert names["genesis_calldata"]["status"] == "green"
     assert names["emission_calldata"]["status"] == "green"
+    assert names["fresh_emission_tester_report"]["status"] == "green"
+    assert names["fresh_emission_lookup"]["status"] == "green"
+    assert names["fresh_emission_calldata"]["status"] == "green"
     assert names["self_validation_evidence"]["status"] == "green"
     assert report["targets"]["test_wallet_address"] == "0x5555555555555555555555555555555555555555"
     assert report["targets"]["test_genesis_wallet_address"] == "0x6666666666666666666666666666666666666666"
@@ -213,7 +236,10 @@ def test_browser_smoke_accepts_already_claimed_seeded_wallet(tmp_path: Path, mon
     original_http_json = module._http_json
 
     def wrapped_json(method: str, url: str, *, payload=None, timeout: float):
-        if "/api/v1/base/eligibility/" in url:
+        if "/api/v1/base/eligibility/" in url and (
+            "0x5555555555555555555555555555555555555555" in url
+            or "0x6666666666666666666666666666666666666666" in url
+        ):
             return {
                 "eligible": True,
                 "credits": {
@@ -223,7 +249,10 @@ def test_browser_smoke_accepts_already_claimed_seeded_wallet(tmp_path: Path, mon
                 },
                 "claim_state": {"status": "claimed", "claimable": False},
             }
-        if url.endswith("/api/v1/base/claims/transaction"):
+        if (
+            url.endswith("/api/v1/base/claims/transaction")
+            and str(dict(payload or {}).get("evmAddress") or "").lower() != "0x7777777777777777777777777777777777777777"
+        ):
             raise RuntimeError('POST failed with HTTP 409: {"detail":{"code":"already_claimed"}}')
         return original_http_json(method, url, payload=payload, timeout=timeout)
 
@@ -236,6 +265,51 @@ def test_browser_smoke_accepts_already_claimed_seeded_wallet(tmp_path: Path, mon
     assert names["genesis_calldata"]["status"] == "green"
     assert "already complete" in names["genesis_calldata"]["detail"]
     assert names["emission_calldata"]["status"] == "green"
+    assert names["fresh_emission_calldata"]["status"] == "green"
+
+
+def test_browser_smoke_requires_fresh_emission_tester_report(tmp_path: Path, monkeypatch) -> None:
+    module = _load_module()
+    args = _args(tmp_path)
+    _write_artifacts(args)
+    args.artifacts_dir.joinpath("base-sota-fresh-emission-tester.json").unlink()
+    _install_green_http(module, monkeypatch)
+
+    report = module.run_browser_smoke(args)
+    names = {check["name"]: check for check in report["checks"]}
+
+    assert report["ok"] is False
+    assert names["fresh_emission_tester_report"]["status"] == "red"
+
+
+def test_browser_smoke_rejects_claimed_fresh_emission_tester(tmp_path: Path, monkeypatch) -> None:
+    module = _load_module()
+    args = _args(tmp_path)
+    _write_artifacts(args)
+    _install_green_http(module, monkeypatch)
+
+    original_http_json = module._http_json
+
+    def wrapped_json(method: str, url: str, *, payload=None, timeout: float):
+        if "/api/v1/base/eligibility/0x7777777777777777777777777777777777777777" in url:
+            return {
+                "eligible": True,
+                "credits": {
+                    "total_sota": {"raw": "2000000000000000000"},
+                    "claimed_sota": {"raw": "2000000000000000000"},
+                    "unclaimed_sota": {"raw": "0"},
+                },
+                "claim_state": {"status": "claimed", "claimable": False},
+            }
+        return original_http_json(method, url, payload=payload, timeout=timeout)
+
+    monkeypatch.setattr(module, "_http_json", wrapped_json)
+
+    report = module.run_browser_smoke(args)
+    names = {check["name"]: check for check in report["checks"]}
+
+    assert report["ok"] is False
+    assert names["fresh_emission_lookup"]["status"] == "red"
 
 
 def test_browser_smoke_rejects_readiness_that_is_not_green(tmp_path: Path, monkeypatch) -> None:

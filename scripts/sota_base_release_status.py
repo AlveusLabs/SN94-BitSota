@@ -808,8 +808,11 @@ def _browser_smoke_current_gate(testnet_dir: Path, gate: dict[str, Any]) -> dict
         "genesis_binding_submit_route",
         "genesis_lookup",
         "emission_lookup",
+        "fresh_emission_tester_report",
+        "fresh_emission_lookup",
         "genesis_calldata",
         "emission_calldata",
+        "fresh_emission_calldata",
         "self_validation_evidence",
     }
     missing = sorted(required - set(checks))

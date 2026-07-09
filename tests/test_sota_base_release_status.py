@@ -37,8 +37,11 @@ def _write_report(
             {"name": "genesis_binding_submit_route", "status": "green"},
             {"name": "genesis_lookup", "status": "green"},
             {"name": "emission_lookup", "status": "green"},
+            {"name": "fresh_emission_tester_report", "status": "green"},
+            {"name": "fresh_emission_lookup", "status": "green"},
             {"name": "genesis_calldata", "status": "green"},
             {"name": "emission_calldata", "status": "green"},
+            {"name": "fresh_emission_calldata", "status": "green"},
             {"name": "self_validation_evidence", "status": "green"},
         ]
     path.parent.mkdir(parents=True, exist_ok=True)

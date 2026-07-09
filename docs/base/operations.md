@@ -770,7 +770,8 @@ browser smoke before handing the testnet to a nontechnical MetaMask tester. It
 loads the public claims page, requires Base Sepolia UI copy and readiness
 wording, checks the public claims API/indexer, verifies the snapshot old
 coldkey/test-wallet genesis claim, verifies the self-validated emission
-claim, checks unsigned claim calldata for both claim types, and confirms
+claim, requires a separate fresh funded emission tester report, checks
+unsigned claim calldata for seeded and fresh claims, and confirms
 autoresearch self-validation evidence is public.
 
 ```bash

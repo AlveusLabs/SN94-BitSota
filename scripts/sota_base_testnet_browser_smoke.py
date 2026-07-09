@@ -244,6 +244,14 @@ def _already_claimed_error(exc: Exception) -> bool:
     return "already_claimed" in str(exc)
 
 
+def _is_claimable(payload: dict[str, Any]) -> bool:
+    state = dict(payload.get("claim_state") or {})
+    status = str(state.get("status") or "").lower()
+    unclaimed = _as_int(_raw_credit(payload, "unclaimed_sota")) or 0
+    total = _as_int(_raw_credit(payload, "total_sota")) or 0
+    return bool(payload.get("eligible")) and not _claim_is_fully_claimed(payload) and (unclaimed > 0 or total > 0) and status != "not_claimable"
+
+
 def _readiness_payload(args: argparse.Namespace, readiness_url: str) -> dict[str, Any]:
     local = _load_json(args.readiness_file)
     if local:
@@ -312,6 +320,7 @@ def _config(args: argparse.Namespace) -> tuple[dict[str, Any], dict[str, str], d
         "epoch": str(args.epoch or env.get("SOTA_TEST_EPOCH") or "1"),
         "env_chain_id": env.get("NEXT_PUBLIC_SOTA_BASE_CHAIN_ID") or env.get("SOTA_BASE_CHAIN_ID") or "",
         "manifest_chain_id": str(dict(manifest.get("chain") or {}).get("chain_id") or ""),
+        "artifacts_dir": str(args.artifacts_dir),
     }
     return manifest, env, values
 
@@ -678,6 +687,116 @@ def _claim_lookup_checks(values: dict[str, str], *, timeout: float) -> list[Chec
                 )
             else:
                 checks.append(Check(f"{label}_calldata", "red", f"{label.capitalize()} calldata failed: {exc}", f"Fix transaction builder for {label} claims."))
+    fresh_report_path = Path(values["artifacts_dir"]) / "base-sota-fresh-emission-tester.json"
+    try:
+        fresh_report = _load_json(fresh_report_path)
+    except Exception as exc:
+        checks.append(
+            Check(
+                "fresh_emission_tester_report",
+                "red",
+                f"Fresh emission tester report is invalid: {exc}",
+                "Run scripts/sota_prepare_fresh_testnet_emission_tester.py and keep its JSON report.",
+            )
+        )
+        return checks
+    if not fresh_report:
+        checks.append(
+            Check(
+                "fresh_emission_tester_report",
+                "red",
+                f"Fresh emission tester report is missing: {fresh_report_path}.",
+                "Run scripts/sota_prepare_fresh_testnet_emission_tester.py before public tester handoff.",
+            )
+        )
+        return checks
+    fresh_reward = str(fresh_report.get("reward_address") or "")
+    fresh_lane_id = str(fresh_report.get("lane_id") or lane_id)
+    fresh_tx = dict(fresh_report.get("claim_transaction") or {})
+    fresh_report_ok = (
+        fresh_report.get("schema") == "sota-base-fresh-emission-tester/v1"
+        and fresh_report.get("ok") is True
+        and fresh_report.get("status") == "green"
+        and _is_evm_address(fresh_reward)
+        and fresh_lane_id
+        and fresh_tx.get("ok") is True
+        and _as_int(fresh_tx.get("chain_id")) == BASE_SEPOLIA_CHAIN_ID
+        and str(fresh_tx.get("data_prefix") or "").startswith("0x")
+        and fresh_report.get("private_key_printed") is False
+    )
+    checks.append(
+        _result_check(
+            "fresh_emission_tester_report",
+            fresh_report_ok,
+            "Fresh emission tester report exists, is green, funded, indexed, and does not print the private key.",
+            (
+                f"Fresh emission tester report is not ready: schema={fresh_report.get('schema')!r}, "
+                f"status={fresh_report.get('status')!r}, ok={fresh_report.get('ok')!r}, "
+                f"reward_address={fresh_reward or 'missing'}, lane_id={fresh_lane_id or 'missing'}, "
+                f"tx_ok={fresh_tx.get('ok')!r}, chain_id={fresh_tx.get('chain_id')!r}, "
+                f"private_key_printed={fresh_report.get('private_key_printed')!r}."
+            ),
+            remediation="Regenerate the fresh emission tester with a funded wallet and an unclaimed indexed emission.",
+        )
+    )
+    if not fresh_report_ok:
+        return checks
+    fresh_query = urlencode({"evm_address": fresh_reward, "subnet_id": fresh_lane_id})
+    try:
+        fresh = dict(_http_json("GET", f"{_join_url(base, f'/api/v1/base/eligibility/{quote(fresh_reward)}')}?{fresh_query}", timeout=timeout) or {})
+    except Exception as exc:
+        checks.append(Check("fresh_emission_lookup", "red", f"Fresh emission lookup failed: {exc}", "Import/sync the fresh self-validated emission root into the claims API."))
+        fresh = {}
+    checks.append(
+        _result_check(
+            "fresh_emission_lookup",
+            _is_claimable(fresh),
+            "Fresh tester wallet has an unclaimed self-validated emission SOTA claim.",
+            (
+                f"Fresh tester emission lookup is not claimable: eligible={fresh.get('eligible')!r}, "
+                f"total_sota={_raw_credit(fresh, 'total_sota') or 'missing'}, "
+                f"unclaimed_sota={_raw_credit(fresh, 'unclaimed_sota') or 'missing'}, "
+                f"claim_state={dict(fresh.get('claim_state') or {}).get('status')!r}."
+            ),
+            remediation="Publish/import a fresh emission root for an unclaimed funded tester wallet.",
+        )
+    )
+    try:
+        tx_response = dict(
+            _http_json(
+                "POST",
+                _join_url(base, "/api/v1/base/claims/transaction"),
+                payload={"program": "emission", "evmAddress": fresh_reward, "laneId": fresh_lane_id},
+                timeout=timeout,
+            )
+            or {}
+        )
+        tx = dict(tx_response.get("transaction") or {})
+        data = str(tx.get("data") or "")
+        expected_prefix = str(fresh_tx.get("data_prefix") or "")
+        checks.append(
+            _result_check(
+                "fresh_emission_calldata",
+                data.startswith("0x")
+                and _as_int(tx.get("chainId")) == BASE_SEPOLIA_CHAIN_ID
+                and (not expected_prefix or data.startswith(expected_prefix)),
+                "Claims API returns unsigned calldata for the fresh tester emission claim.",
+                (
+                    f"Fresh emission transaction builder returned chainId={tx.get('chainId')!r}, "
+                    f"data_prefix={data[:18]!r}, expected_prefix={expected_prefix[:18]!r}."
+                ),
+                remediation="Fix emission transaction building for the fresh tester wallet before handoff.",
+            )
+        )
+    except Exception as exc:
+        checks.append(
+            Check(
+                "fresh_emission_calldata",
+                "red",
+                f"Fresh emission calldata failed: {exc}",
+                "Regenerate the fresh tester if already claimed; otherwise fix emission transaction building.",
+            )
+        )
     return checks
 
 
