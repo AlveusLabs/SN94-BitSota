@@ -306,7 +306,8 @@ def _snapshot_genesis_gate(testnet_dir: Path, snapshot_dir: Path, args: argparse
         "path": str(artifact_path),
         "expected_schema": "sota-base-claim-artifact/v1",
         "next_action": (
-            "Have a snapshot holder submit a signed coldkey binding through the claims UI/API, then rerun "
+            "Have a snapshot holder submit a signed coldkey binding through the claims UI Genesis binding panel "
+            "or scripts/sota_sign_snapshot_binding.py, then rerun "
             "scripts/sota_base_testnet_operator.py "
             f"with --snapshot-dir {snapshot_dir} and --snapshot-claim-bindings-url "
             '"$SOTA_CLAIMS_API_URL/api/v1/base/genesis/bindings"; alternatively pass '

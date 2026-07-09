@@ -177,8 +177,9 @@ def _assert_snapshot_binding_inputs(args: argparse.Namespace) -> list[Path]:
     if not bindings:
         raise RuntimeError(
             "Fresh Base Sepolia tester prep now requires a real signed snapshot binding. "
-            "Build a binding message with scripts/sota_snapshot_claim_bridge.py message, sign it with the Bittensor coldkey, "
-            "then rerun with --reward-key-file <known-wallet-key.json> and --snapshot-claim-binding <signed-binding.json>."
+            "Use the claims UI Genesis binding panel or scripts/sota_sign_snapshot_binding.py to submit/sign it with "
+            "the Bittensor coldkey, then rerun with --reward-key-file <known-wallet-key.json> and "
+            "--snapshot-claim-binding <signed-binding.json>."
         )
     if args.reward_key_file is None:
         raise RuntimeError(

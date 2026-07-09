@@ -1494,8 +1494,9 @@ def run_operator(args: argparse.Namespace) -> dict[str, Any]:
                     "red",
                     "No signed snapshot coldkey binding was supplied; refusing to publish the seeded genesis artifact.",
                     (
-                        "Build a binding message with scripts/sota_snapshot_claim_bridge.py message, have the holder sign it, "
-                        "then rerun with --snapshot-claim-binding <signed-binding.json>."
+                        "Have the holder use the claims UI Genesis binding panel or scripts/sota_sign_snapshot_binding.py "
+                        "to submit a signed coldkey binding, then rerun with --snapshot-claim-bindings-url "
+                        '"$SOTA_CLAIMS_API_URL/api/v1/base/genesis/bindings" or --snapshot-claim-binding <signed-binding.json>.'
                     ),
                     artifacts={
                         "snapshot_dir": str(getattr(args, "snapshot_dir", DEFAULT_SNAPSHOT_DIR)),
@@ -1554,8 +1555,8 @@ def run_operator(args: argparse.Namespace) -> dict[str, Any]:
                     and not bool(getattr(args, "allow_seeded_genesis", False))
                 ):
                     remediation = (
-                        "Submit/export a signed snapshot coldkey binding, then build snapshot genesis artifacts; "
-                        "seeded genesis is refused by default."
+                        "Submit/export a signed snapshot coldkey binding through the claims UI/API, then build snapshot "
+                        "genesis artifacts; seeded genesis is refused by default."
                     )
                 steps.append(
                     StepResult(

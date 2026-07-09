@@ -354,8 +354,9 @@ python3 scripts/sota_prepare_fresh_testnet_tester.py
 The command now fails fast unless `--reward-key-file` and
 `--snapshot-claim-binding` are supplied. The binding's `reward_address` must
 match the wallet file. Build the binding message with
-`sota_snapshot_claim_bridge.py message`, have the holder sign it with the
-Bittensor coldkey, then rerun prep with the signed binding. The command prints
+the Genesis binding panel in the claims UI, or
+`scripts/sota_sign_snapshot_binding.py` if the holder signs from a local
+Bittensor wallet. Then rerun prep with the signed binding. The command prints
 only the reward address, claim URL, handoff path, and next operator action; it
 does not print private keys.
 
