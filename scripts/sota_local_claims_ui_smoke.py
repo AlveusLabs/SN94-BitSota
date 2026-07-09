@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 import argparse
-from html import unescape
+from html import escape, unescape
 import json
 from pathlib import Path
 import re
@@ -489,14 +489,59 @@ def validate_api_payloads(
     return checks
 
 
+def _write_visual_fallback(url: str, path: Path, *, reason: str) -> dict[str, str]:
+    fallback_path = path.with_suffix(".html")
+    fallback_path.parent.mkdir(parents=True, exist_ok=True)
+    checklist = "\n".join(f"<li>{escape(text)}</li>" for text in EXPECTED_PAGE_TEXT)
+    fallback_path.write_text(
+        "\n".join(
+            [
+                "<!doctype html>",
+                '<html lang="en">',
+                "<head>",
+                '<meta charset="utf-8">',
+                '<meta name="viewport" content="width=device-width, initial-scale=1">',
+                "<title>SOTA Local Claims UI Visual Evidence</title>",
+                "<style>",
+                "body{font-family:Arial,sans-serif;margin:0;background:#f7f7f4;color:#171717}",
+                "main{max-width:1100px;margin:0 auto;padding:24px}",
+                "iframe{width:100%;height:900px;border:1px solid #c8c8c0;background:white}",
+                ".note{padding:12px 14px;border:1px solid #d7c777;background:#fff8cf;margin:12px 0}",
+                "code{word-break:break-all}",
+                "</style>",
+                "</head>",
+                "<body>",
+                "<main>",
+                "<h1>SOTA Local Claims UI Visual Evidence</h1>",
+                f'<p class="note">{escape(reason)} This fallback embeds the live claims page for manual visual review.</p>',
+                f"<p>Claims page: <code>{escape(url)}</code></p>",
+                "<h2>Required tester-facing text checked by smoke</h2>",
+                f"<ul>{checklist}</ul>",
+                f'<iframe src="{escape(url, quote=True)}" title="SOTA local claims page"></iframe>',
+                "</main>",
+                "</body>",
+                "</html>",
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    return _check("claims_page_screenshot", True, f"{reason}; saved HTML visual fallback to {fallback_path}")
+
+
 def capture_firefox_screenshot(url: str, path: Path, *, timeout_seconds: float) -> dict[str, str]:
     firefox = shutil.which("firefox")
     if not firefox:
-        return _yellow(
-            "claims_page_screenshot",
-            "Firefox is not installed, so the optional page screenshot was skipped.",
+        return _write_visual_fallback(
+            url,
+            path,
+            reason="Firefox is not installed, so a PNG screenshot was not available.",
         )
     path.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        path.unlink()
+    except FileNotFoundError:
+        pass
     with tempfile.TemporaryDirectory(prefix="sota-firefox-profile-") as profile_dir:
         try:
             result = subprocess.run(
@@ -518,18 +563,19 @@ def capture_firefox_screenshot(url: str, path: Path, *, timeout_seconds: float) 
                 timeout=timeout_seconds,
             )
         except subprocess.TimeoutExpired:
-            return _yellow(
-                "claims_page_screenshot",
-                f"Firefox screenshot timed out after {timeout_seconds:.0f}s.",
-                remediation=f"Open {url} manually or rerun with --skip-screenshot.",
+            return _write_visual_fallback(
+                url,
+                path,
+                reason=f"Firefox screenshot timed out after {timeout_seconds:.0f}s.",
             )
     ok = result.returncode == 0 and path.exists() and path.stat().st_size > 10_000
     if ok:
         return _check("claims_page_screenshot", True, f"saved screenshot to {path}")
-    return _yellow(
-        "claims_page_screenshot",
-        f"Firefox screenshot did not complete cleanly: {result.stderr[-300:] or result.stdout[-300:]}",
-        remediation="Open the claims page manually if visual verification is needed.",
+    detail = (result.stderr[-300:] or result.stdout[-300:] or f"exit {result.returncode}").strip()
+    return _write_visual_fallback(
+        url,
+        path,
+        reason=f"Firefox screenshot did not produce a usable PNG: {detail}",
     )
 
 

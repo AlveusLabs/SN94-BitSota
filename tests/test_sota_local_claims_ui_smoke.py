@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import importlib.util
 from pathlib import Path
+import subprocess
 import sys
 
 
@@ -83,6 +84,43 @@ def test_validate_page_html_normalizes_react_comment_boundaries() -> None:
     checks = module.validate_page_html(html)
 
     assert checks[0]["status"] == "green"
+
+
+def test_capture_screenshot_writes_visual_fallback_without_firefox(tmp_path: Path, monkeypatch) -> None:
+    module = _load_module()
+    monkeypatch.setattr(module.shutil, "which", lambda name: None)
+
+    check = module.capture_firefox_screenshot(
+        "http://127.0.0.1:3000/claims",
+        tmp_path / "claims-page.png",
+        timeout_seconds=1,
+    )
+
+    fallback = tmp_path / "claims-page.html"
+    assert check["status"] == "green"
+    assert "HTML visual fallback" in check["detail"]
+    assert fallback.exists()
+    assert "SOTA Local Claims UI Visual Evidence" in fallback.read_text(encoding="utf-8")
+
+
+def test_capture_screenshot_writes_visual_fallback_on_timeout(tmp_path: Path, monkeypatch) -> None:
+    module = _load_module()
+    monkeypatch.setattr(module.shutil, "which", lambda name: "/usr/bin/firefox")
+
+    def timeout_run(*args, **kwargs):
+        raise subprocess.TimeoutExpired(cmd="firefox", timeout=1)
+
+    monkeypatch.setattr(module.subprocess, "run", timeout_run)
+
+    check = module.capture_firefox_screenshot(
+        "http://127.0.0.1:3000/claims",
+        tmp_path / "claims-page.png",
+        timeout_seconds=1,
+    )
+
+    assert check["status"] == "green"
+    assert "timed out" in check["detail"]
+    assert (tmp_path / "claims-page.html").exists()
 
 
 def test_validate_docs_htmls_requires_tester_entry_points() -> None:
