@@ -539,7 +539,7 @@ def build_handoff(args: argparse.Namespace) -> dict[str, Any]:
     ]
     if args.environment in {"testnet", "both"}:
         warnings.append(
-            "Use Base Sepolia only for testnet dry runs. Do not use Base mainnet, production Bittensor wallets, production TAO, or production private keys."
+            "Use Base Sepolia only for testnet dry runs. A real holder may sign the binding with the snapshot coldkey, but must never paste a seed phrase, mnemonic, or private key into the site."
         )
     payload: dict[str, Any] = {
         "schema": "sota-base-tester-handoff/v1",

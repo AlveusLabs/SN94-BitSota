@@ -24,8 +24,9 @@ Confirm these are all true:
    exactly matches it. If the handoff says real holder testing is deferred, use
    the Base wallet you want to receive SOTA.
 
-Do not use Base mainnet. Do not use a production Bittensor wallet, production
-TAO wallet, real seed phrase, or production private key for this dry run.
+Do not use Base mainnet. If you are testing the real holder path, you may sign
+the binding with the matching snapshot coldkey, but the site must never receive
+your seed phrase, mnemonic, private key, or production TAO transfer.
 
 ## If The Handoff Says Not Ready
 

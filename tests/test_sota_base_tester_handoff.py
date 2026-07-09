@@ -277,6 +277,8 @@ def test_tester_handoff_contains_local_urls_and_warning(tmp_path: Path) -> None:
     assert handoff["testnet"]["faucet_sources"][0]["name"] == "Base network faucets"
     assert [item["name"] for item in handoff["local"]["peer_validators"]] == ["Bob", "Charlie", "Dave"]
     assert "Never paste a real seed phrase" in markdown
+    assert "A real holder may sign the binding with the snapshot coldkey" in markdown
+    assert "production Bittensor wallets" not in markdown
     assert "Local stack ready: true" in markdown
     assert "Local ready: false" in markdown
     assert "Local MetaMask ready: false" in markdown
