@@ -209,6 +209,7 @@ def _restart_local_stack(timeout: float) -> str:
         str(DOCS_REPO / "scripts" / "sota_local_demo.py"),
         "launch",
         "--skip-claim-proof",
+        "--skip-miner-swarm-proof",
     ]
     result = subprocess.run(command, cwd=DOCS_REPO, check=False, text=True, capture_output=True, timeout=timeout)
     if result.returncode != 0:

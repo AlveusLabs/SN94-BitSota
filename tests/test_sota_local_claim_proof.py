@@ -165,7 +165,7 @@ def test_claim_proof_reset_launches_without_recursive_proof(monkeypatch) -> None
 
     assert output == "SOTA Base local demo is ready."
     command, kwargs = calls[0]
-    assert command[-2:] == ["launch", "--skip-claim-proof"]
+    assert command[-3:] == ["launch", "--skip-claim-proof", "--skip-miner-swarm-proof"]
     assert kwargs["timeout"] == 12.0
 
 

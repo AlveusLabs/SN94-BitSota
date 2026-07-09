@@ -177,6 +177,12 @@ token and root-publisher private key from AWS Secrets Manager at runtime,
 builds one root for the batch, publishes it, imports the artifact, and marks
 the included binding hashes in the claims API.
 
+For unattended operation, the wrapper first accepts
+`SOTA_BASE_INDEXER_ADMIN_TOKEN` and `SOTA_ROOT_PUBLISHER_PRIVATE_KEY` from the
+environment, then falls back to AWS Secrets Manager. The systemd unit also
+loads optional values from `~/.config/base-sota-testnet-publishers.env`; keep
+that file private if used.
+
 The older manual operator path can still export accepted bindings instead of
 passing local files. Load the claims API admin token into
 `SOTA_BASE_INDEXER_ADMIN_TOKEN`; the operator also accepts the older
@@ -229,6 +235,11 @@ emission root, skips roots already indexed by the claims API, publishes a new
 root through `SOTARootRegistry`, finalizes the claim artifact with the emitted
 `root_id`, and imports it into the claims API. It does not test real holder
 claims or touch Base mainnet.
+
+The emission wrapper accepts `SOTA_BASE_INDEXER_ADMIN_TOKEN`,
+`SOTA_ROOT_PUBLISHER_PRIVATE_KEY`, and `SOTA_DEPLOYER_PRIVATE_KEY` from the
+environment before using AWS Secrets Manager. This avoids timer failures when
+an interactive AWS SSO session expires.
 
 The emission claim uses:
 

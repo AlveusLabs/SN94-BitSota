@@ -16,10 +16,11 @@
 </div>
 
 `launch` runs the readiness checks, submits and verifies one automated pair of
-local genesis/emission claims, resets the stack so the human tester still sees
-unclaimed SOTA, serves the tester handoff, leaves the services running, and
-returns to the shell. Developers who want the launcher to hold the terminal
-open can use `./scripts/sota_local_demo.py start` instead.
+local genesis/emission claims, rejects duplicate claims, resets the stack so the
+human tester still sees unclaimed SOTA, runs five local miner processes through
+self-validation and emission claims, serves the tester handoff, leaves the
+services running, and returns to the shell. Developers who want the launcher to
+hold the terminal open can use `./scripts/sota_local_demo.py start` instead.
 
 Do not assemble the demo by running separate contract, backend, indexer, or UI
 tests. Those checks are useful for developers, but they are not the product
@@ -49,7 +50,10 @@ claim events, and the wallet sends local EVM transactions to release local SOTA.
   the autoresearch backend creates a local binary-frontier task, records Alice's
   EVM-signed miner submission, records accepted evaluations from Bob, Charlie,
   and Dave, builds the emission claim root, publishes it to the local contracts,
-  and imports it into the indexer for the claims UI.
+  and imports it into the indexer for the claims UI. Before the launcher says
+  ready, it also runs five separate local miner processes, self-validates their
+  submissions with the same peer committee, publishes their emission root, and
+  submits their local SOTA claim transactions.
 </div>
 
 ## Plain-English Walkthrough
@@ -177,6 +181,8 @@ You know the demo is working when you can do these steps:
 10. Confirm the local SOTA balance reaches `7201.5 SOTA`.
 11. Open the autoresearch dashboard and see the seeded task, submission, and
    self-validation evidence.
+12. Confirm the handoff says the local miner swarm is green with five miners,
+   five accepted submissions, and five claim transactions.
 
 The launcher runs this UI smoke automatically. If you changed code after launch,
 rerun it against the already-running stack:
@@ -236,6 +242,12 @@ the final ready block. It fetches the same unsigned calldata that the claims UI
 gives MetaMask, signs it with the printed local-only key, submits both local
 claim transactions, runs the receipt verifier, writes evidence, and then resets
 the stack so the tester still starts with unclaimed SOTA.
+
+The launcher also runs the no-mock multi-miner proof before the final handoff is
+refreshed. It starts five local miner processes, submits their signed work to
+the autoresearch backend, records Bob/Charlie/Dave self-validation consensus for
+each submission, publishes an emission root for the accepted miners, and sends
+five local claim transactions for those mined emissions.
 
 If you need to rerun only that proof against an already-running stack, use:
 

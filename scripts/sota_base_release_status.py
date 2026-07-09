@@ -690,9 +690,6 @@ def _operator_gate_with_deferred_holder_test(
     }
     if "testnet_blockers" not in green_names or "testnet_browser_smoke" not in green_names:
         return gate
-    timer_gate = next((item for item in gate_reports if item.get("name") == "testnet_publisher_timers"), None)
-    if timer_gate is not None and not bool(timer_gate.get("ok")):
-        return gate
     try:
         report = _load_report(testnet_dir / "base-sota-testnet-operator-run.json") or {}
     except Exception:
@@ -728,7 +725,8 @@ def _operator_gate_with_deferred_holder_test(
             "summary": {"green": 1, "yellow": 0, "red": 0},
             "message": (
                 "Strict operator run is red only because no real holder binding was submitted. "
-                "Real holder testing is deferred; scheduled genesis and emission publishers are active and idle/ready."
+                "Real holder testing is deferred; genesis and emission publisher reports are idle/ready. "
+                "Live timer health is checked by testnet_publisher_timers."
             ),
             "next_action": "",
             "holder_test_deferred": True,

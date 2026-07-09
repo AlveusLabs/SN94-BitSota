@@ -198,6 +198,20 @@ publishes a new emission root when needed, finalizes the claim artifact with
 the emitted `root_id`, and imports it into the claims API. The wrapper loads
 the indexer admin token, root-publisher key, and deployer key from AWS Secrets
 Manager at runtime.
+
+For unattended timers, do not rely on an interactive AWS SSO browser session
+unless the operator is actively refreshing it. The wrappers first read these
+environment overrides, then fall back to AWS Secrets Manager:
+
+- `SOTA_BASE_INDEXER_ADMIN_TOKEN`
+- `SOTA_ROOT_PUBLISHER_PRIVATE_KEY`
+- `SOTA_DEPLOYER_PRIVATE_KEY` for the emission publisher
+
+The systemd units also load an optional
+`~/.config/base-sota-testnet-publishers.env` file. If that file is used, keep
+permissions tight and do not commit it. The wrappers accept either raw secret
+values or JSON values containing the expected field names.
+
 The aggregate release-status command fails `testnet_publisher_timers` if these
 user-systemd timers are not active/enabled or if the last oneshot service result
 is not success.

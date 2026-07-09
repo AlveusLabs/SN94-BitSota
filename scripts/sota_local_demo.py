@@ -41,6 +41,7 @@ LOG_DIR = RUN_DIR / "logs"
 HANDOFF_DIR = RUN_DIR / "handoff"
 STATE_PATH = RUN_DIR / "state.json"
 PIDS_PATH = RUN_DIR / "pids.json"
+LOCAL_RELEASE_STATUS_PATH = RUN_DIR / "base-sota-local-release-status.json"
 
 ANVIL_HOST = "0.0.0.0"
 ANVIL_RPC_LOCAL = "http://127.0.0.1:8545"
@@ -1615,13 +1616,29 @@ def _run_local_claim_proof_reset() -> None:
         raise RuntimeError(result.stderr.strip() or result.stdout.strip() or f"local claim proof exited {result.returncode}")
 
 
+def _run_local_miner_swarm_proof(timeout_seconds: float = 180.0) -> None:
+    report = run_local_miner_swarm(
+        count=DEMO_SWARM_MINER_COUNT,
+        report_out=RUN_DIR / "miner-swarm" / "latest.json",
+        claim=True,
+        timeout_seconds=timeout_seconds,
+    )
+    _print(
+        "local miner swarm proof passed: "
+        f"{report['miner_count']} miners, "
+        f"{report['accepted_count']} accepted submissions, "
+        f"{len(report.get('claim_transactions') or [])} claim transactions"
+    )
+
+
 def _generate_release_status_report() -> None:
     subprocess.run(
         [
             sys.executable,
             str(DOCS_REPO / "scripts" / "sota_base_release_status.py"),
+            "--local-only",
             "--report-out",
-            str(TESTNET_RUN_DIR / "base-sota-release-status.json"),
+            str(LOCAL_RELEASE_STATUS_PATH),
             "--allow-blocked",
         ],
         cwd=DOCS_REPO,
@@ -1639,6 +1656,8 @@ def _generate_handoff() -> None:
             str(DOCS_REPO / "scripts" / "sota_base_tester_handoff.py"),
             "--environment",
             "local",
+            "--release-status",
+            str(LOCAL_RELEASE_STATUS_PATH),
             "--json-out",
             str(HANDOFF_DIR / "handoff.json"),
             "--markdown-out",
@@ -1686,6 +1705,7 @@ def start_stack(
     docs: bool = True,
     hold: bool = True,
     claim_proof: bool = False,
+    miner_swarm_proof: bool = False,
     share_mode: str = "auto",
     share_warning_override: str = "",
 ) -> dict[str, Any]:
@@ -1744,6 +1764,11 @@ def start_stack(
                 _print("running state-changing local claim proof and resetting to a fresh claimable stack...")
                 _run_local_claim_proof_reset()
                 state = _load_json(STATE_PATH)
+            if miner_swarm_proof:
+                _print("running local multi-miner swarm proof...")
+                _run_local_miner_swarm_proof()
+                state = _load_json(STATE_PATH)
+            if claim_proof or miner_swarm_proof:
                 _refresh_tester_artifacts()
     except Exception:
         stop_stack()
@@ -1840,7 +1865,7 @@ def smoke() -> None:
         stop_stack()
 
 
-def main() -> int:
+def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Run the local SOTA Base fork demo stack.")
     sub = parser.add_subparsers(dest="command", required=True)
     launch = sub.add_parser("launch", help="start the full local tester stack, prove claims, reset fresh, and return")
@@ -1854,6 +1879,11 @@ def main() -> int:
         choices=("auto", "localhost", "http", "tailscale-https"),
         default="auto",
         help="how to publish browser-facing local URLs; auto uses Tailscale Serve HTTPS when available and otherwise wallet-safe localhost",
+    )
+    launch.add_argument(
+        "--skip-miner-swarm-proof",
+        action="store_true",
+        help="skip the 5-miner local swarm proof; only use for fast developer relaunches",
     )
     start = sub.add_parser("start", help="start the full local stack and keep it running")
     start.add_argument("--no-website", action="store_true", help="skip Next.js claims UI")
@@ -1889,7 +1919,7 @@ def main() -> int:
     ui_smoke = sub.add_parser("ui-smoke", help="verify the running claims UI, proxy APIs, and self-validation evidence")
     ui_smoke.add_argument("--skip-screenshot", action="store_true", help="skip optional Firefox screenshot")
     ui_smoke.add_argument("--report-out", type=Path, default=RUN_DIR / "ui-smoke" / "report.json")
-    args = parser.parse_args()
+    args = parser.parse_args(argv)
     if args.command == "stop":
         stop_stack()
         return 0
@@ -1943,6 +1973,7 @@ def main() -> int:
             docs=True,
             hold=False,
             claim_proof=not args.skip_claim_proof,
+            miner_swarm_proof=not args.skip_miner_swarm_proof,
             share_mode=args.share_mode,
         )
         return 0

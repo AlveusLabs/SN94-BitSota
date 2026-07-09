@@ -7,4 +7,5 @@ Type=oneshot
 WorkingDirectory=/home/mekaneeky/repos/SN94-BitSota-live-docs
 Environment=AWS_PROFILE=moonrocklab-frankfurt
 Environment=AWS_REGION=eu-central-1
+EnvironmentFile=-%h/.config/base-sota-testnet-publishers.env
 ExecStart=/home/mekaneeky/repos/SN94-BitSota-live-docs/scripts/run_sota_base_emission_batch_publisher_once.sh

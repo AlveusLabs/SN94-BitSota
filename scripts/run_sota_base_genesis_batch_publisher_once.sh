@@ -9,23 +9,23 @@ ROOT_PUBLISHER_SECRET_ID="${SOTA_ROOT_PUBLISHER_SECRET_ID:-base-sota/test/base-s
 cd "$(dirname "${BASH_SOURCE[0]}")/.."
 
 ADMIN_TOKEN="$(
-  aws secretsmanager get-secret-value \
-    --profile "$AWS_PROFILE_NAME" \
-    --region "$AWS_REGION_NAME" \
+  python3 scripts/sota_secret_value.py \
+    --env SOTA_BASE_INDEXER_ADMIN_TOKEN \
     --secret-id "$INDEXER_SECRET_ID" \
-    --query SecretString \
-    --output text |
-  python3 -c 'import json,sys; print(json.load(sys.stdin)["admin_token"])'
+    --field admin_token \
+    --field token \
+    --aws-profile "$AWS_PROFILE_NAME" \
+    --aws-region "$AWS_REGION_NAME"
 )"
 
 ROOT_PUBLISHER_PRIVATE_KEY="$(
-  aws secretsmanager get-secret-value \
-    --profile "$AWS_PROFILE_NAME" \
-    --region "$AWS_REGION_NAME" \
+  python3 scripts/sota_secret_value.py \
+    --env SOTA_ROOT_PUBLISHER_PRIVATE_KEY \
     --secret-id "$ROOT_PUBLISHER_SECRET_ID" \
-    --query SecretString \
-    --output text |
-  python3 -c 'import json,sys; print(json.load(sys.stdin)["root_publisher_private_key"])'
+    --field root_publisher_private_key \
+    --field private_key \
+    --aws-profile "$AWS_PROFILE_NAME" \
+    --aws-region "$AWS_REGION_NAME"
 )"
 
 export SOTA_BASE_INDEXER_ADMIN_TOKEN="$ADMIN_TOKEN"

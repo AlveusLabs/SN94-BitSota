@@ -41,6 +41,75 @@ def test_launch_claim_proof_runs_reset_after(monkeypatch) -> None:
     assert kwargs["timeout"] == 420
 
 
+def test_claim_proof_reset_relaunch_skips_recursive_miner_swarm(monkeypatch) -> None:
+    module = _load_module()
+    calls = []
+
+    def fake_run(command, **kwargs):
+        calls.append((command, kwargs))
+        return SimpleNamespace(returncode=0, stdout="proof ok", stderr="")
+
+    monkeypatch.setattr(module.subprocess, "run", fake_run)
+
+    module._run_local_claim_proof_reset()
+
+    command, _kwargs = calls[0]
+    assert "--reset-after" in command
+
+    proof_module_spec = importlib.util.spec_from_file_location(
+        "sota_local_claim_proof_for_reset_test",
+        REPO / "scripts" / "sota_local_claim_proof.py",
+    )
+    assert proof_module_spec and proof_module_spec.loader
+    proof_module = importlib.util.module_from_spec(proof_module_spec)
+    sys.modules[proof_module_spec.name] = proof_module
+    proof_module_spec.loader.exec_module(proof_module)
+
+    reset_command = []
+
+    def fake_reset_run(command, **kwargs):
+        reset_command.extend(command)
+        return SimpleNamespace(returncode=0, stdout="reset ok", stderr="")
+
+    monkeypatch.setattr(proof_module.subprocess, "run", fake_reset_run)
+
+    proof_module._restart_local_stack(timeout=1)
+
+    assert reset_command[-3:] == ["launch", "--skip-claim-proof", "--skip-miner-swarm-proof"]
+
+
+def test_launch_runs_claim_and_miner_swarm_proofs(monkeypatch) -> None:
+    module = _load_module()
+    captured = {}
+
+    def fake_start_stack(**kwargs):
+        captured.update(kwargs)
+        return {}
+
+    monkeypatch.setattr(module, "start_stack", fake_start_stack)
+
+    assert module.main(["launch"]) == 0
+
+    assert captured["claim_proof"] is True
+    assert captured["miner_swarm_proof"] is True
+
+
+def test_launch_can_skip_claim_and_miner_swarm_proofs(monkeypatch) -> None:
+    module = _load_module()
+    captured = {}
+
+    def fake_start_stack(**kwargs):
+        captured.update(kwargs)
+        return {}
+
+    monkeypatch.setattr(module, "start_stack", fake_start_stack)
+
+    assert module.main(["launch", "--skip-claim-proof", "--skip-miner-swarm-proof"]) == 0
+
+    assert captured["claim_proof"] is False
+    assert captured["miner_swarm_proof"] is False
+
+
 def test_refresh_tester_artifacts_runs_tailscale_preflight(monkeypatch) -> None:
     module = _load_module()
     calls = []
@@ -53,6 +122,45 @@ def test_refresh_tester_artifacts_runs_tailscale_preflight(monkeypatch) -> None:
     module._refresh_tester_artifacts()
 
     assert calls == ["ui", "tailscale", "release", "handoff"]
+
+
+def test_local_release_status_report_is_local_only(monkeypatch) -> None:
+    module = _load_module()
+    calls = []
+
+    def fake_run(command, **kwargs):
+        calls.append((command, kwargs))
+        return SimpleNamespace(returncode=0, stdout="", stderr="")
+
+    monkeypatch.setattr(module.subprocess, "run", fake_run)
+
+    module._generate_release_status_report()
+
+    command, kwargs = calls[0]
+    assert "--local-only" in command
+    assert str(module.LOCAL_RELEASE_STATUS_PATH) in command
+    assert str(module.TESTNET_RUN_DIR / "base-sota-release-status.json") not in command
+    assert kwargs["cwd"] == module.DOCS_REPO
+
+
+def test_local_handoff_uses_local_release_status(monkeypatch) -> None:
+    module = _load_module()
+    calls = []
+
+    def fake_run(command, **kwargs):
+        calls.append((command, kwargs))
+        return SimpleNamespace(returncode=0, stdout="", stderr="")
+
+    monkeypatch.setattr(module.subprocess, "run", fake_run)
+
+    module._generate_handoff()
+
+    command, kwargs = calls[0]
+    assert "--environment" in command
+    assert "local" in command
+    assert "--release-status" in command
+    assert str(module.LOCAL_RELEASE_STATUS_PATH) in command
+    assert kwargs["cwd"] == module.DOCS_REPO
 
 
 def test_plan_public_share_uses_tailscale_https_urls(monkeypatch) -> None:
