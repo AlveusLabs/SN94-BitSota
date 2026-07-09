@@ -643,6 +643,25 @@ def test_tester_handoff_deferred_holder_uses_own_wallet_language(tmp_path: Path)
         artifacts_dir / "base-sota-testnet-browser-smoke.json",
         {"status": "green", "summary": {"green": 27, "yellow": 0, "red": 0}},
     )
+    _write_json(
+        artifacts_dir / "base-sota-fresh-emission-tester.json",
+        {
+            "schema": "sota-base-fresh-emission-tester/v1",
+            "ok": True,
+            "status": "green",
+            "reward_address": "0x2222222222222222222222222222222222222222",
+            "reward_key_file": str(artifacts_dir / "fresh-emission-wallet.json"),
+            "private_key_printed": False,
+            "lane_id": "base:sota-local",
+            "epoch": 7,
+            "funding": {
+                "status": "funded",
+                "balance_after_eth": "0.00500000",
+                "tx_hash": "0x" + "33" * 32,
+            },
+            "next_action": "Open the Base Sepolia claims UI and claim mined emission.",
+        },
+    )
 
     handoff = module.build_handoff(args)
     markdown = module.render_markdown(handoff)
@@ -653,10 +672,16 @@ def test_tester_handoff_deferred_holder_uses_own_wallet_language(tmp_path: Path)
     assert "use your own Base Sepolia wallet for a real holder test" in markdown
     assert "Expected selected account: your own Base Sepolia wallet with test ETH" in markdown
     assert f"Expected selected account: `{seeded_wallet}`" not in markdown
+    assert handoff["testnet"]["fresh_emission_tester"]["status"] == "green"
+    assert handoff["testnet"]["fresh_emission_tester"]["private_key_printed"] is False
+    assert "Fresh Emission Tester Prep" in markdown
+    assert "Reward wallet: `0x2222222222222222222222222222222222222222`" in markdown
+    assert "Private key printed by prep command: false" in markdown
     assert "Seeded evidence wallet" in html
     assert "Expected selected account: your own Base Sepolia wallet with test ETH" in html
     assert f"Expected selected account: {seeded_wallet}" not in html
     assert "Copy evidence wallet" in html
+    assert "Fresh Emission Tester Prep" in html
 
 
 def test_tester_handoff_local_not_ready_when_claim_proof_gate_is_red(tmp_path: Path) -> None:

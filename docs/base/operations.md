@@ -430,6 +430,28 @@ The fresh-tester prep command above wraps this seed step and the guarded
 operator run. Use this lower-level command only when debugging or reviewing a
 specific seed artifact.
 
+## Base Sepolia Fresh Emission Tester Prep
+
+Use this when you need a new public testnet mining/emission claim without
+running a real holder genesis claim. It creates or loads a testnet reward
+wallet, seeds real autoresearch self-validation evidence, funds that wallet
+with Base Sepolia ETH if needed, publishes/imports the exact emission epoch,
+and verifies the claims API returns unsigned emission calldata for MetaMask.
+It does not create a genesis allocation and does not test a real holder claim.
+
+```bash
+cd /home/mekaneeky/repos/SN94-BitSota-live-docs
+python3 scripts/sota_prepare_fresh_testnet_emission_tester.py
+```
+
+The report is written to
+`/home/mekaneeky/repos/.sota-base-testnet/base-sota-fresh-emission-tester.json`
+and the tester handoff shows it under `Fresh Emission Tester Prep`. The command
+does not print the testnet private key; give wallet access out of band only to
+the person doing the MetaMask claim. Use
+`scripts/sota_prepare_fresh_testnet_tester.py` instead when the tester also has
+a signed snapshot coldkey binding for genesis.
+
 ## Base Sepolia Operator Run
 
 Use the operator command when you want the whole public testnet path attempted

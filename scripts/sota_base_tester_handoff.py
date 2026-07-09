@@ -465,6 +465,33 @@ def _testnet_section(release: dict[str, Any], testnet_dir: Path = TESTNET_RUN_DI
             else str(fresh_tester_report.get("next_action") or "")
         ),
     } if fresh_tester_report else {}
+    fresh_emission_report_path = testnet_dir / "base-sota-fresh-emission-tester.json"
+    fresh_emission_report = _load_json(fresh_emission_report_path)
+    fresh_emission_funding = dict(fresh_emission_report.get("funding") or {})
+    fresh_emission_reward_address = str(fresh_emission_report.get("reward_address") or "")
+    fresh_emission_claim_usage = _fresh_tester_claim_usage(testnet_dir, fresh_emission_reward_address)
+    fresh_emission_claimed = "emission" in set(fresh_emission_claim_usage.get("claimed_programs") or [])
+    fresh_emission_tester = {
+        "status": "claimed" if fresh_emission_claimed else str(fresh_emission_report.get("status") or "missing"),
+        "ok": bool(fresh_emission_report.get("ok")) and not fresh_emission_claimed,
+        "path": str(fresh_emission_report_path),
+        "reward_address": fresh_emission_reward_address,
+        "reward_key_file": str(fresh_emission_report.get("reward_key_file") or ""),
+        "private_key_printed": bool(fresh_emission_report.get("private_key_printed")),
+        "lane_id": str(fresh_emission_report.get("lane_id") or ""),
+        "epoch": str(fresh_emission_report.get("epoch") or ""),
+        "funding_status": str(fresh_emission_funding.get("status") or ""),
+        "funding_tx_hash": str(fresh_emission_funding.get("tx_hash") or ""),
+        "funding_balance_after_eth": str(fresh_emission_funding.get("balance_after_eth") or ""),
+        "already_claimed": fresh_emission_claimed,
+        "claimed_programs": fresh_emission_claim_usage.get("claimed_programs") or [],
+        "claim_usage_report": fresh_emission_claim_usage.get("path") or "",
+        "next_action": (
+            "This fresh emission wallet already submitted its emission claim. Prepare another emission tester before giving a wallet to a new tester."
+            if fresh_emission_claimed
+            else str(fresh_emission_report.get("next_action") or "")
+        ),
+    } if fresh_emission_report else {}
     genesis_total = int(seeded_claims.get("genesis_total_units") or 0)
     emission_total = int(seeded_claims.get("emission_total_units") or 0)
     return {
@@ -492,6 +519,7 @@ def _testnet_section(release: dict[str, Any], testnet_dir: Path = TESTNET_RUN_DI
         "claim_tx_evidence_command": evidence_command,
         "post_evidence_refresh_command": post_evidence_refresh_command,
         "fresh_tester": fresh_tester,
+        "fresh_emission_tester": fresh_emission_tester,
         "wallet_access_note": (
             "Use your own Base Sepolia wallet and your own Bittensor snapshot coldkey. The site never asks for a seed phrase or private key. The operator has not run a real holder claim for you."
             if real_holder_test_deferred
@@ -831,6 +859,34 @@ def render_markdown(handoff: dict[str, Any]) -> str:
                 lines.append(funding_line)
             if fresh_tester.get("next_action"):
                 lines.append(f"- Next: {fresh_tester.get('next_action')}")
+        fresh_emission_tester = dict(testnet.get("fresh_emission_tester") or {})
+        if fresh_emission_tester:
+            lines.append("")
+            lines.append("### Fresh Emission Tester Prep")
+            lines.append("")
+            lines.append(f"- Status: {fresh_emission_tester.get('status')}")
+            lines.append(f"- Report: {fresh_emission_tester.get('path')}")
+            if fresh_emission_tester.get("reward_address"):
+                lines.append(f"- Reward wallet: `{fresh_emission_tester.get('reward_address')}`")
+            if fresh_emission_tester.get("reward_key_file"):
+                lines.append(f"- Operator-only wallet key file: `{fresh_emission_tester.get('reward_key_file')}`")
+            lines.append(f"- Private key printed by prep command: {str(fresh_emission_tester.get('private_key_printed')).lower()}")
+            if fresh_emission_tester.get("lane_id"):
+                lines.append(f"- Emission lane: `{fresh_emission_tester.get('lane_id')}` epoch {fresh_emission_tester.get('epoch')}")
+            if fresh_emission_tester.get("already_claimed"):
+                programs = ", ".join(str(item) for item in fresh_emission_tester.get("claimed_programs") or [])
+                lines.append(f"- Already claimed by this wallet: {programs or 'yes'}")
+                if fresh_emission_tester.get("claim_usage_report"):
+                    lines.append(f"- Claim usage report: {fresh_emission_tester.get('claim_usage_report')}")
+            if fresh_emission_tester.get("funding_status"):
+                funding_line = f"- Funding: {fresh_emission_tester.get('funding_status')}"
+                if fresh_emission_tester.get("funding_balance_after_eth"):
+                    funding_line += f"; balance after {fresh_emission_tester.get('funding_balance_after_eth')} ETH"
+                if fresh_emission_tester.get("funding_tx_hash"):
+                    funding_line += f"; tx `{fresh_emission_tester.get('funding_tx_hash')}`"
+                lines.append(funding_line)
+            if fresh_emission_tester.get("next_action"):
+                lines.append(f"- Next: {fresh_emission_tester.get('next_action')}")
         lines.append("")
         lines.append("### Gates")
         lines.append("")
@@ -1236,6 +1292,35 @@ def render_html(handoff: dict[str, Any]) -> str:
             if fresh_tester.get("next_action"):
                 fresh_lines.append(f"Next: {fresh_tester.get('next_action')}")
             blocks.extend(["<h3>Fresh Tester Prep</h3>", f"<ul>{_html_list(fresh_lines)}</ul>"])
+        fresh_emission_tester = dict(testnet.get("fresh_emission_tester") or {})
+        if fresh_emission_tester:
+            fresh_emission_lines = [
+                f"Status: {fresh_emission_tester.get('status')}",
+                f"Report: {fresh_emission_tester.get('path')}",
+                f"Reward wallet: {fresh_emission_tester.get('reward_address')}",
+                f"Private key printed by prep command: {str(fresh_emission_tester.get('private_key_printed')).lower()}",
+            ]
+            if fresh_emission_tester.get("reward_key_file"):
+                fresh_emission_lines.append(f"Operator-only wallet key file: {fresh_emission_tester.get('reward_key_file')}")
+            if fresh_emission_tester.get("lane_id"):
+                fresh_emission_lines.append(
+                    f"Emission lane: {fresh_emission_tester.get('lane_id')} epoch {fresh_emission_tester.get('epoch')}"
+                )
+            if fresh_emission_tester.get("already_claimed"):
+                programs = ", ".join(str(item) for item in fresh_emission_tester.get("claimed_programs") or [])
+                fresh_emission_lines.append(f"Already claimed by this wallet: {programs or 'yes'}")
+                if fresh_emission_tester.get("claim_usage_report"):
+                    fresh_emission_lines.append(f"Claim usage report: {fresh_emission_tester.get('claim_usage_report')}")
+            if fresh_emission_tester.get("funding_status"):
+                funding_line = f"Funding: {fresh_emission_tester.get('funding_status')}"
+                if fresh_emission_tester.get("funding_balance_after_eth"):
+                    funding_line += f"; balance after {fresh_emission_tester.get('funding_balance_after_eth')} ETH"
+                if fresh_emission_tester.get("funding_tx_hash"):
+                    funding_line += f"; tx {fresh_emission_tester.get('funding_tx_hash')}"
+                fresh_emission_lines.append(funding_line)
+            if fresh_emission_tester.get("next_action"):
+                fresh_emission_lines.append(f"Next: {fresh_emission_tester.get('next_action')}")
+            blocks.extend(["<h3>Fresh Emission Tester Prep</h3>", f"<ul>{_html_list(fresh_emission_lines)}</ul>"])
         blocks.extend(
             [
                 "<h3>Gates</h3>",
