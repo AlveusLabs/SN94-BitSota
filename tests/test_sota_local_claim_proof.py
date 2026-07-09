@@ -73,6 +73,7 @@ def test_claim_proof_sends_ui_generated_transactions_and_runs_evidence(tmp_path:
     monkeypatch.setattr(module, "_chain_id", lambda rpc_url: 31337)
     monkeypatch.setattr(module, "_read_eligibility", lambda base_url, state, timeout: {"genesis": _eligible(15), "emission": _eligible(20)})
     monkeypatch.setattr(module, "_claim_transactions", lambda base_url, state, timeout: {"genesis": _tx("genesis"), "emission": _tx("emission")})
+    monkeypatch.setattr(module, "_expect_duplicate_claim_rejected", lambda rpc_url, private_key, tx: {"rejected": True, "error": "execution reverted"})
 
     def fake_send(rpc_url, private_key, tx):
         sent.append(tx)
@@ -88,6 +89,8 @@ def test_claim_proof_sends_ui_generated_transactions_and_runs_evidence(tmp_path:
     assert sent == [_tx("genesis"), _tx("emission")]
     assert report["transactions"]["genesis"]["tx_hash"] == "0x" + "1" * 64
     assert report["transactions"]["emission"]["tx_hash"] == "0x" + "2" * 64
+    assert report["double_spend_checks"]["genesis"]["rejected"] is True
+    assert report["double_spend_checks"]["emission"]["rejected"] is True
     assert report["evidence_summary"] == {"green": 27, "yellow": 0, "red": 0}
 
 
@@ -130,6 +133,7 @@ def test_claim_proof_can_reset_after_success(tmp_path: Path, monkeypatch) -> Non
     monkeypatch.setattr(module, "_read_eligibility", lambda base_url, state, timeout: {"genesis": _eligible(15), "emission": _eligible(20)})
     monkeypatch.setattr(module, "_claim_transactions", lambda base_url, state, timeout: {"genesis": _tx("genesis"), "emission": _tx("emission")})
     monkeypatch.setattr(module, "_send_claim_tx", lambda rpc_url, private_key, tx: "0x" + tx["to"][2:4] * 32)
+    monkeypatch.setattr(module, "_expect_duplicate_claim_rejected", lambda rpc_url, private_key, tx: {"rejected": True, "error": "execution reverted"})
     monkeypatch.setattr(module, "_run_evidence", lambda **kwargs: {"ok": True, "summary": {"green": 27, "yellow": 0, "red": 0}})
 
     def fake_restart(timeout):
@@ -163,3 +167,26 @@ def test_claim_proof_reset_launches_without_recursive_proof(monkeypatch) -> None
     command, kwargs = calls[0]
     assert command[-2:] == ["launch", "--skip-claim-proof"]
     assert kwargs["timeout"] == 12.0
+
+
+def test_claim_proof_marks_duplicate_claim_acceptance_red(tmp_path: Path, monkeypatch) -> None:
+    module = _load_module()
+    args = _args(tmp_path)
+
+    monkeypatch.setattr(module, "_chain_id", lambda rpc_url: 31337)
+    monkeypatch.setattr(module, "_read_eligibility", lambda base_url, state, timeout: {"genesis": _eligible(15), "emission": _eligible(20)})
+    monkeypatch.setattr(module, "_claim_transactions", lambda base_url, state, timeout: {"genesis": _tx("genesis"), "emission": _tx("emission")})
+    monkeypatch.setattr(module, "_send_claim_tx", lambda rpc_url, private_key, tx: "0x" + "1" * 64)
+    monkeypatch.setattr(module, "_expect_duplicate_claim_rejected", lambda rpc_url, private_key, tx: {"rejected": False, "tx_hash": "0x" + "2" * 64})
+    monkeypatch.setattr(module, "_run_evidence", lambda **kwargs: {"ok": True, "summary": {"green": 27, "yellow": 0, "red": 0}})
+
+    report = module.run_proof(args)
+    checks = {check["name"]: check for check in report["checks"]}
+
+    assert report["ok"] is False
+    assert checks["genesis_double_spend_rejected"]["status"] == "red"
+    assert checks["emission_double_spend_rejected"]["status"] == "red"
+    assert report["next_actions"] == [
+        "Fix distributor claimed-leaf checks before releasing testnet testers.",
+        "Fix distributor claimed-leaf checks before releasing testnet testers.",
+    ]

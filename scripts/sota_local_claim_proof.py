@@ -164,6 +164,14 @@ def _send_claim_tx(rpc_url: str, private_key: str, tx: dict[str, Any]) -> str:
     return text if text.startswith("0x") else f"0x{text}"
 
 
+def _expect_duplicate_claim_rejected(rpc_url: str, private_key: str, tx: dict[str, Any]) -> dict[str, Any]:
+    try:
+        tx_hash = _send_claim_tx(rpc_url, private_key, tx)
+    except Exception as exc:
+        return {"rejected": True, "error": str(exc)[:500]}
+    return {"rejected": False, "tx_hash": tx_hash}
+
+
 def _run_evidence(
     *,
     state: Path,
@@ -254,6 +262,7 @@ def run_proof(args: argparse.Namespace) -> dict[str, Any]:
 
     eligibility: dict[str, dict[str, Any]] = {}
     transactions: dict[str, Any] = {}
+    double_spend_checks: dict[str, Any] = {}
     evidence: dict[str, Any] = {}
     reset_stdout = ""
     if not any(check.status == "red" for check in checks):
@@ -282,6 +291,19 @@ def run_proof(args: argparse.Namespace) -> dict[str, Any]:
         }
         checks.append(Check("broadcast_genesis", "green", f"Broadcast local genesis claim {genesis_tx_hash}."))
         checks.append(Check("broadcast_emission", "green", f"Broadcast local emission claim {emission_tx_hash}."))
+        for name in ("genesis", "emission"):
+            result = _expect_duplicate_claim_rejected(rpc_url, args.private_key, unsigned[name])
+            double_spend_checks[name] = result
+            checks.append(
+                Check(
+                    f"{name}_double_spend_rejected",
+                    "green" if result.get("rejected") else "red",
+                    f"{name} duplicate claim was rejected by the local contract."
+                    if result.get("rejected")
+                    else f"{name} duplicate claim unexpectedly succeeded: {result.get('tx_hash')}.",
+                    "" if result.get("rejected") else "Fix distributor claimed-leaf checks before releasing testnet testers.",
+                )
+            )
         evidence = _run_evidence(
             state=args.state,
             genesis_tx=genesis_tx_hash,
@@ -333,6 +355,7 @@ def run_proof(args: argparse.Namespace) -> dict[str, Any]:
         "wallet_address": expected_wallet,
         "eligibility": eligibility,
         "transactions": transactions,
+        "double_spend_checks": double_spend_checks,
         "evidence_report": str(args.evidence_out),
         "evidence_summary": evidence.get("summary") if isinstance(evidence, dict) else {},
         "reset_after": bool(args.reset_after),
