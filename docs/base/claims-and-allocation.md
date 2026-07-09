@@ -48,6 +48,20 @@ Base wallet receives SOTA.
 The legacy coldkey does not custody Base SOTA. If a user cannot prove ownership
 of the snapshot coldkey, the system cannot create a genesis claim for that user.
 
+Before building a binding, operators can check whether a key is actually a
+claimable snapshot coldkey:
+
+```bash
+cd /home/mekaneeky/repos/SN94-BitSota-live-docs
+python3 scripts/sota_snapshot_wallet_check.py \
+  --snapshot-dir /mnt/4tb/tao_fork_snapshot \
+  --address 5YourLegacyColdkey
+```
+
+The result must say `Classification: claimable_coldkey`. If it says
+`hotkey_with_staked_alpha`, the address is a hotkey. The listed staking
+coldkeys, not the hotkey, must sign the genesis binding.
+
 The claims API can generate the exact message a user must sign without seeing
 the user's private key:
 

@@ -78,6 +78,18 @@ Check that the user entered the exact legacy coldkey from the snapshot. A
 hotkey, a different coldkey, an exchange deposit address, or a wallet that did
 not control the snapshot account is not equivalent.
 
+Operator check:
+
+```bash
+cd /home/mekaneeky/repos/SN94-BitSota-live-docs
+python3 scripts/sota_snapshot_wallet_check.py \
+  --snapshot-dir /mnt/4tb/tao_fork_snapshot \
+  --address 5UserProvidedAddress
+```
+
+`claimable_coldkey` can proceed to binding. `hotkey_with_staked_alpha` means
+the user gave a hotkey; ask for the staking coldkey instead.
+
 If a custodian or exchange controlled the snapshot coldkey, that controller is
 the party that can mechanically claim. Any downstream customer distribution is
 outside SOTA custody unless a later public integration says otherwise.
