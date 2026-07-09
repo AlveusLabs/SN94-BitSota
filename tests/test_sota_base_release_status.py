@@ -31,6 +31,7 @@ def _write_report(
 ) -> None:
     if checks is None and schema == "sota-base-testnet-browser-smoke/v1" and ok:
         checks = [
+            {"name": "claims_binding_frontend", "status": "green"},
             {"name": "claims_page_text", "status": "green"},
             {"name": "genesis_binding_message", "status": "green"},
             {"name": "genesis_binding_submit_route", "status": "green"},
@@ -231,6 +232,22 @@ def _write_pending_binding_request(path: Path) -> None:
     )
 
 
+def _write_publisher_report(path: Path, *, schema: str, status: str = "idle", ok: bool = True) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(
+        json.dumps(
+            {
+                "schema": schema,
+                "ok": ok,
+                "status": status,
+                "message": "ready",
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+
 def _args(tmp_path: Path, *, local_only: bool = False):
     return argparse.Namespace(
         local_report=tmp_path / "local" / "report.json",
@@ -244,6 +261,7 @@ def _args(tmp_path: Path, *, local_only: bool = False):
         indexer_admin_token_env="SOTA_BASE_INDEXER_ADMIN_TOKEN",
         timeout=0.1,
         local_only=local_only,
+        defer_real_holder_test=False,
     )
 
 
@@ -425,6 +443,65 @@ def test_release_status_full_green_requires_operator_gate(tmp_path: Path) -> Non
         "testnet_browser_smoke",
         "claim_tx_evidence",
     ]
+
+
+def test_release_status_can_defer_real_holder_test_when_binding_path_is_ready(tmp_path: Path) -> None:
+    module = _load_module()
+    args = _args(tmp_path)
+    args.defer_real_holder_test = True
+    _write_report(args.local_report, schema="sota-local-claims-ui-smoke/v1", ok=True, checks=[_wallet_check()])
+    _write_report(args.local_claim_proof, schema="sota-local-claim-proof/v1", ok=True)
+    _write_miner_swarm(args.local_miner_swarm)
+    _write_report(
+        args.testnet_artifacts_dir / "base-sota-testnet-operator-run.json",
+        schema="sota-base-testnet-operator-run/v1",
+        ok=False,
+        status="red",
+        checks=[
+            {"name": "snapshot_binding_export", "status": "red"},
+            {"name": "snapshot_genesis_artifacts", "status": "red"},
+            {"name": "publish_genesis_root", "status": "red"},
+            {"name": "browser_smoke", "status": "red"},
+            {"name": "finalize_claim_artifacts", "status": "yellow"},
+            {"name": "import_claim_artifacts", "status": "yellow"},
+        ],
+    )
+    _write_report(args.testnet_artifacts_dir / "base-sota-testnet-blockers.json", schema="sota-base-testnet-blockers/v1", ok=True)
+    _write_lane_sync(args.testnet_artifacts_dir / "base-sota-testnet-emission-lane-sync.json")
+    _write_report(args.testnet_artifacts_dir / "base-sota-testnet-aws-inventory.json", schema="sota-base-testnet-aws-inventory/v1", ok=True)
+    _write_report(args.testnet_artifacts_dir / "base-sota-testnet-funding.json", schema="sota-base-testnet-funding/v1", ok=True)
+    _write_report(args.testnet_artifacts_dir / "base-sota-testnet-secret-handles.json", schema="sota-base-testnet-secret-bootstrap/v1", ok=True)
+    _write_report(args.testnet_artifacts_dir / "base-sota-testnet-apprunner-source-pack.json", schema="sota-base-testnet-apprunner-source-pack/v1", ok=True)
+    _write_report(args.testnet_artifacts_dir / "base-sota-testnet-container-pack.json", schema="sota-base-testnet-container-pack/v1", ok=False, status="yellow")
+    _write_report(args.testnet_artifacts_dir / "base-sota-testnet-browser-smoke.json", schema="sota-base-testnet-browser-smoke/v1", ok=True)
+    _write_publisher_report(
+        args.testnet_artifacts_dir / "base-sota-genesis-batch-publisher.json",
+        schema="sota-base-genesis-batch-publisher/v1",
+    )
+    _write_publisher_report(
+        args.testnet_artifacts_dir / "base-sota-emission-batch-publisher.json",
+        schema="sota-base-emission-batch-publisher/v1",
+    )
+    _write_snapshot_source(args.snapshot_dir)
+    _write_pending_binding_request(args.testnet_artifacts_dir / "snapshot-holder-binding-request.json")
+    _write_claim_evidence(
+        args.testnet_artifacts_dir / "base-sota-claim-tx-evidence.json",
+        wallet="0x1111111111111111111111111111111111111111",
+        genesis="150",
+        emission="200",
+    )
+
+    report = module.run_status(args)
+
+    assert report["ok"] is True
+    assert report["status"] == "green"
+    assert report["testnet_ok"] is True
+    assert report["real_holder_test_deferred"] is True
+    assert report["blocked_gates"] == []
+    operator_gate = next(gate for gate in report["gates"] if gate["name"] == "testnet_operator_run")
+    snapshot_gate = next(gate for gate in report["gates"] if gate["name"] == "testnet_snapshot_genesis")
+    assert operator_gate["holder_test_deferred"] is True
+    assert snapshot_gate["holder_test_deferred"] is True
 
 
 def test_release_status_rejects_stale_browser_smoke_without_binding_checks(tmp_path: Path) -> None:

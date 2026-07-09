@@ -115,11 +115,17 @@ def _tester_decision_lines(handoff: dict[str, Any]) -> list[str]:
         lines.append(f"Remote local/Tailscale MetaMask: {remote_status}.")
     if testnet:
         if testnet.get("ready"):
-            lines.append("Base Sepolia claim test: ready only with the operator-provided seeded wallet; confirm MetaMask matches the listed test wallet before submitting.")
+            if testnet.get("real_holder_test_deferred"):
+                lines.append("Base Sepolia holder path: ready for a tester with their own snapshot coldkey and Base Sepolia wallet; no real holder claim was run by the operator.")
+            else:
+                lines.append("Base Sepolia claim test: ready only with the operator-provided seeded wallet; confirm MetaMask matches the listed test wallet before submitting.")
         else:
             lines.append("Base Sepolia claim test: not ready for a nontechnical tester yet.")
         if testnet.get("release_ready"):
-            lines.append("Full Base Sepolia evidence: ready; both human MetaMask claim transactions verified.")
+            if testnet.get("real_holder_test_deferred"):
+                lines.append("Base Sepolia infrastructure evidence: ready; real holder claim transaction evidence is deferred.")
+            else:
+                lines.append("Full Base Sepolia evidence: ready; both human MetaMask claim transactions verified.")
         else:
             blocker_text = str(testnet.get("blocker_summary") or "").strip().rstrip(".")
             if blocker_text:
@@ -353,6 +359,7 @@ def _testnet_section(release: dict[str, Any], testnet_dir: Path = TESTNET_RUN_DI
         env.get("NEXT_PUBLIC_SOTA_READINESS_URL")
         or str(claims_ui_service.get("browser_safe_env", {}).get("NEXT_PUBLIC_SOTA_READINESS_URL") or "")
     )
+    real_holder_test_deferred = bool(release.get("real_holder_test_deferred"))
     evidence_command = (
         "python3 scripts/sota_base_claim_tx_evidence.py --environment testnet "
         f"--artifacts-dir {testnet_dir} "
@@ -363,7 +370,8 @@ def _testnet_section(release: dict[str, Any], testnet_dir: Path = TESTNET_RUN_DI
     post_evidence_refresh_command = (
         "python3 scripts/sota_base_release_status.py "
         f"--testnet-artifacts-dir {testnet_dir} "
-        f"--report-out {testnet_dir / 'base-sota-release-status.json'} && "
+        f"--report-out {testnet_dir / 'base-sota-release-status.json'}"
+        f"{' --defer-real-holder-test' if real_holder_test_deferred else ''} && "
         "python3 scripts/sota_base_tester_handoff.py --environment both "
         f"--release-status {testnet_dir / 'base-sota-release-status.json'} --mirror-local"
     )
@@ -412,6 +420,7 @@ def _testnet_section(release: dict[str, Any], testnet_dir: Path = TESTNET_RUN_DI
     return {
         "ready": claim_tester_ready,
         "release_ready": release_ready,
+        "real_holder_test_deferred": real_holder_test_deferred,
         "status": "green" if claim_tester_ready else "red",
         "release_status": "green" if release_ready else "red",
         "claims_ui_url": claims_ui_url,
@@ -434,10 +443,14 @@ def _testnet_section(release: dict[str, Any], testnet_dir: Path = TESTNET_RUN_DI
         "post_evidence_refresh_command": post_evidence_refresh_command,
         "fresh_tester": fresh_tester,
         "wallet_access_note": (
-            "The seeded Base Sepolia wallet is operator-controlled and has already claimed the current roots. "
-            "A new nontechnical claim test needs an operator-provided test wallet or a fresh seeded root cycle."
-            if release_ready
-            else "Base Sepolia tester wallets are provided out of band by an operator; this handoff never prints a testnet private key. Do not invite public testers until the remaining evidence gate is green."
+            "Use your own Base Sepolia wallet and your own Bittensor snapshot coldkey. The site never asks for a seed phrase or private key. The operator has not run a real holder claim for you."
+            if real_holder_test_deferred
+            else (
+                "The seeded Base Sepolia wallet is operator-controlled and has already claimed the current roots. "
+                "A new nontechnical claim test needs an operator-provided test wallet or a fresh seeded root cycle."
+                if release_ready
+                else "Base Sepolia tester wallets are provided out of band by an operator; this handoff never prints a testnet private key. Do not invite public testers until the remaining evidence gate is green."
+            )
         ),
         "gates": [
             {
@@ -454,15 +467,29 @@ def _testnet_section(release: dict[str, Any], testnet_dir: Path = TESTNET_RUN_DI
         "funding_targets": funding_targets,
         "faucet_sources": faucet_sources,
         "tester_message": (
-            "Base Sepolia is fully verified, including human MetaMask claim transaction evidence."
-            if release_ready
-            else f"Base Sepolia is ready for a MetaMask claim tester; full release turns green after the remaining evidence gate verifies. Remaining gate: {blocker_summary}"
-            if claim_tester_ready
-            else f"Base Sepolia infrastructure is not ready for a nontechnical MetaMask tester yet. Remaining gate: {blocker_summary}"
-            if blocker_summary
-            else "Base Sepolia infrastructure is not ready for a nontechnical MetaMask tester yet."
+            "Base Sepolia holder path is ready. A real holder still needs to sign the snapshot binding and submit the claim themselves."
+            if release_ready and real_holder_test_deferred
+            else (
+                "Base Sepolia is fully verified, including human MetaMask claim transaction evidence."
+                if release_ready
+                else f"Base Sepolia is ready for a MetaMask claim tester; full release turns green after the remaining evidence gate verifies. Remaining gate: {blocker_summary}"
+                if claim_tester_ready
+                else f"Base Sepolia infrastructure is not ready for a nontechnical MetaMask tester yet. Remaining gate: {blocker_summary}"
+                if blocker_summary
+                else "Base Sepolia infrastructure is not ready for a nontechnical MetaMask tester yet."
+            )
         ),
         "expected_flow_when_ready": [
+            "Open the public Base Sepolia claims URL.",
+            "Connect your own Base Sepolia wallet with test ETH.",
+            "In the Genesis tab, enter your Bittensor snapshot coldkey and the connected Base reward wallet.",
+            "Create the binding payload, sign it with the matching coldkey, and submit the binding.",
+            "Wait for the genesis batch publisher to include the accepted binding, then refresh the Genesis tab.",
+            "Load the genesis claim, submit it in MetaMask, and record the transaction hash.",
+            "For mining rewards, submit work to the testnet autoresearch lane and wait for self-validation plus the emission publisher before claiming emissions.",
+        ]
+        if release_ready and real_holder_test_deferred
+        else [
             "Review the existing Base Sepolia claim transaction evidence report; the seeded wallet has already claimed the current roots.",
             "Open the public Base Sepolia claims URL only to inspect the already-claimed state for the seeded test wallet.",
             "For another first-time claim, ask the operator to seed a fresh test wallet/root cycle and provide wallet access out of band.",

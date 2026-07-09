@@ -302,6 +302,78 @@ def _snapshot_binding_evidence(
     }
 
 
+def _browser_smoke_check_statuses(testnet_dir: Path) -> dict[str, str]:
+    try:
+        report = _load_report(testnet_dir / "base-sota-testnet-browser-smoke.json")
+    except Exception:
+        return {}
+    if not isinstance(report, dict):
+        return {}
+    return {
+        str(check.get("name") or ""): str(check.get("status") or "")
+        for check in (report.get("checks") or [])
+        if isinstance(check, dict)
+    }
+
+
+def _publisher_report(path: Path, *, expected_schema: str) -> dict[str, Any]:
+    try:
+        report = _load_report(path)
+    except Exception as exc:
+        return {"ok": False, "status": "red", "path": str(path), "message": f"Could not read report: {exc}"}
+    if report is None:
+        return {"ok": False, "status": "red", "path": str(path), "message": "Report is missing."}
+    schema = str(report.get("schema") or "")
+    ok = bool(report.get("ok")) and schema == expected_schema and str(report.get("status") or "") in {"idle", "published"}
+    return {
+        "ok": ok,
+        "schema": schema or None,
+        "status": str(report.get("status") or "red"),
+        "path": str(path),
+        "message": str(report.get("message") or ""),
+    }
+
+
+def _deferred_holder_readiness(
+    *,
+    testnet_dir: Path,
+    block: dict[str, str],
+    alpha_rows: int,
+    binding_evidence: dict[str, Any],
+) -> dict[str, Any]:
+    public_export = dict(binding_evidence.get("public_binding_export") or {})
+    browser_checks = _browser_smoke_check_statuses(testnet_dir)
+    genesis_publisher = _publisher_report(
+        testnet_dir / "base-sota-genesis-batch-publisher.json",
+        expected_schema="sota-base-genesis-batch-publisher/v1",
+    )
+    required_browser = {
+        "claims_binding_frontend",
+        "genesis_binding_message",
+        "genesis_binding_submit_route",
+    }
+    reasons: list[str] = []
+    if not block.get("number") or not block.get("hash"):
+        reasons.append("snapshot block lock is missing")
+    if alpha_rows <= 0:
+        reasons.append("alpha_exposures.csv is missing or empty")
+    missing_browser = sorted(name for name in required_browser if browser_checks.get(name) != "green")
+    if missing_browser:
+        reasons.append("browser smoke does not prove holder binding controls: " + ", ".join(missing_browser))
+    if public_export.get("status") not in {"green", "not_configured"}:
+        reasons.append("public binding export is not readable")
+    if not bool(genesis_publisher.get("ok")):
+        reasons.append("genesis batch publisher is not ready: " + str(genesis_publisher.get("message") or genesis_publisher.get("status")))
+    return {
+        "ok": not reasons,
+        "status": "green" if not reasons else "red",
+        "message": "; ".join(reasons),
+        "browser_binding_checks": {name: browser_checks.get(name) for name in sorted(required_browser)},
+        "public_binding_export": public_export,
+        "genesis_batch_publisher": genesis_publisher,
+    }
+
+
 def _snapshot_genesis_gate(testnet_dir: Path, snapshot_dir: Path, args: argparse.Namespace | None = None) -> dict[str, Any]:
     artifact_path = testnet_dir / "base-sota-testnet-genesis-claim-artifact.json"
     binding_evidence = _snapshot_binding_evidence(
@@ -338,6 +410,41 @@ def _snapshot_genesis_gate(testnet_dir: Path, snapshot_dir: Path, args: argparse
             "snapshot_binding_evidence": binding_evidence,
         }
     if artifact is None:
+        block = _snapshot_block(snapshot_dir)
+        alpha_rows = _snapshot_alpha_row_count(snapshot_dir)
+        if bool(getattr(args, "defer_real_holder_test", False)):
+            public_export = dict(binding_evidence.get("public_binding_export") or {})
+            public_count = int(public_export.get("accepted_signed_binding_count") or 0) if public_export.get("status") == "green" else 0
+            accepted_count = int(binding_evidence["accepted_signed_binding_count"]) + public_count
+            deferred = _deferred_holder_readiness(
+                testnet_dir=testnet_dir,
+                block=block,
+                alpha_rows=alpha_rows,
+                binding_evidence=binding_evidence,
+            )
+            if accepted_count == 0 and deferred["ok"]:
+                return {
+                    **base,
+                    "schema": "sota-base-claim-artifact/v1",
+                    "ok": True,
+                    "status": "green",
+                    "summary": {"green": 1, "yellow": 0, "red": 0},
+                    "message": (
+                        "Real holder claim is deferred by operator request. No snapshot genesis claim artifact exists yet "
+                        "because no holder binding has been accepted, but the public binding path and genesis publisher are ready."
+                    ),
+                    "next_action": "",
+                    "holder_test_deferred": True,
+                    "strict_reasons_without_defer": ["Genesis claim artifact is missing."],
+                    "snapshot_source": {
+                        "path": str(snapshot_dir),
+                        "block_number": block["number"],
+                        "block_hash": block["hash"],
+                        "alpha_rows": alpha_rows,
+                    },
+                    "snapshot_binding_evidence": binding_evidence,
+                    "deferred_holder_readiness": deferred,
+                }
         return {
             **base,
             "schema": None,
@@ -396,6 +503,41 @@ def _snapshot_genesis_gate(testnet_dir: Path, snapshot_dir: Path, args: argparse
         elif public_export.get("status") == "red":
             suffix += "; public claims API binding count could not be read"
         reasons.insert(0, f"accepted signed snapshot binding count is 0{suffix}")
+    if reasons and bool(getattr(args, "defer_real_holder_test", False)):
+        public_export = dict(binding_evidence.get("public_binding_export") or {})
+        public_count = int(public_export.get("accepted_signed_binding_count") or 0) if public_export.get("status") == "green" else 0
+        accepted_count = int(binding_evidence["accepted_signed_binding_count"]) + public_count
+        if accepted_count == 0:
+            deferred = _deferred_holder_readiness(
+                testnet_dir=testnet_dir,
+                block=block,
+                alpha_rows=alpha_rows,
+                binding_evidence=binding_evidence,
+            )
+            if deferred["ok"]:
+                return {
+                    **base,
+                    "schema": schema or "sota-base-claim-artifact/v1",
+                    "ok": True,
+                    "status": "green",
+                    "summary": {"green": 1, "yellow": 0, "red": 0},
+                    "message": (
+                        "Real holder claim is deferred by operator request. The public claims UI/API can build "
+                        "snapshot binding payloads from the locked TAO plus alpha snapshot, rejects invalid "
+                        "signatures, and the genesis batch publisher is ready to publish the first accepted binding."
+                    ),
+                    "next_action": "",
+                    "holder_test_deferred": True,
+                    "strict_reasons_without_defer": reasons,
+                    "snapshot_source": {
+                        "path": str(snapshot_dir),
+                        "block_number": block["number"],
+                        "block_hash": block["hash"],
+                        "alpha_rows": alpha_rows,
+                    },
+                    "snapshot_binding_evidence": binding_evidence,
+                    "deferred_holder_readiness": deferred,
+                }
     try:
         allocation_total = sum(int(dict(row).get("amount_units") or dict(row).get("amount") or 0) for row in allocations)
         root_total = int(root.get("total_amount_units") or root.get("budget") or 0)
@@ -438,6 +580,71 @@ def _snapshot_genesis_gate(testnet_dir: Path, snapshot_dir: Path, args: argparse
         },
         "snapshot_binding_evidence": binding_evidence,
     }
+
+
+def _operator_gate_with_deferred_holder_test(
+    testnet_dir: Path,
+    gate: dict[str, Any],
+    gate_reports: list[dict[str, Any]],
+) -> dict[str, Any]:
+    if gate.get("name") != "testnet_operator_run" or gate.get("status") != "red":
+        return gate
+    snapshot_gate = next((item for item in gate_reports if item.get("name") == "testnet_snapshot_genesis"), {})
+    if not snapshot_gate.get("holder_test_deferred"):
+        return gate
+    green_names = {
+        item.get("name")
+        for item in gate_reports
+        if item.get("status") == "green"
+    }
+    if "testnet_blockers" not in green_names or "testnet_browser_smoke" not in green_names:
+        return gate
+    try:
+        report = _load_report(testnet_dir / "base-sota-testnet-operator-run.json") or {}
+    except Exception:
+        return gate
+    steps = [dict(item) for item in (report.get("steps") or report.get("checks") or []) if isinstance(item, dict)]
+    allowed_red = {"snapshot_binding_export", "snapshot_genesis_artifacts", "publish_genesis_root", "browser_smoke"}
+    allowed_yellow = {"finalize_claim_artifacts", "import_claim_artifacts"}
+    unexpected = [
+        str(step.get("name") or "")
+        for step in steps
+        if (
+            (step.get("status") == "red" and str(step.get("name") or "") not in allowed_red)
+            or (step.get("status") == "yellow" and str(step.get("name") or "") not in allowed_yellow)
+        )
+    ]
+    if unexpected:
+        return gate
+    genesis_publisher = _publisher_report(
+        testnet_dir / "base-sota-genesis-batch-publisher.json",
+        expected_schema="sota-base-genesis-batch-publisher/v1",
+    )
+    emission_publisher = _publisher_report(
+        testnet_dir / "base-sota-emission-batch-publisher.json",
+        expected_schema="sota-base-emission-batch-publisher/v1",
+    )
+    if not genesis_publisher.get("ok") or not emission_publisher.get("ok"):
+        return gate
+    updated = dict(gate)
+    updated.update(
+        {
+            "ok": True,
+            "status": "green",
+            "summary": {"green": 1, "yellow": 0, "red": 0},
+            "message": (
+                "Strict operator run is red only because no real holder binding was submitted. "
+                "Real holder testing is deferred; scheduled genesis and emission publishers are active and idle/ready."
+            ),
+            "next_action": "",
+            "holder_test_deferred": True,
+            "deferred_publishers": {
+                "genesis": genesis_publisher,
+                "emission": emission_publisher,
+            },
+        }
+    )
+    return updated
 
 
 def _claim_tx_evidence_current_gate(testnet_dir: Path, gate: dict[str, Any]) -> dict[str, Any]:
@@ -861,6 +1068,11 @@ def run_status(args: argparse.Namespace) -> dict[str, Any]:
             _browser_smoke_current_gate(args.testnet_artifacts_dir, gate)
             for gate in gate_reports
         ]
+        if bool(getattr(args, "defer_real_holder_test", False)):
+            gate_reports = [
+                _operator_gate_with_deferred_holder_test(args.testnet_artifacts_dir, gate, gate_reports)
+                for gate in gate_reports
+            ]
     local_wallet_gate = {
         "name": "local_wallet",
         "phase": "local",
@@ -908,6 +1120,7 @@ def run_status(args: argparse.Namespace) -> dict[str, Any]:
         "local_remote_wallet": local_remote_wallet,
         "local_tailscale_preflight": local_tailscale_preflight,
         "testnet_ok": testnet_ok,
+        "real_holder_test_deferred": bool(getattr(args, "defer_real_holder_test", False)),
         "message": (
             "Local and Base Sepolia gates are green."
             if ok
@@ -972,6 +1185,11 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--indexer-admin-token-env", default="SOTA_BASE_INDEXER_ADMIN_TOKEN", help="Environment variable containing the claims API admin token or JSON secret payload.")
     parser.add_argument("--timeout", type=float, default=10.0)
     parser.add_argument("--local-only", action="store_true", help="Only require the local demo gate.")
+    parser.add_argument(
+        "--defer-real-holder-test",
+        action="store_true",
+        help="Do not require an accepted real snapshot holder binding/root; require the public self-serve holder binding path and scheduled publishers instead.",
+    )
     parser.add_argument("--json", action="store_true")
     parser.add_argument("--report-out", type=Path)
     parser.add_argument("--allow-blocked", action="store_true", help="Exit 0 even when required gates are red.")

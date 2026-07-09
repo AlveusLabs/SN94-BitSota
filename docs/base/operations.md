@@ -114,6 +114,21 @@ For a local-only check, run the local claim proof and swarm smoke first:
 python3 scripts/sota_base_release_status.py --local-only
 ```
 
+If the operator intentionally is not running a real holder claim yet, use the
+deferred-holder mode. It keeps strict mode unchanged, but lets the status turn
+green when the public binding-message route, invalid-signature rejection,
+locked snapshot source, and scheduled genesis/emission publishers are ready:
+
+```bash
+python3 scripts/sota_base_release_status.py \
+  --snapshot-claim-bindings-url "$SOTA_CLAIMS_API_URL/api/v1/base/genesis/bindings" \
+  --defer-real-holder-test \
+  --report-out /home/mekaneeky/repos/.sota-base-testnet/base-sota-release-status.json
+```
+
+The generated report includes `real_holder_test_deferred: true`; do not present
+that as a completed real-holder claim.
+
 Generate a nontechnical tester handoff from the current reports:
 
 ```bash

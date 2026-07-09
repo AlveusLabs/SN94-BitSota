@@ -1,23 +1,28 @@
 # Base Sepolia Tester
 
-This page is for a nontechnical tester who has been given a seeded Base
-Sepolia test wallet by the operator. It is not a Base mainnet claim page and it
-does not move production TAO, production Bittensor assets, or production SOTA.
+This page is for a nontechnical tester using Base Sepolia. A tester can bring
+their own Base Sepolia wallet and bind a Bittensor snapshot coldkey, or use an
+operator-provided seeded wallet when the handoff says to do that. It is not a
+Base mainnet claim page and it does not move production TAO, production
+Bittensor assets, or production SOTA.
 
 Use the generated tester handoff for the current wallet address, root IDs, claim
-amounts, and links. The handoff is refreshed from live artifacts whenever a
-fresh test wallet/root cycle is prepared.
+amounts, and links. The handoff is refreshed from live artifacts and says
+whether real holder testing is deferred or an operator-seeded wallet should be
+used.
 
 ## Before You Start
 
 Confirm these are all true:
 
 1. The operator gave you access to a seeded Base Sepolia test wallet out of
-   band.
+   band, or you are using your own Base Sepolia wallet plus your own Bittensor
+   snapshot coldkey.
 2. The wallet has Base Sepolia test ETH for gas.
 3. The generated handoff says `Base Sepolia claim test ready: true`.
-4. The selected MetaMask account exactly matches the test wallet address shown
-   in the handoff.
+4. If the handoff lists a specific test wallet, the selected MetaMask account
+   exactly matches it. If the handoff says real holder testing is deferred, use
+   the Base wallet you want to receive SOTA.
 
 Do not use Base mainnet. Do not use a production Bittensor wallet, production
 TAO wallet, real seed phrase, or production private key for this dry run.
@@ -80,15 +85,20 @@ Sepolia before submitting any transaction.
 ## Test Steps
 
 1. Open the Base Sepolia claims URL from the generated handoff.
-2. Connect the seeded MetaMask wallet.
-3. Confirm the connected wallet matches the handoff test wallet.
-4. Confirm the page says Base Sepolia and shows the expected genesis and
+2. Connect the Base Sepolia MetaMask wallet.
+3. If you are testing a real holder path, use the Genesis binding panel: enter
+   the snapshot coldkey and connected Base reward wallet, create the binding
+   payload, sign it with the matching coldkey, and submit it.
+4. Wait for the handoff or binding status to show the binding is included in a
+   published genesis root.
+5. Confirm the page says Base Sepolia and shows the expected genesis and
    emission claim amounts.
-5. Submit the genesis claim in MetaMask and wait for confirmation.
-6. Copy the genesis claim transaction hash.
-7. Submit the mined emission claim in MetaMask and wait for confirmation.
-8. Copy the emission claim transaction hash.
-9. Send the operator the two transaction hashes, connected wallet address,
+6. Submit the genesis claim in MetaMask and wait for confirmation.
+7. Copy the genesis claim transaction hash.
+8. Submit the mined emission claim in MetaMask and wait for confirmation when
+   an emission is available for your wallet.
+9. Copy the emission claim transaction hash.
+10. Send the operator the transaction hashes, connected wallet address,
    final SOTA balance screenshot, and any error text.
 
 The operator runs the evidence verifier. The tester does not need to run shell
