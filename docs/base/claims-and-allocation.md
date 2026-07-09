@@ -53,6 +53,15 @@ claimable snapshot coldkey:
 
 ```bash
 cd /home/mekaneeky/repos/SN94-BitSota-live-docs
+python3 scripts/sota_snapshot_wallet_inventory.py \
+  --snapshot-dir /mnt/4tb/tao_fork_snapshot
+```
+
+That scans local public `coldkeypub.txt` files without asking for passwords or
+seed phrases. To check one address:
+
+```bash
+cd /home/mekaneeky/repos/SN94-BitSota-live-docs
 python3 scripts/sota_snapshot_wallet_check.py \
   --snapshot-dir /mnt/4tb/tao_fork_snapshot \
   --address 5YourLegacyColdkey

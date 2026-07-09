@@ -82,10 +82,16 @@ Operator check:
 
 ```bash
 cd /home/mekaneeky/repos/SN94-BitSota-live-docs
+python3 scripts/sota_snapshot_wallet_inventory.py \
+  --snapshot-dir /mnt/4tb/tao_fork_snapshot
+
 python3 scripts/sota_snapshot_wallet_check.py \
   --snapshot-dir /mnt/4tb/tao_fork_snapshot \
   --address 5UserProvidedAddress
 ```
+
+The inventory command scans local public wallet files. The address command
+checks one user-provided SS58 address.
 
 `claimable_coldkey` can proceed to binding. `hotkey_with_staked_alpha` means
 the user gave a hotkey; ask for the staking coldkey instead.
